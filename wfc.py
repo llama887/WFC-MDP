@@ -123,12 +123,8 @@ width, height = 48, 48
 num_tiles = 16
 weights = np.random.rand(num_tiles)
 adjacency_rules = [
-    # For each direction (up, right, down, left), provide allowed tiles
-    [
-        np.random.choice([True, False], num_tiles)
-        for _ in range(num_tiles)
-        for _ in range(4)
-    ]
+    [np.random.choice([True, False], num_tiles) for _ in range(num_tiles)]
+    for _ in range(4)
 ]
 
 result = wave_function_collapse(width, height, num_tiles, weights, adjacency_rules)
