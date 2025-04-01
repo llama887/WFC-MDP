@@ -1,45 +1,61 @@
-import sys
-
 import numpy as np
 from numba import boolean, float32, int32, njit
 
 
 @njit(nogil=True)
-def propagate(grid, rules, width, height, num_tiles, start_x, start_y):
-    directions = [(0, -1), (1, 0), (0, 1), (-1, 0)]
-    opposites = [2, 3, 0, 1]
+def propagate_fast(grid, rules, width, height, num_tiles, start_x, start_y):
+    # Preallocate a fixed‑size queue (maximum possible size = width * height)
+    queue = np.empty((width * height, 2), dtype=np.int32)
+    head = 0
+    tail = 0
+    queue[tail, 0] = start_x
+    queue[tail, 1] = start_y
+    tail += 1
 
-    queue = [(start_x, start_y)]
+    # Use a visited mask to avoid duplicate enqueues
     visited = np.zeros((height, width), dtype=boolean)
+    visited[start_y, start_x] = True
 
-    idx = 0
-    while idx < len(queue):
-        x, y = queue[idx]
-        idx += 1
+    # Constant direction and opposites arrays
+    directions = np.array([[0, -1], [1, 0], [0, 1], [-1, 0]], dtype=np.int32)
+    opposites = np.array([2, 3, 0, 1], dtype=np.int32)
+
+    while head < tail:
+        x = queue[head, 0]
+        y = queue[head, 1]
+        visited[y, x] = False  # Mark as processed
+        head += 1
 
         for d in range(4):
-            dx, dy = directions[d]
-            nx, ny = x + dx, y + dy
-            if not (0 <= nx < width and 0 <= ny < height):
-                continue
+            dx = directions[d, 0]
+            dy = directions[d, 1]
+            nx = x + dx
+            ny = y + dy
 
-            current_tiles = np.where(grid[y, x])[0]
-            if len(current_tiles) == 0:
+            if nx < 0 or nx >= width or ny < 0 or ny >= height:
                 continue
 
             od = opposites[d]
             allowed = np.zeros(num_tiles, dtype=boolean)
-            for t in current_tiles:
-                allowed |= rules[od, t]
+            # Build the list of allowed tiles based on the current cell
+            for t in range(num_tiles):
+                if grid[y, x, t]:
+                    for nt in range(num_tiles):
+                        if rules[od, t, nt]:
+                            allowed[nt] = True
 
-            neighbor = grid[ny, nx].copy()
-            new_possible = neighbor & allowed
+            changed = False
+            # Intersect neighbor's possibilities with allowed options
+            for i in range(num_tiles):
+                if grid[ny, nx, i] and not allowed[i]:
+                    grid[ny, nx, i] = False
+                    changed = True
 
-            if not np.array_equal(neighbor, new_possible):
-                grid[ny, nx] = new_possible
-                if not visited[ny, nx]:
-                    visited[ny, nx] = True
-                    queue.append((nx, ny))
+            if changed and (not visited[ny, nx]):
+                queue[tail, 0] = nx
+                queue[tail, 1] = ny
+                tail += 1
+                visited[ny, nx] = True
 
     return grid
 
@@ -50,11 +66,13 @@ def wfc_core(width, height, weights, rules, num_tiles):
     output = np.full((height, width), -1, dtype=int32)
     total_weight = weights.sum()
     weight_map = (weights / total_weight).cumsum()
-
+    
+    max_entropy = num_tiles + 1
+    
     while True:
         entropy = grid.sum(axis=2)
-        entropy[entropy == 1] = sys.maxsize
-        if np.all(entropy == sys.maxsize):
+        entropy[entropy == 1] = max_entropy
+        if np.all(entropy == max_entropy):
             break
 
         min_entropy = entropy.min()
@@ -79,7 +97,7 @@ def wfc_core(width, height, weights, rules, num_tiles):
         grid[y, x, selected] = True
         output[y, x] = selected
 
-        grid = propagate(grid, rules, width, height, num_tiles, x, y)
+        grid = propagate_fast(grid, rules, width, height, num_tiles, x, y)
 
     for y in range(height):
         for x in range(width):
