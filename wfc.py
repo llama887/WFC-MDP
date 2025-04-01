@@ -1,5 +1,5 @@
 import numpy as np
-from numba import float32, int32, njit
+from numba import int32, njit
 
 
 @njit(nogil=True)
