@@ -69,7 +69,10 @@ def wfc_core(width, height, weights, rules, num_tiles):
 
     while True:
         entropy = grid.sum(axis=2)
-        entropy[entropy == 1] = max_entropy
+        for i in range(entropy.shape[0]):
+            for j in range(entropy.shape[1]):
+                if entropy[i, j] == 1:
+                    entropy[i, j] = max_entropy
         if np.all(entropy == max_entropy):
             break
 
