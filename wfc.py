@@ -66,9 +66,9 @@ def wfc_core(width, height, weights, rules, num_tiles):
     output = np.full((height, width), -1, dtype=int32)
     total_weight = weights.sum()
     weight_map = (weights / total_weight).cumsum()
-    
+
     max_entropy = num_tiles + 1
-    
+
     while True:
         entropy = grid.sum(axis=2)
         entropy[entropy == 1] = max_entropy
