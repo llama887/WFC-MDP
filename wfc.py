@@ -13,7 +13,7 @@ def propagate_fast(grid, rules, width, height, num_tiles, start_x, start_y):
     tail += 1
 
     # Use a visited mask to avoid duplicate enqueues
-    visited = np.zeros((height, width), dtype=boolean)
+    visited = np.zeros((height, width), dtype=np.bool_)
     visited[start_y, start_x] = True
 
     # Constant direction and opposites arrays
@@ -36,7 +36,7 @@ def propagate_fast(grid, rules, width, height, num_tiles, start_x, start_y):
                 continue
 
             od = opposites[d]
-            allowed = np.zeros(num_tiles, dtype=boolean)
+            allowed = np.zeros(num_tiles, dtype=np.bool_)
             # Build the list of allowed tiles based on the current cell
             for t in range(num_tiles):
                 if grid[y, x, t]:
@@ -62,7 +62,7 @@ def propagate_fast(grid, rules, width, height, num_tiles, start_x, start_y):
 
 @njit(nogil=True)
 def wfc_core(width, height, weights, rules, num_tiles):
-    grid = np.ones((height, width, num_tiles), dtype=boolean)
+    grid = np.ones((height, width, num_tiles), dtype=np.bool_)
     output = np.full((height, width), -1, dtype=int32)
     total_weight = weights.sum()
     weight_map = (weights / total_weight).cumsum()
@@ -109,7 +109,7 @@ def wfc_core(width, height, weights, rules, num_tiles):
 
 
 def wave_function_collapse(width, height, num_tiles, weights, adjacency_rules):
-    rules = np.zeros((4, num_tiles, num_tiles), dtype=boolean)
+    rules = np.zeros((4, num_tiles, num_tiles), dtype=np.bool_)
     for d in range(4):
         for t in range(num_tiles):
             rules[d, t] = adjacency_rules[d][t]
