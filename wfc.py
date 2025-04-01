@@ -35,13 +35,12 @@ def propagate_fast(grid, rules, width, height, num_tiles, start_x, start_y):
             if nx < 0 or nx >= width or ny < 0 or ny >= height:
                 continue
 
-            od = opposites[d]
             allowed = np.zeros(num_tiles, dtype=np.bool_)
             # Build the list of allowed tiles based on the current cell
             for t in range(num_tiles):
                 if grid[y, x, t]:
                     for nt in range(num_tiles):
-                        if rules[od, t, nt]:
+                        if rules[d, t, nt]:
                             allowed[nt] = True
 
             changed = False
