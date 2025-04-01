@@ -64,7 +64,6 @@ def propagate_fast(grid, rules, width, height, num_tiles, start_x, start_y):
 def wfc_core(width, height, weights, rules, num_tiles):
     grid = np.ones((height, width, num_tiles), dtype=np.bool_)
     output = np.full((height, width), -1, dtype=int32)
-    total_weight = weights.sum()
 
     max_entropy = num_tiles + 1
 
