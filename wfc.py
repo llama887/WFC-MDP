@@ -65,7 +65,6 @@ def wfc_core(width, height, weights, rules, num_tiles):
     grid = np.ones((height, width, num_tiles), dtype=np.bool_)
     output = np.full((height, width), -1, dtype=int32)
     total_weight = weights.sum()
-    weight_map = (weights / total_weight).cumsum()
 
     max_entropy = num_tiles + 1
 
@@ -114,7 +113,7 @@ def wave_function_collapse(width, height, num_tiles, weights, adjacency_rules):
         for t in range(num_tiles):
             rules[d, t] = adjacency_rules[d][t]
 
-    weights = weights.astype(float32)
+    weights = weights.astype(np.float32)
     return wfc_core(width, height, weights, rules, num_tiles)
 
 
