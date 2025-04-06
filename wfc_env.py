@@ -54,6 +54,7 @@ class GymWrapperEnv(gym.Env):
         )
 
     def get_observation(self) -> spaces.Dict:
+        # this will be flattened
         return {
             "map": self.current_map.numpy(),
             "position": wfc_next_collapse_position(),
