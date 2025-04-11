@@ -91,7 +91,7 @@ class WFCWrapper(gym.Env):
         info = {}
         return self.get_observation(), reward, terminate, truncate, info
 
-    def reset(self):
+    def reset(self, seed=0):
         self.grid = [
             [set(self.all_tiles) for _ in range(self.map_width)]
             for _ in range(self.map_length)
@@ -102,12 +102,15 @@ class WFCWrapper(gym.Env):
 
 
 if __name__ == "__main__":
-    from stable_baselines3.common.env_checker import check_env
     from stable_baselines3 import PPO
+    from stable_baselines3.common.env_checker import check_env
+
     from wfc_pacman_tiles import PAC_TILES
 
     # Create an instance of the environment using PAC_TILES.
-    env = WFCWrapper(tile_count=len(PAC_TILES), map_length=12, map_width=20, tile_defs=PAC_TILES)
+    env = WFCWrapper(
+        tile_count=len(PAC_TILES), map_length=12, map_width=20, tile_defs=PAC_TILES
+    )
 
     # Check if the environment follows the Gym interface.
     check_env(env, warn=True)
