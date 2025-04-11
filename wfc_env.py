@@ -2,11 +2,11 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from wfc_pacman_tiles import build_pacman_adjacency, wfc_collapse
+from fast_wfc import fast_wfc_collapse_step, tile_symbols, adjacency_bool, num_tiles
 
 
 def grid_to_array(
-    grid: list[list[set[str]]],
+    grid: np.ndarray,
     all_tiles: list[str],
     map_length: int,
     map_width: int,
@@ -14,25 +14,24 @@ def grid_to_array(
     arr = np.empty((map_length, map_width), dtype=np.float32)
     for y in range(map_length):
         for x in range(map_width):
-            cell = grid[y][x]
-            if len(cell) == 1:
-                # Get normalized tile index: index / (num_tiles -1)
-                tile = next(iter(cell))
-                idx = all_tiles.index(tile)
+            possibilities = grid[y, x, :]
+            if np.count_nonzero(possibilities) == 1:
+                idx = int(np.argmax(possibilities))
                 arr[y, x] = idx / (len(all_tiles) - 1)
             else:
-                # Uncollapsed cells get a fixed uncertainty value (e.g. 0.5)
                 arr[y, x] = 0.5
     return arr.flatten()
 
 
-def wfc_next_collapse_position(grid: list[list[set[str]]]) -> tuple[int, int]:
+def wfc_next_collapse_position(grid: np.ndarray) -> tuple[int, int]:
     min_options = float("inf")
     best_cell = (0, 0)
-    for y, row in enumerate(grid):
-        for x, cell in enumerate(row):
-            if len(cell) > 1 and len(cell) < min_options:
-                min_options = len(cell)
+    map_length, map_width, _ = grid.shape
+    for y in range(map_length):
+        for x in range(map_width):
+            options = np.count_nonzero(grid[y, x, :])
+            if options > 1 and options < min_options:
+                min_options = options
                 best_cell = (x, y)
     return best_cell
 
@@ -40,27 +39,22 @@ def wfc_next_collapse_position(grid: list[list[set[str]]]) -> tuple[int, int]:
 class WFCWrapper(gym.Env):
     def __init__(
         self,
-        tile_count: int,
         map_length: int,
         map_width: int,
         tile_defs: dict[str, dict[str, object]],
     ):
-        self.all_tiles = list(tile_defs.keys())
-        # Build the adjacency rules from the tile defs:
-        self.adjacency = build_pacman_adjacency(tile_defs)
-        # Use grid (list-of-list of sets) as internal state (grid indexed by [y][x])
-        self.grid: list[list[set[str]]] = [
-            [set(self.all_tiles) for _ in range(map_width)] for _ in range(map_length)
-        ]
-        self.tile_count: int = tile_count
+        # Use the fast implementation variables from fast_wfc.py:
+        self.all_tiles = tile_symbols  # use the precomputed tile order
+        self.adjacency = adjacency_bool  # Numpy boolean array with compatibility info
+        self.num_tiles = num_tiles
         self.map_length: int = map_length
         self.map_width: int = map_width
-        # Remove the torch.Tensor state; we no longer use self.current_map.
+        # Initialize grid as a NumPy boolean array (all possibilities True)
+        self.grid = np.ones((self.map_length, self.map_width, self.num_tiles), dtype=bool)
         self.action_space: spaces.Box = spaces.Box(
-            low=0.0, high=1.0, shape=(self.tile_count,), dtype=np.float32
+            low=0.0, high=1.0, shape=(self.num_tiles,), dtype=np.float32
         )
-        # Remove the torch.Tensor state; we no longer use self.current_map.
-        self.observation_space: spaces.Dict = spaces.Box(
+        self.observation_space: spaces.Box = spaces.Box(
             low=0.0,
             high=1.0,
             shape=(self.map_length * self.map_width + 2,),
@@ -80,11 +74,15 @@ class WFCWrapper(gym.Env):
         return np.concatenate([map_flat, pos_array])
 
     def step(self, action):
-        # Convert the action (a float vector) into a dict: {tile: weight}
-        action_dict = {tile: float(val) for tile, val in zip(self.all_tiles, action)}
-        best_cell = wfc_next_collapse_position(self.grid)
-        self.grid, truncate = wfc_collapse(
-            self.grid, best_cell, self.adjacency, action_dict
+        # action is a float vector; convert to np.ndarray for fast_wfc functions.
+        action_vector = np.array(action, dtype=np.float64)
+        self.grid, truncate = fast_wfc_collapse_step(
+            self.grid,
+            self.map_width,
+            self.map_length,
+            self.num_tiles,
+            self.adjacency,
+            action_vector,
         )
         reward = 0  # todo: assign reward if needed
         terminate = False  # update termination condition as needed
@@ -92,10 +90,7 @@ class WFCWrapper(gym.Env):
         return self.get_observation(), reward, terminate, truncate, info
 
     def reset(self, seed=0):
-        self.grid = [
-            [set(self.all_tiles) for _ in range(self.map_width)]
-            for _ in range(self.map_length)
-        ]
+        self.grid = np.ones((self.map_length, self.map_width, self.num_tiles), dtype=bool)
         return self.get_observation(), {}
 
     def render(self, mode="human"): ...
@@ -108,9 +103,7 @@ if __name__ == "__main__":
     from wfc_pacman_tiles import PAC_TILES
 
     # Create an instance of the environment using PAC_TILES.
-    env = WFCWrapper(
-        tile_count=len(PAC_TILES), map_length=12, map_width=20, tile_defs=PAC_TILES
-    )
+    env = WFCWrapper(map_length=12, map_width=20, tile_defs=PAC_TILES)
 
     # Check if the environment follows the Gym interface.
     check_env(env, warn=True)

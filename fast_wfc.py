@@ -241,6 +241,29 @@ def propagate_from_cell(
     return True
 
 
+def fast_wfc_collapse_step(grid, width, height, num_tiles, adjacency_bool, action, deterministic=False):
+    """
+    Performs a single collapse step on the given grid using the provided action vector.
+    Returns (updated_grid, truncate) where truncate=True signals a contradiction.
+    """
+    x, y = find_lowest_entropy_cell(grid, height, width, num_tiles)
+    if x == -2 and y == -2:
+        # Contradiction detected.
+        return grid, True
+    if x == -1 and y == -1:
+        # All cells are collapsed.
+        return grid, False
+    chosen = choose_tile_with_action(grid, x, y, num_tiles, action, deterministic)
+    # Collapse the cell (set only the chosen possibility to True)
+    for t in range(num_tiles):
+        grid[y, x, t] = False
+    grid[y, x, chosen] = True
+    # Propagate constraints from the collapsed cell.
+    if not propagate_from_cell(grid, width, height, adjacency_bool, num_tiles, x, y):
+        return grid, True
+    return grid, False
+
+
 # ---------------------------------------------------------------------------------------
 # 5. WAVE FUNCTION COLLAPSE (OPTIMIZED VERSION WITH ACTION)
 # ---------------------------------------------------------------------------------------
