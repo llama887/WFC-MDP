@@ -8,7 +8,9 @@ from numba import njit
 # ---------------------------------------------------------------------------------------
 
 
-def get_forced_boundaries(width: int, height: int, tile_to_index: dict[str, int]) -> list[tuple[int, int, int]]:
+def get_forced_boundaries(
+    width: int, height: int, tile_to_index: dict[str, int]
+) -> list[tuple[int, int, int]]:
     """
     Returns a list of forced boundary cells as tuples (x, y, tile_index).
 
@@ -31,12 +33,12 @@ def get_forced_boundaries(width: int, height: int, tile_to_index: dict[str, int]
     boundaries.append((width - 1, height - 1, tile_to_index["╝"]))
     # Top and bottom borders (excluding corners).
     for x in range(1, width - 1):
-        boundaries.append((x, 0, tile_to_index["═"]))      # Top border
+        boundaries.append((x, 0, tile_to_index["═"]))  # Top border
         boundaries.append((x, height - 1, tile_to_index["═"]))  # Bottom border
     # Left and right borders (excluding corners).
     for y in range(1, height - 1):
-        boundaries.append((0, y, tile_to_index["║"]))      # Left border
-        boundaries.append((width - 1, y, tile_to_index["║"]))   # Right border
+        boundaries.append((0, y, tile_to_index["║"]))  # Left border
+        boundaries.append((width - 1, y, tile_to_index["║"]))  # Right border
     return boundaries
 
 
@@ -46,7 +48,9 @@ def get_forced_boundaries(width: int, height: int, tile_to_index: dict[str, int]
 
 
 @njit
-def find_lowest_entropy_cell(grid: np.ndarray, height: int, width: int, num_tiles: int) -> tuple[int, int]:
+def find_lowest_entropy_cell(
+    grid: np.ndarray, height: int, width: int, num_tiles: int
+) -> tuple[int, int]:
     """
     Returns the non-collapsed cell (i.e. one with >1 possibility)
     with the fewest possibilities.
@@ -77,10 +81,17 @@ def find_lowest_entropy_cell(grid: np.ndarray, height: int, width: int, num_tile
 
 
 @njit
-def choose_tile_with_action(grid: np.ndarray, x: int, y: int, num_tiles: int, action: np.ndarray, deterministic: bool) -> int:
+def choose_tile_with_action(
+    grid: np.ndarray,
+    x: int,
+    y: int,
+    num_tiles: int,
+    action: np.ndarray,
+    deterministic: bool,
+) -> int:
     """
     Chooses a tile index from cell (x, y) based on the given action vector.
-    
+
     Parameters:
       grid (np.ndarray): The current grid of possibilities.
       x (int): x-coordinate of the cell.
@@ -139,7 +150,7 @@ def propagate_from_cell(
     adjacency_bool: np.ndarray,
     num_tiles: int,
     start_x: int,
-    start_y: int
+    start_y: int,
 ) -> bool:
     """
     Propagates constraints from the starting cell (start_x, start_y).
@@ -217,7 +228,7 @@ def fast_wfc_collapse_step(
     num_tiles: int,
     adjacency_bool: np.ndarray,
     action: np.ndarray,
-    deterministic: bool = False
+    deterministic: bool = False,
 ) -> tuple[np.ndarray, bool, bool]:
     """
     Performs a single collapse step using the given action vector.
@@ -263,7 +274,7 @@ def fast_wave_function_collapse(
     adjacency_bool: np.ndarray,
     num_tiles: int,
     forced_boundaries: list[tuple[int, int, int]],
-    deterministic: bool = False
+    deterministic: bool = False,
 ) -> np.ndarray | None:
     """
     Executes the entire WFC algorithm with forced boundaries, collapsing cells
@@ -341,7 +352,7 @@ def generate_until_valid_optimized(
 ) -> np.ndarray | None:
     """
     Attempts to generate a valid collapsed grid up to max_attempts times.
-    
+
     Parameters:
       width (int): Map width.
       height (int): Map height.
@@ -476,5 +487,4 @@ if __name__ == "__main__":
         for row in layout:
             print(" ".join(row))
     else:
-        print("No layout could be generated.")
         print("No layout could be generated.")
