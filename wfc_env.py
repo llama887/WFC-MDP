@@ -189,15 +189,9 @@ if __name__ == "__main__":
     print("Environment check passed!")
 
     # Create and train a PPO model.
-    model = PPO("MlpPolicy", env, verbose=1)
+    model = PPO("MlpPolicy", env, verbose=1, device="cpu")
     model.learn(total_timesteps=10000)
 
     # Save the trained model.
     model.save("ppo_wfc")
-    print("Training complete and model saved as 'ppo_wfc'")
-    model.learn(total_timesteps=10000)
-
-    # Save the trained model.
-    model.save("ppo_wfc")
-    print("Training complete and model saved as 'ppo_wfc'")
     print("Training complete and model saved as 'ppo_wfc'")
