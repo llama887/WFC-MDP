@@ -60,6 +60,7 @@ class GymWrapperEnv(gym.Env):
         self.action_space: spaces.Box = spaces.Box(
             low=0.0, high=1.0, shape=(self.tile_count,), dtype=np.float32
         )
+        # Remove the torch.Tensor state; we no longer use self.current_map.
         self.observation_space: spaces.Dict = spaces.Box(
             low=0.0,
             high=1.0,
@@ -91,5 +92,4 @@ class GymWrapperEnv(gym.Env):
         ]
         return self.get_observation(), {}
 
-    def render(self, mode="human"): ...
     def render(self, mode="human"): ...
