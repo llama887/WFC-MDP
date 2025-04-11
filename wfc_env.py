@@ -99,3 +99,24 @@ class WFCWrapper(gym.Env):
         return self.get_observation(), {}
 
     def render(self, mode="human"): ...
+
+
+if __name__ == "__main__":
+    from stable_baselines3.common.env_checker import check_env
+    from stable_baselines3 import PPO
+    from wfc_pacman_tiles import PAC_TILES
+
+    # Create an instance of the environment using PAC_TILES.
+    env = WFCWrapper(tile_count=len(PAC_TILES), map_length=12, map_width=20, tile_defs=PAC_TILES)
+
+    # Check if the environment follows the Gym interface.
+    check_env(env, warn=True)
+    print("Environment check passed!")
+
+    # Create and train a PPO model.
+    model = PPO("MlpPolicy", env, verbose=1)
+    model.learn(total_timesteps=10000)
+
+    # Save the trained model.
+    model.save("ppo_wfc")
+    print("Training complete and model saved as 'ppo_wfc'")
