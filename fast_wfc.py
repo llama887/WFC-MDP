@@ -8,24 +8,35 @@ from numba import njit
 # ---------------------------------------------------------------------------------------
 
 
-def get_forced_boundaries(width: int, height: int):
+def get_forced_boundaries(width: int, height: int, tile_to_index: dict[str, int]) -> list[tuple[int, int, int]]:
     """
-    Returns a list of forced boundary cells as tuples (x, y, tile_index) based on the original rules.
+    Returns a list of forced boundary cells as tuples (x, y, tile_index).
+
+    Parameters:
+      width (int): The width of the grid.
+      height (int): The height of the grid.
+      tile_to_index (dict[str, int]): Mapping from tile symbols to their corresponding indices.
+
+    Returns:
+      List[tuple[int, int, int]]: Each tuple contains the x-coordinate, y-coordinate, and forced tile index.
     """
-    boundaries = []
-    # Corners.
+    boundaries: list[tuple[int, int, int]] = []
+    # Top-left corner.
     boundaries.append((0, 0, tile_to_index["╔"]))
+    # Top-right corner.
     boundaries.append((width - 1, 0, tile_to_index["╗"]))
+    # Bottom-left corner.
     boundaries.append((0, height - 1, tile_to_index["╚"]))
+    # Bottom-right corner.
     boundaries.append((width - 1, height - 1, tile_to_index["╝"]))
     # Top and bottom borders (excluding corners).
     for x in range(1, width - 1):
-        boundaries.append((x, 0, tile_to_index["═"]))
-        boundaries.append((x, height - 1, tile_to_index["═"]))
+        boundaries.append((x, 0, tile_to_index["═"]))      # Top border
+        boundaries.append((x, height - 1, tile_to_index["═"]))  # Bottom border
     # Left and right borders (excluding corners).
     for y in range(1, height - 1):
-        boundaries.append((0, y, tile_to_index["║"]))
-        boundaries.append((width - 1, y, tile_to_index["║"]))
+        boundaries.append((0, y, tile_to_index["║"]))      # Left border
+        boundaries.append((width - 1, y, tile_to_index["║"]))   # Right border
     return boundaries
 
 
@@ -35,14 +46,13 @@ def get_forced_boundaries(width: int, height: int):
 
 
 @njit
-def find_lowest_entropy_cell(grid, height, width, num_tiles):
+def find_lowest_entropy_cell(grid: np.ndarray, height: int, width: int, num_tiles: int) -> tuple[int, int]:
     """
-    Returns the non-collapsed cell (i.e. one with >1 possibility) with the fewest possibilities.
-
+    Returns the non-collapsed cell (i.e. one with >1 possibility)
+    with the fewest possibilities.
     Returns:
-      (-2, -2) if a contradiction (cell with zero possibilities) is found.
-      (-1, -1) if all cells are collapsed.
-      Otherwise, returns (x, y) of the selected cell.
+      (-2, -2) on contradiction; (-1, -1) if all cells are collapsed;
+      Otherwise, (x, y) coordinates of the candidate cell.
     """
     best_count = 10**9
     best_x = -1
@@ -67,16 +77,20 @@ def find_lowest_entropy_cell(grid, height, width, num_tiles):
 
 
 @njit
-def choose_tile_with_action(grid, x, y, num_tiles, action, deterministic):
+def choose_tile_with_action(grid: np.ndarray, x: int, y: int, num_tiles: int, action: np.ndarray, deterministic: bool) -> int:
     """
-    Chooses a tile index from cell (x, y) based on the given probabilities in 'action'.
+    Chooses a tile index from cell (x, y) based on the given action vector.
+    
+    Parameters:
+      grid (np.ndarray): The current grid of possibilities.
+      x (int): x-coordinate of the cell.
+      y (int): y-coordinate of the cell.
+      num_tiles (int): Total number of tile types.
+      action (np.ndarray): A 1D array holding weights/probabilities for each tile.
+      deterministic (bool): If True, selects the tile with the highest weight.
 
-    If deterministic is False:
-      - Chooses randomly with weights given by action.
-    If deterministic is True:
-      - Chooses the tile with the highest weight among the possible ones.
-
-    'action' is expected to be a 1D NumPy array of floats with length num_tiles.
+    Returns:
+      int: The chosen tile index.
     """
     if deterministic:
         max_weight = -1.0
@@ -119,12 +133,28 @@ def choose_tile_with_action(grid, x, y, num_tiles, action, deterministic):
 
 @njit
 def propagate_from_cell(
-    grid, width, height, adjacency_bool, num_tiles, start_x, start_y
-):
+    grid: np.ndarray,
+    width: int,
+    height: int,
+    adjacency_bool: np.ndarray,
+    num_tiles: int,
+    start_x: int,
+    start_y: int
+) -> bool:
     """
-    Propagates the constraints starting from cell (start_x, start_y) using a work queue.
+    Propagates constraints from the starting cell (start_x, start_y).
 
-    Returns True if propagation completes successfully or False if a contradiction is detected.
+    Parameters:
+      grid (np.ndarray): The current grid.
+      width (int): Width of the grid.
+      height (int): Height of the grid.
+      adjacency_bool (np.ndarray): Boolean array defining allowed adjacencies.
+      num_tiles (int): Number of tile types.
+      start_x (int): x-coordinate of initial cell.
+      start_y (int): y-coordinate of initial cell.
+
+    Returns:
+      bool: True if propagation succeeds, False if a contradiction is found.
     """
     queue = np.empty((height * width, 2), dtype=np.int64)
     head = 0
@@ -181,11 +211,28 @@ def propagate_from_cell(
 
 
 def fast_wfc_collapse_step(
-    grid, width, height, num_tiles, adjacency_bool, action, deterministic=False
-):
+    grid: np.ndarray,
+    width: int,
+    height: int,
+    num_tiles: int,
+    adjacency_bool: np.ndarray,
+    action: np.ndarray,
+    deterministic: bool = False
+) -> tuple[np.ndarray, bool, bool]:
     """
-    Performs a single collapse step on the given grid using the provided action vector.
-    Returns (updated_grid, truncate) where truncate=True signals a contradiction.
+    Performs a single collapse step using the given action vector.
+
+    Parameters:
+      grid (np.ndarray): 3D boolean grid representing cell possibilities.
+      width (int): Map width.
+      height (int): Map height.
+      num_tiles (int): Total tile types.
+      adjacency_bool (np.ndarray): Boolean array (num_tiles x 4 x num_tiles) for adjacencies.
+      action (np.ndarray): 1D array of tile selection weights.
+      deterministic (bool): If True, chooses tile by max weight.
+
+    Returns:
+      tuple: (updated grid, terminate flag, contradiction (truncate) flag)
     """
     x, y = find_lowest_entropy_cell(grid, height, width, num_tiles)
     if x == -2 and y == -2:
@@ -211,14 +258,27 @@ def fast_wfc_collapse_step(
 
 
 def fast_wave_function_collapse(
-    width, height, adjacency_bool, num_tiles, forced_boundaries, deterministic=False
-):
+    width: int,
+    height: int,
+    adjacency_bool: np.ndarray,
+    num_tiles: int,
+    forced_boundaries: list[tuple[int, int, int]],
+    deterministic: bool = False
+) -> np.ndarray | None:
     """
-    Performs the WFC algorithm using an optimized constraint propagation on a boolean grid.
-    The collapse of each cell uses an action vector (a probability distribution) to
-    influence which tile is chosen.
+    Executes the entire WFC algorithm with forced boundaries, collapsing cells
+    based on the action vector until a valid layout is achieved or a contradiction occurs.
 
-    Returns the collapsed grid if successful, or None if a contradiction occurs.
+    Parameters:
+      width (int): Map width.
+      height (int): Map height.
+      adjacency_bool (np.ndarray): Allowed adjacencies as a boolean array.
+      num_tiles (int): Total tile types.
+      forced_boundaries (list[tuple[int, int, int]]): List of forced cell positions and tile indices.
+      deterministic (bool): If True, uses deterministic collapse.
+
+    Returns:
+      np.ndarray or None: The collapsed grid if successful, or None if a contradiction is found.
     """
     # Initialize grid: each cell starts with all possibilities (True).
     grid = np.ones((height, width, num_tiles), dtype=np.bool_)
@@ -271,18 +331,28 @@ def fast_wave_function_collapse(
 
 
 def generate_until_valid_optimized(
-    width,
-    height,
-    adjacency_bool,
-    num_tiles,
-    forced_boundaries,
-    max_attempts=50,
-    deterministic=False,
-):
+    width: int,
+    height: int,
+    adjacency_bool: np.ndarray,
+    num_tiles: int,
+    forced_boundaries: list[tuple[int, int, int]],
+    max_attempts: int = 50,
+    deterministic: bool = False,
+) -> np.ndarray | None:
     """
-    Tries generating a valid layout up to max_attempts times.
+    Attempts to generate a valid collapsed grid up to max_attempts times.
+    
+    Parameters:
+      width (int): Map width.
+      height (int): Map height.
+      adjacency_bool (np.ndarray): Precomputed Boolean adjacency matrix.
+      num_tiles (int): Number of tile types.
+      forced_boundaries (list[tuple[int, int, int]]): Forced boundary positions.
+      max_attempts (int): Maximum generation attempts.
+      deterministic (bool): If True, uses deterministic collapse.
 
-    Returns the collapsed boolean grid if successful, or None otherwise.
+    Returns:
+      np.ndarray or None: Valid collapsed grid or None if all attempts fail.
     """
     for attempt in range(1, max_attempts + 1):
         result = fast_wave_function_collapse(
@@ -300,9 +370,16 @@ def generate_until_valid_optimized(
 # ---------------------------------------------------------------------------------------
 
 
-def grid_to_layout(grid, tile_symbols):
+def grid_to_layout(grid: np.ndarray, tile_symbols: list[str]) -> list[list[str]]:
     """
     Converts the boolean grid into a 2D list of tile symbols.
+
+    Parameters:
+      grid (np.ndarray): The collapsed grid with shape (height, width, num_tiles).
+      tile_symbols (list[str]): List of tile symbols ordered by their indices.
+
+    Returns:
+      list[list[str]]: 2D layout in tile symbols.
     """
     height, width, _ = grid.shape
     layout = []
@@ -379,7 +456,7 @@ if __name__ == "__main__":
 
     # Set map dimensions.
     WIDTH, HEIGHT = 20, 12
-    forced_boundaries = get_forced_boundaries(WIDTH, HEIGHT)
+    forced_boundaries = get_forced_boundaries(WIDTH, HEIGHT, tile_to_index)
 
     # Try to generate a valid layout.
     # The 'deterministic' flag can be set to True to always choose the highest weight.
