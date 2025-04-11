@@ -4,67 +4,6 @@ import numpy as np
 from numba import njit
 
 # ---------------------------------------------------------------------------------------
-# 1. TILE DEFINITIONS (using symbols, edges, and image filenames for reference)
-# ---------------------------------------------------------------------------------------
-
-PAC_TILES = {
-    " ": {
-        "image": "pac_floor.png",
-        "edges": {"U": "OPEN", "R": "OPEN", "D": "OPEN", "L": "OPEN"},
-    },
-    "═": {
-        "image": "pac_wall_h.png",
-        "edges": {"U": "OPEN", "R": "LINE", "D": "OPEN", "L": "LINE"},
-    },
-    "║": {
-        "image": "pac_wall_v.png",
-        "edges": {"U": "LINE", "R": "OPEN", "D": "LINE", "L": "OPEN"},
-    },
-    "╔": {
-        "image": "pac_corner_tl.png",
-        "edges": {"U": "OPEN", "R": "LINE", "D": "LINE", "L": "OPEN"},
-    },
-    "╗": {
-        "image": "pac_corner_tr.png",
-        "edges": {"U": "OPEN", "R": "OPEN", "D": "LINE", "L": "LINE"},
-    },
-    "╚": {
-        "image": "pac_corner_bl.png",
-        "edges": {"U": "LINE", "R": "LINE", "D": "OPEN", "L": "OPEN"},
-    },
-    "╝": {
-        "image": "pac_corner_br.png",
-        "edges": {"U": "LINE", "R": "OPEN", "D": "OPEN", "L": "LINE"},
-    },
-}
-
-# Opposite directions used for edge compatibility.
-OPPOSITE_DIRECTION = {"U": "D", "D": "U", "L": "R", "R": "L"}
-DIRECTIONS = ["U", "R", "D", "L"]
-
-# Create a fixed order for tiles and a mapping from symbol to index.
-tile_symbols = [" ", "═", "║", "╔", "╗", "╚", "╝"]
-num_tiles = len(tile_symbols)
-tile_to_index = {s: i for i, s in enumerate(tile_symbols)}
-
-# ---------------------------------------------------------------------------------------
-# 2. PRECOMPUTE ADJACENCY MATRIX (as a Boolean NumPy array)
-# ---------------------------------------------------------------------------------------
-
-# Build a boolean array of shape (num_tiles, 4, num_tiles). For each tile index i
-# and direction d (0:U, 1:R, 2:D, 3:L), a True value for index j indicates that tile j
-# is allowed as a neighbor.
-adjacency_bool = np.zeros((num_tiles, 4, num_tiles), dtype=np.bool_)
-
-for i, tile_a in enumerate(tile_symbols):
-    for d, direction in enumerate(DIRECTIONS):
-        for j, tile_b in enumerate(tile_symbols):
-            edge_a = PAC_TILES[tile_a]["edges"][direction]
-            edge_b = PAC_TILES[tile_b]["edges"][OPPOSITE_DIRECTION[direction]]
-            if edge_a == edge_b:
-                adjacency_bool[i, d, j] = True
-
-# ---------------------------------------------------------------------------------------
 # 3. FORCED BOUNDARIES
 # ---------------------------------------------------------------------------------------
 
@@ -241,7 +180,9 @@ def propagate_from_cell(
     return True
 
 
-def fast_wfc_collapse_step(grid, width, height, num_tiles, adjacency_bool, action, deterministic=False):
+def fast_wfc_collapse_step(
+    grid, width, height, num_tiles, adjacency_bool, action, deterministic=False
+):
     """
     Performs a single collapse step on the given grid using the provided action vector.
     Returns (updated_grid, truncate) where truncate=True signals a contradiction.
@@ -249,10 +190,10 @@ def fast_wfc_collapse_step(grid, width, height, num_tiles, adjacency_bool, actio
     x, y = find_lowest_entropy_cell(grid, height, width, num_tiles)
     if x == -2 and y == -2:
         # Contradiction detected.
-        return grid, True
+        return grid, False, True
     if x == -1 and y == -1:
         # All cells are collapsed.
-        return grid, False
+        return grid, True, False
     chosen = choose_tile_with_action(grid, x, y, num_tiles, action, deterministic)
     # Collapse the cell (set only the chosen possibility to True)
     for t in range(num_tiles):
@@ -260,8 +201,8 @@ def fast_wfc_collapse_step(grid, width, height, num_tiles, adjacency_bool, actio
     grid[y, x, chosen] = True
     # Propagate constraints from the collapsed cell.
     if not propagate_from_cell(grid, width, height, adjacency_bool, num_tiles, x, y):
-        return grid, True
-    return grid, False
+        return grid, False, True
+    return grid, False, False
 
 
 # ---------------------------------------------------------------------------------------
@@ -269,7 +210,7 @@ def fast_wfc_collapse_step(grid, width, height, num_tiles, adjacency_bool, actio
 # ---------------------------------------------------------------------------------------
 
 
-def wave_function_collapse_optimized(
+def fast_wave_function_collapse(
     width, height, adjacency_bool, num_tiles, forced_boundaries, deterministic=False
 ):
     """
@@ -344,7 +285,7 @@ def generate_until_valid_optimized(
     Returns the collapsed boolean grid if successful, or None otherwise.
     """
     for attempt in range(1, max_attempts + 1):
-        result = wave_function_collapse_optimized(
+        result = fast_wave_function_collapse(
             width, height, adjacency_bool, num_tiles, forced_boundaries, deterministic
         )
         if result is not None:
@@ -379,6 +320,63 @@ def grid_to_layout(grid, tile_symbols):
 
 
 if __name__ == "__main__":
+    # ---------------------------------------------------------------------------------------
+    # 1. TILE DEFINITIONS (using symbolsand edges)
+    # ---------------------------------------------------------------------------------------
+
+    PAC_TILES = {
+        " ": {
+            "edges": {"U": "OPEN", "R": "OPEN", "D": "OPEN", "L": "OPEN"},
+        },
+        "X": {
+            "edges": {"U": "OPEN", "R": "OPEN", "D": "OPEN", "L": "OPEN"},
+        },
+        "═": {
+            "edges": {"U": "OPEN", "R": "LINE", "D": "OPEN", "L": "LINE"},
+        },
+        "║": {
+            "edges": {"U": "LINE", "R": "OPEN", "D": "LINE", "L": "OPEN"},
+        },
+        "╔": {
+            "edges": {"U": "OPEN", "R": "LINE", "D": "LINE", "L": "OPEN"},
+        },
+        "╗": {
+            "edges": {"U": "OPEN", "R": "OPEN", "D": "LINE", "L": "LINE"},
+        },
+        "╚": {
+            "edges": {"U": "LINE", "R": "LINE", "D": "OPEN", "L": "OPEN"},
+        },
+        "╝": {
+            "edges": {"U": "LINE", "R": "OPEN", "D": "OPEN", "L": "LINE"},
+        },
+    }
+
+    # Opposite directions used for edge compatibility.
+    OPPOSITE_DIRECTION = {"U": "D", "D": "U", "L": "R", "R": "L"}
+    DIRECTIONS = ["U", "R", "D", "L"]
+
+    # Create a fixed order for tiles and a mapping from symbol to index.
+    tile_symbols = list(PAC_TILES.keys())
+    num_tiles = len(tile_symbols)
+    tile_to_index = {s: i for i, s in enumerate(tile_symbols)}
+
+    # ---------------------------------------------------------------------------------------
+    # 2. PRECOMPUTE ADJACENCY MATRIX (as a Boolean NumPy array)
+    # ---------------------------------------------------------------------------------------
+
+    # Build a boolean array of shape (num_tiles, 4, num_tiles). For each tile index i
+    # and direction d (0:U, 1:R, 2:D, 3:L), a True value for index j indicates that tile j
+    # is allowed as a neighbor.
+    adjacency_bool = np.zeros((num_tiles, 4, num_tiles), dtype=np.bool_)
+
+    for i, tile_a in enumerate(tile_symbols):
+        for d, direction in enumerate(DIRECTIONS):
+            for j, tile_b in enumerate(tile_symbols):
+                edge_a = PAC_TILES[tile_a]["edges"][direction]
+                edge_b = PAC_TILES[tile_b]["edges"][OPPOSITE_DIRECTION[direction]]
+                if edge_a == edge_b:
+                    adjacency_bool[i, d, j] = True
+
     # Set map dimensions.
     WIDTH, HEIGHT = 20, 12
     forced_boundaries = get_forced_boundaries(WIDTH, HEIGHT)
