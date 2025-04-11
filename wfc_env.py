@@ -1,9 +1,9 @@
 import gymnasium as gym
 import numpy as np
-import torch
 from gymnasium import spaces
 
-from wfc_pacman_tiles import wfc_collapse
+from wfc_pacman_tiles import build_pacman_adjacency, wfc_collapse
+
 
 def grid_to_array(
     grid: list[list[set[str]]],
@@ -27,7 +27,7 @@ def grid_to_array(
 
 
 def wfc_next_collapse_position(grid: list[list[set[str]]]) -> tuple[int, int]:
-    min_options = float('inf')
+    min_options = float("inf")
     best_cell = (0, 0)
     for y, row in enumerate(grid):
         for x, cell in enumerate(row):
@@ -37,7 +37,7 @@ def wfc_next_collapse_position(grid: list[list[set[str]]]) -> tuple[int, int]:
     return best_cell
 
 
-class GymWrapperEnv(gym.Env):
+class WFCWrapper(gym.Env):
     def __init__(
         self,
         tile_count: int,
@@ -47,7 +47,6 @@ class GymWrapperEnv(gym.Env):
     ):
         self.all_tiles = list(tile_defs.keys())
         # Build the adjacency rules from the tile defs:
-        from wfc_pacman_tiles import build_pacman_adjacency  # add this import if not present
         self.adjacency = build_pacman_adjacency(tile_defs)
         # Use grid (list-of-list of sets) as internal state (grid indexed by [y][x])
         self.grid: list[list[set[str]]] = [
@@ -69,17 +68,24 @@ class GymWrapperEnv(gym.Env):
         )
 
     def get_observation(self) -> np.ndarray:
-        map_flat = grid_to_array(self.grid, self.all_tiles, self.map_length, self.map_width)
+        map_flat = grid_to_array(
+            self.grid, self.all_tiles, self.map_length, self.map_width
+        )
         pos = wfc_next_collapse_position(self.grid)
         # Normalize the collapse position: x-coordinate divided by (map_width-1), y by (map_length-1)
-        pos_array = np.array([pos[0] / (self.map_width - 1), pos[1] / (self.map_length - 1)], dtype=np.float32)
+        pos_array = np.array(
+            [pos[0] / (self.map_width - 1), pos[1] / (self.map_length - 1)],
+            dtype=np.float32,
+        )
         return np.concatenate([map_flat, pos_array])
 
     def step(self, action):
         # Convert the action (a float vector) into a dict: {tile: weight}
         action_dict = {tile: float(val) for tile, val in zip(self.all_tiles, action)}
         best_cell = wfc_next_collapse_position(self.grid)
-        self.grid, truncate = wfc_collapse(self.grid, best_cell, self.adjacency, action_dict)
+        self.grid, truncate = wfc_collapse(
+            self.grid, best_cell, self.adjacency, action_dict
+        )
         reward = 0  # todo: assign reward if needed
         terminate = False  # update termination condition as needed
         info = {}
