@@ -109,6 +109,7 @@ class WFCWrapper(gym.Env):
             action_vector,
         )
         reward = fake_reward(self.grid, self.num_tiles) if terminate else 0.0
+        reward = -10000 if truncate else reward
         info = {}
         return self.get_observation(), reward, terminate, truncate, info
 
