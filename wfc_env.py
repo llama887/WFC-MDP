@@ -108,7 +108,7 @@ class WFCWrapper(gym.Env):
             self.adjacency,
             action_vector,
         )
-        reward = fake_reward(self.grid, self.num_tiles)
+        reward = fake_reward(self.grid, self.num_tiles) if terminate else 0.0
         info = {}
         return self.get_observation(), reward, terminate, truncate, info
 
