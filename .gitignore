@@ -173,3 +173,6 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 .aider*
+
+*.zip
+ppo_wfc_logs
