@@ -223,5 +223,5 @@ if __name__ == "__main__":
 
     model = PPO("MlpPolicy", env, verbose=1, tensorboard_log=log_dir, device="cpu")
 
-    model.learn(total_timesteps=10000, callback=[checkpoint_callback, eval_callback])
+    model.learn(total_timesteps=1000000, callback=[checkpoint_callback, eval_callback])
     model.save("ppo_wfc")
