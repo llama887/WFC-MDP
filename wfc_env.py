@@ -1,8 +1,12 @@
+import os
+
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 from stable_baselines3 import PPO
+from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.env_checker import check_env
+from stable_baselines3.common.monitor import Monitor
 
 from fast_wfc import fast_wfc_collapse_step
 
@@ -176,23 +180,48 @@ if __name__ == "__main__":
                 if edge_a == edge_b:
                     adjacency_bool[i, d, j] = True
 
+    log_dir = "./ppo_wfc_logs/"
+    os.makedirs(log_dir, exist_ok=True)
+
     # Create an instance of the environment using
-    env = WFCWrapper(
-        map_length=12,
-        map_width=20,
-        tile_symbols=tile_symbols,
-        adjacency_bool=adjacency_bool,
-        num_tiles=num_tiles,
+    env = Monitor(
+        WFCWrapper(
+            map_length=12,
+            map_width=20,
+            tile_symbols=tile_symbols,
+            adjacency_bool=adjacency_bool,
+            num_tiles=num_tiles,
+        )
+    )
+
+    eval_env = Monitor(
+        WFCWrapper(
+            map_length=12,
+            map_width=20,
+            tile_symbols=tile_symbols,
+            adjacency_bool=adjacency_bool,
+            num_tiles=num_tiles,
+        )
     )
 
     # Check if the environment follows the Gym interface.
     check_env(env, warn=True)
     print("Environment check passed!")
 
-    # Create and train a PPO model.
-    model = PPO("MlpPolicy", env, verbose=1, device="cpu")
-    model.learn(total_timesteps=10000)
+    checkpoint_callback = CheckpointCallback(
+        save_freq=2000, save_path=log_dir, name_prefix="ppo_wfc_checkpoint"
+    )
 
-    # Save the trained model.
+    eval_callback = EvalCallback(
+        eval_env,
+        best_model_save_path=log_dir,
+        log_path=log_dir,
+        eval_freq=1000,
+        deterministic=True,
+        render=False,
+    )
+
+    model = PPO("MlpPolicy", env, verbose=1, tensorboard_log=log_dir, device="cpu")
+
+    model.learn(total_timesteps=10000, callback=[checkpoint_callback, eval_callback])
     model.save("ppo_wfc")
-    print("Training complete and model saved as 'ppo_wfc'")
