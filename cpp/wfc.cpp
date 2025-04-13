@@ -33,14 +33,14 @@ class Array2D {
         Array2D(std::size_t height, std::size_t width, T value) noexcept
             : height(height), width(width), data(width * height, value) {}
 
-        
-        const T &get(std::size_t i, std::size_t j) const noexcept {
+        T get(std::size_t i, std::size_t j) const noexcept {
             assert(i < height && j < width);
             return data[i * width + j];
         }
-        T &get(std::size_t i, std::size_t j) noexcept {
+
+        void set(std::size_t i, std::size_t j, T value) noexcept {
             assert(i < height && j < width);
-            return data[i * width + j];
+            data[i * width + j] = value;
         }
 
         bool operator==(const Array2D<T> &other) const noexcept {
@@ -72,14 +72,14 @@ class Array3D {
         Array3D(std::size_t height, std::size_t width, std::size_t depth, T value) noexcept
             : height(height), width(width), depth(depth), data(height * width * depth, value) {}
         
-        
-            const T &get(std::size_t i, std::size_t j, std::size_t k) const noexcept {
+        T get(std::size_t i, std::size_t j, std::size_t k) const noexcept {
             assert(i < height && j < width && k < depth);
             return data[i * width * depth + j * depth + k];
         }
-        T &get(std::size_t i, std::size_t j, std::size_t k) noexcept {
+
+        void set(std::size_t i, std::size_t j, std::size_t k, T value) noexcept {
             assert(i < height && j < width && k < depth);
-            return data[i * width * depth + j * depth + k];
+            data[i * width * depth + j * depth + k] = value;
         }
 
         bool operator==(const Array3D<T> &other) const noexcept {
@@ -187,7 +187,7 @@ class Wave {
                 return;
             }
 
-            data.get(index, pattern) = value;
+            data.set(index, pattern, value);
             
             // Update entropy memoization
             if (value == false) { // Remove pattern
@@ -331,8 +331,9 @@ class Propagator {
             
                     // Update compatible counts for all affected patterns
                     for (auto it = patterns.begin(), it_end = patterns.end(); it < it_end; ++it) {
-                        std::array<int, 4> &value = compatible.get(y2, x2, *it);
+                        std::array<int, 4> value = compatible.get(y2, x2, *it);
                         value[direction]--;
+                        compatible.set(y2, x2, *it, value);
                 
                         // If no compatible patterns remain in a direction, remove pattern from wave
                         if (value[direction] == 0) {
@@ -351,11 +352,11 @@ class WFC {
         // Random number generator
         std::minstd_rand gen;
         // Pattern frequencies
-        const std::vector<double> patterns_frequencies;
+        const std::vector<double> pattern_frequencies;
         // The wave of possibilities
         Wave wave;
         // Number of patterns
-        const size_t nb_patterns;
+        const size_t num_patterns;
         // Propagator for constraint propagation
         Propagator propagator;
         
@@ -378,7 +379,7 @@ class WFC {
         Array2D<unsigned> wave_to_output() const noexcept {
             Array2D<unsigned> output_patterns(wave.height, wave.width);
             for (unsigned i = 0; i < wave.size; i++) {
-                for (unsigned k = 0; k < nb_patterns; k++) {
+                for (unsigned k = 0; k < num_patterns; k++) {
                     if (wave.get(i, k)) {
                         output_patterns.data[i] = k;
                     }
@@ -397,14 +398,14 @@ class WFC {
         
         // Constructor for the WFC algorithm
         WFC(bool periodic_output, int seed,
-            std::vector<double> patterns_frequencies,
+            std::vector<double> pattern_frequencies,
             Propagator::PropagatorState propagator_state, 
             unsigned wave_height,
             unsigned wave_width) noexcept
             : gen(seed), 
-            patterns_frequencies(normalize(patterns_frequencies)),
-            wave(wave_height, wave_width, patterns_frequencies),
-            nb_patterns(patterns_frequencies.size()),
+            pattern_frequencies(normalize(pattern_frequencies)),
+            wave(wave_height, wave_width, pattern_frequencies),
+            num_patterns(pattern_frequencies.size()),
             propagator(wave.height, wave.width, periodic_output, propagator_state) {}
         
         // Observe the cell with minimum entropy
@@ -421,17 +422,17 @@ class WFC {
         
             // Calculate sum of weights for possible patterns
             double s = 0;
-            for (unsigned k = 0; k < nb_patterns; k++) {
-                s += wave.get(argmin, k) ? patterns_frequencies[k] : 0;
+            for (unsigned k = 0; k < num_patterns; k++) {
+                s += wave.get(argmin, k) ? pattern_frequencies[k] : 0;
             }
         
             // Randomly choose a pattern according to weights
             std::uniform_real_distribution<> dis(0, s);
             double random_value = dis(gen);
-            size_t chosen_value = nb_patterns - 1;
+            size_t chosen_value = num_patterns - 1;
         
-            for (unsigned k = 0; k < nb_patterns; k++) {
-                random_value -= wave.get(argmin, k) ? patterns_frequencies[k] : 0;
+            for (unsigned k = 0; k < num_patterns; k++) {
+                random_value -= wave.get(argmin, k) ? pattern_frequencies[k] : 0;
                 if (random_value <= 0) {
                     chosen_value = k;
                     break;
@@ -439,7 +440,7 @@ class WFC {
             }
         
             // Set the chosen pattern and remove others
-            for (unsigned k = 0; k < nb_patterns; k++) {
+            for (unsigned k = 0; k < num_patterns; k++) {
                 if (wave.get(argmin, k) != (k == chosen_value)) {
                     propagator.add_to_propagator(argmin / wave.width, argmin % wave.width, k);
                     wave.set(argmin, k, false);
@@ -447,6 +448,104 @@ class WFC {
             }
         
             return to_continue;
+        }
+
+        // Get full wave state (pattern probabilities for each cell)
+        Array3D<bool> get_wave_state() const {
+            Array3D<bool> state(wave.height, wave.width, num_patterns);
+            for (unsigned y = 0; y < wave.height; y++) {
+                for (unsigned x = 0; x < wave.width; x++) {
+                    for (unsigned p = 0; p < num_patterns; p++) {
+                        state.set(y, x, p, wave.get(y, x, p));
+                    }
+                }
+            }
+            return state;
+        }
+
+        // Get next cell to collapse with probabilities
+        std::tuple<int, int, std::vector<double>> get_next_collapse_cell() {
+            int argmin = wave.get_min_entropy(gen);
+            if (argmin == -1 || argmin == -2) {
+                return std::make_tuple(-1, -1, std::vector<double>());
+            }
+            
+            int y = argmin / wave.width;
+            int x = argmin % wave.width;
+            
+            std::vector<double> probabilities(num_patterns, 0.0);
+            double total_weight = 0.0;
+            for (unsigned p = 0; p < num_patterns; p++) {
+                if (wave.get(y, x, p)) {
+                    probabilities[p] = pattern_frequencies[p];
+                    total_weight += probabilities[p];
+                }
+            }
+
+            // Norm probabilities
+            if (total_weight > 0) {
+                for (auto& p: probabilities) {
+                    p /= total_weight;
+                }
+            }
+            return std::make_tuple(x, y, probabilities);
+        }
+
+        // Single collapse step with action vector
+        std::tuple<bool, bool> collapse_step(const std::vector<double>& action_vec) {
+            ObserveStatus status = observe();
+
+            if (status == failure) {
+                return std::make_tuple(false, true); // terminate=false, truncate=true
+            } else if (status == success) {
+                return std::make_tuple(true, false); // terminate=true, truncate=false
+            }
+
+            int argmin = wave.get_min_entropy(gen);
+            int y = argmin / wave.width;
+            int x = argmin % wave.width;
+
+            // Use action to influence collapse
+            double total_weight = 0.0;
+            for (unsigned p = 0; p < num_patterns; p++) {
+                if (wave.get(y, x, p)) {
+                    total_weight += action_vec[p];
+                }
+            }
+
+            // If total weight is zero, use uniform
+            if (total_weight <= 0.0) {
+                for (unsigned p = 0; p < num_patterns; p++) {
+                    if (wave.get(y, x, p)) {
+                        total_weight += 1.0;
+                    }
+                }
+            }
+
+            double rand_val = std::uniform_real_distribution<>(0, total_weight)(gen);
+            int chosen = -1;
+            double running_sum = 0.0;
+
+            for (unsigned p = 0; p < num_patterns; p++) {
+                if (wave.get(y, x, p)) {
+                    running_sum += action_vec[p] > 0 ? action_vec[p] : 1.0;
+                    if (running_sum >= rand_val) {
+                        chosen = p;
+                        break;
+                    }
+                }
+            }
+
+            // Collapse to chosen pattern
+            for (unsigned p = 0; p < num_patterns; p++) {
+                if (p != chosen && wave.get(y, x, p)) {
+                    propagator.add_to_propagator( y, x, p);
+                    wave.set(y, x, p, false);
+                }
+            }
+
+            propagator.propagate(wave); // Propagate constraints
+            return std::make_tuple(false, false); // continue
         }
         
         // Propagate constraints in the wave
