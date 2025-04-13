@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages, Extension
+from setuptools import setup, Extension
 import os
 import sys
 import subprocess
@@ -56,7 +56,6 @@ class CMakeBuild(build_ext):
             cwd=build_temp
         )
         
-        # Get the right directory structure
         # Make sure the extension directory exists
         ext_fullpath = self.get_ext_fullpath(ext.name)
         os.makedirs(os.path.dirname(ext_fullpath), exist_ok=True)
@@ -80,10 +79,9 @@ class CMakeBuild(build_ext):
             shutil.copy(built_file, ext_fullpath)
 
 setup(
-    name="optimizing_wfc",
+    name="wfc-cpp",
     version="0.1.0",
-    author="Your Name",
-    packages=find_packages(),
+    description="Wave Function Collapse C++ implementation with Python bindings",
     ext_modules=[CMakeExtension("wfc_cpp", sourcedir="cpp")],
     cmdclass=dict(build_ext=CMakeBuild),
     install_requires=[
@@ -91,7 +89,7 @@ setup(
         "gymnasium",
         "stable_baselines3",
         "torch",
-        "nanobind",  # Add nanobind as a dependency
+        "nanobind",
     ],
     python_requires=">=3.8",
 )
