@@ -1,223 +1,42 @@
-import os
-
 import gymnasium as gym
-import numpy as np
 from gymnasium import spaces
-from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
-from stable_baselines3.common.env_checker import check_env
-from stable_baselines3.common.monitor import Monitor
+import wfc_cpp
+import numpy as np
 
-from fast_wfc import fast_wfc_collapse_step
+class WFCEnv(gym.Env):
+    def __init__(self, input_data, height, width):
+        # TODO: Extract patterns from input data
+        self.patterns, self.frequencies, self.rules = extract_patterns(input_data)
+        self.height = height
+        self.width = width
 
+        self.num_patterns = len(self.patterns)
+        self.action_space = spaces.Box(low=0, high=1, shape=(self.num_patterns,))
+        self.observation_space = spaces.Box(low=0, high=1, shape=(self.height, self.width, self.num_patterns))
 
-def grid_to_array(
-    grid: np.ndarray,
-    num_tiles: int,
-    map_length: int,
-    map_width: int,
-) -> np.ndarray:
-    """Convert 3D grid to 1D observation array"""
-    arr = np.empty((map_length, map_width), dtype=np.float32)
-    for y in range(map_length):
-        for x in range(map_width):
-            possibilities = grid[y, x, :]
-            if np.count_nonzero(possibilities) == 1:
-                idx = int(np.argmax(possibilities))
-                arr[y, x] = idx / (num_tiles - 1)
-            else:
-                arr[y, x] = 0.5
-    return arr.flatten()
+        # Init env
+        _ = self.reset()
 
-
-def wfc_next_collapse_position(grid: np.ndarray) -> tuple[int, int]:
-    """Find the next position to collapse based on entropy"""
-    min_options = float("inf")
-    best_cell = (0, 0)
-    map_length, map_width, _ = grid.shape
-    for y in range(map_length):
-        for x in range(map_width):
-            options = np.count_nonzero(grid[y, x, :])
-            if options > 1 and options < min_options:
-                min_options = options
-                best_cell = (x, y)
-    return best_cell
-
-
-def fake_reward(grid: np.ndarray, num_tiles: int) -> float:
-    """Example reward function (customize as needed)"""
-    desired_X_count = 20
-    x_array = np.zeros(num_tiles)
-    x_array[1] = 1
-
-    matches = np.all(grid == x_array, axis=-1)
-    count = np.sum(matches)
-    return float(-abs(desired_X_count - count))
-
-
-class WFCWrapper(gym.Env):
-    def __init__(
-        self,
-        map_length: int,
-        map_width: int,
-        tile_symbols,
-        adjacency_bool,
-        num_tiles,
-    ):
-        # Use the fast implementation variables from fast_wfc.py:
-        self.tile_symbols = tile_symbols  # Tile symbols in order
-        self.adjacency = adjacency_bool  # Numpy boolean array with compatibility info
-        self.num_tiles = num_tiles
-        self.map_length: int = map_length
-        self.map_width: int = map_width
-        # Initialize grid as a NumPy boolean array (all possibilities True)
-        self.grid = np.ones(
-            (self.map_length, self.map_width, self.num_tiles), dtype=bool
-        )
-        self.action_space: spaces.Box = spaces.Box(
-            low=0.0, high=1.0, shape=(self.num_tiles,), dtype=np.float32
-        )
-        self.observation_space: spaces.Box = spaces.Box(
-            low=0.0,
-            high=1.0,
-            shape=(self.map_length * self.map_width + 2,),
-            dtype=np.float32,
-        )
-
-    def get_observation(self) -> np.ndarray:
-        """Create observation from current grid state"""
-        map_flat = grid_to_array(
-            self.grid, self.num_tiles, self.map_length, self.map_width
-        )
-        pos = wfc_next_collapse_position(self.grid)
-        # Normalize the collapse position: x-coordinate divided by (map_width-1), y by (map_length-1)
-        pos_array = np.array(
-            [pos[0] / (self.map_width - 1), pos[1] / (self.map_length - 1)],
-            dtype=np.float32,
-        )
-        return np.concatenate([map_flat, pos_array])
-
+    def reset(self):
+        self.wfc = wfc_cpp.WFC(False, np.random.randint(0, 1e4), self.frequencies, self.rules, self.height, self.width)
+        return self._get_obs()
+    
+    # Suboptimal version of getting observations
+    def get_obs(self):
+        obs = self.wfc.get_wave_state()
+        return obs.astype(np.float32)
+    
     def step(self, action):
-        """Perform a single WFC collapse step using the given action"""
-        # action is a float vector; convert to np.ndarray for fast_wfc functions.
-        action_vector = np.array(action, dtype=np.float64)
-        self.grid, terminate, truncate = fast_wfc_collapse_step(
-            self.grid,
-            self.map_width,
-            self.map_length,
-            self.num_tiles,
-            self.adjacency,
-            action_vector,
-        )
-        reward = fake_reward(self.grid, self.num_tiles) if terminate else 0.0
-        reward = -10000 if truncate else reward
+        # Apply action to collapse next cell
+        terminated, truncated = self.wfc.collapse_step(action)
+        
+        reward = 1.0 if terminated else 0.0 # Success
+        reward = -1.0 if truncated else reward # Contradiction
+
+        # Get observation
+        obs = self.get_obs()
+
+        # Info
         info = {}
-        return self.get_observation(), reward, terminate, truncate, info
 
-    def reset(self, seed=0):
-        """Reset the environment"""
-        self.grid = np.ones(
-            (self.map_length, self.map_width, self.num_tiles), dtype=bool
-        )
-        return self.get_observation(), {}
-
-    def render(self, mode="human"):
-        """Optional rendering method"""
-        pass
-
-
-if __name__ == "__main__":
-    # Example usage (PacMan tiles)
-    PAC_TILES = {
-        " ": {
-            "edges": {"U": "OPEN", "R": "OPEN", "D": "OPEN", "L": "OPEN"},
-        },
-        "X": {
-            "edges": {"U": "OPEN", "R": "OPEN", "D": "OPEN", "L": "OPEN"},
-        },
-        "═": {
-            "edges": {"U": "OPEN", "R": "LINE", "D": "OPEN", "L": "LINE"},
-        },
-        "║": {
-            "edges": {"U": "LINE", "R": "OPEN", "D": "LINE", "L": "OPEN"},
-        },
-        "╔": {
-            "edges": {"U": "OPEN", "R": "LINE", "D": "LINE", "L": "OPEN"},
-        },
-        "╗": {
-            "edges": {"U": "OPEN", "R": "OPEN", "D": "LINE", "L": "LINE"},
-        },
-        "╚": {
-            "edges": {"U": "LINE", "R": "LINE", "D": "OPEN", "L": "OPEN"},
-        },
-        "╝": {
-            "edges": {"U": "LINE", "R": "OPEN", "D": "OPEN", "L": "LINE"},
-        },
-    }
-
-    # Opposite directions used for edge compatibility.
-    OPPOSITE_DIRECTION = {"U": "D", "D": "U", "L": "R", "R": "L"}
-    DIRECTIONS = ["U", "R", "D", "L"]
-
-    # Create a fixed order for tiles and a mapping from symbol to index.
-    tile_symbols = list(PAC_TILES.keys())
-    num_tiles = len(tile_symbols)
-    tile_to_index = {s: i for i, s in enumerate(tile_symbols)}
-
-    # Build a boolean array for adjacency rules
-    adjacency_bool = np.zeros((num_tiles, 4, num_tiles), dtype=np.bool_)
-
-    for i, tile_a in enumerate(tile_symbols):
-        for d, direction in enumerate(DIRECTIONS):
-            for j, tile_b in enumerate(tile_symbols):
-                edge_a = PAC_TILES[tile_a]["edges"][direction]
-                edge_b = PAC_TILES[tile_b]["edges"][OPPOSITE_DIRECTION[direction]]
-                if edge_a == edge_b:
-                    adjacency_bool[i, d, j] = True
-
-    log_dir = "./ppo_wfc_logs/"
-    os.makedirs(log_dir, exist_ok=True)
-
-    # Create the environment
-    env = Monitor(
-        WFCWrapper(
-            map_length=12,
-            map_width=20,
-            tile_symbols=tile_symbols,
-            adjacency_bool=adjacency_bool,
-            num_tiles=num_tiles,
-        )
-    )
-
-    eval_env = Monitor(
-        WFCWrapper(
-            map_length=12,
-            map_width=20,
-            tile_symbols=tile_symbols,
-            adjacency_bool=adjacency_bool,
-            num_tiles=num_tiles,
-        )
-    )
-
-    # Check if the environment follows the Gym interface.
-    check_env(env, warn=True)
-    print("Environment check passed!")
-
-    # Set up callbacks for model training
-    checkpoint_callback = CheckpointCallback(
-        save_freq=2000, save_path=log_dir, name_prefix="ppo_wfc_checkpoint"
-    )
-
-    eval_callback = EvalCallback(
-        eval_env,
-        best_model_save_path=log_dir,
-        log_path=log_dir,
-        eval_freq=1000,
-        deterministic=True,
-        render=False,
-    )
-
-    # Create and train the model
-    model = PPO("MlpPolicy", env, verbose=1, tensorboard_log=log_dir, device="cpu")
-    model.learn(total_timesteps=10000, callback=[checkpoint_callback, eval_callback])
-    model.save("ppo_wfc")
+        return obs, reward, terminated, truncated, info

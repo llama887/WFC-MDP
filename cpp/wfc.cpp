@@ -10,6 +10,10 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <nanobind/nanobind.h>
+#include <nanobind/ndarray.h>
+
+namespace nb = nanobind;
 
 // direction utils: up, down, left, right
 constexpr int directions_x[4] = {0, -1, 1, 0};
@@ -451,16 +455,39 @@ class WFC {
         }
 
         // Get full wave state (pattern probabilities for each cell)
-        Array3D<bool> get_wave_state() const {
-            Array3D<bool> state(wave.height, wave.width, num_patterns);
-            for (unsigned y = 0; y < wave.height; y++) {
-                for (unsigned x = 0; x < wave.width; x++) {
-                    for (unsigned p = 0; p < num_patterns; p++) {
-                        state.set(y, x, p, wave.get(y, x, p));
+        nb::ndarray<bool> get_wave_state() const {
+            // Dimensions
+            size_t height = wave.height;
+            size_t width = wave.width;
+            size_t depth = num_patterns;
+
+            // Capsule for memory management
+            bool* data = new bool[height * width * depth];
+            auto capsule = nb::capsule(data, [](void *p) noexcept {
+                delete[] static_cast<bool *>(p);
+            });
+
+            // Fill the ndarray with the wave data
+            for (size_t y = 0; y < height; y++) {
+                for (size_t x = 0; x < width; x++) {
+                    for (size_t p = 0; p < depth; p++) {
+                        data[y * wave.width * depth + x * depth + p] = wave.get(y, x, p);
                     }
                 }
             }
-            return state;
+
+            // Create ndarray with allocated memory
+            auto result = nb::ndarray<bool>(
+                data,
+                {height, width, depth},
+                capsule,
+                {
+                    width * depth * sizeof(bool),
+                    depth * sizeof(bool),
+                    sizeof(bool)
+                }
+            );
+            return result;
         }
 
         // Get next cell to collapse with probabilities
