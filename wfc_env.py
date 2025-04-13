@@ -21,7 +21,6 @@ class WFCEnv(gym.Env):
         self.wfc = wfc_cpp.WFC(False, np.random.randint(0, 1e4), self.frequencies, self.rules, self.height, self.width)
         return self._get_obs()
     
-    # Suboptimal version of getting observations
     def get_obs(self):
         obs = self.wfc.get_wave_state()
         return obs.astype(np.float32)
