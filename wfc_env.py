@@ -4,6 +4,8 @@ import os
 import gymnasium as gym  # Use Gymnasium
 import numpy as np
 import yaml  # Import yaml
+from collections import deque
+from wfc_pacman_tiles import PAC_TILES  # Import the PAC_TILES instead of tile_info
 from gymnasium import spaces
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
@@ -75,79 +77,133 @@ def wfc_next_collapse_position(grid: np.ndarray) -> tuple[int, int]:
 
     return best_cell
 
+# Define tile_info based on PAC_TILES - using the indices that correspond to the tiles
+tile_info = {
+    "walkable": [0],  
+    "start": 0,      
+    "goal": 0      
+}
 
-def fake_reward(
-    grid: np.ndarray,
-    num_tiles: int,
-    tile_to_index: dict,
-    terminated: bool,
-    truncated: bool,
-) -> float:
+def check_solvability(grid, tile_info):
     """
-    Calculates reward. Only gives non-zero reward at the end of an episode.
-    Penalizes truncation (contradiction).
-    Rewards successful termination based on proximity to target tile count.
+    Check if a level is solvable by verifying all floor spaces are connected.
+    
+    Args:
+        grid: The tile grid representing the level
+        tile_info: Dict containing walkable tile indices
+    
+    Returns:
+        bool: True if all floor spaces are connected, False otherwise
     """
-    if truncated:
-        # print("Truncated, reward: -1000") # Debug print
-        return -1000.0  # Heavy penalty for contradictions
+    walkable = tile_info["walkable"]
+    h, w = grid.shape
+    
+    # Find all walkable positions
+    walkable_positions = []
+    for y in range(h):
+        for x in range(w):
+            if grid[y, x] in walkable:
+                walkable_positions.append((y, x))
+    
+    # No walkable tiles found or too few (need at least a few floor tiles for a valid level)
+    if len(walkable_positions) < 3: 
+        return False
+    
+    # Do a BFS from the first walkable position to check connectivity
+    start_pos = walkable_positions[0]
+    visited = set([start_pos])
+    queue = deque([start_pos])
+    
+    while queue:
+        y, x = queue.popleft()
+        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < h and 0 <= nx < w:
+                if grid[ny, nx] in walkable and (ny, nx) not in visited:
+                    visited.add((ny, nx))
+                    queue.append((ny, nx))
+    
+    # Check if all walkable positions are reachable
+    return len(visited) == len(walkable_positions)
 
-    if not terminated:
-        return 0.0  # No reward during the episode
+def binary_reward(grid, tile_info):
+    """
+    Calculate a binary reward based on level connectivity.
+    
+    Args:
+        grid: The tile grid representing the level
+        tile_info: Dict containing walkable tile indices
+    
+    Returns:
+        float: 1.0 if all floor spaces are connected, 0.0 otherwise
+    """
+    return 1.0 if check_solvability(grid, tile_info) else 0.0
 
-    # --- Reward calculation only if terminated successfully ---
-    target_tile = "X"  # The tile we want to count
-    desired_target_count = 20  # Example target count
+# def fake_reward(
+#     grid: np.ndarray,
+#     num_tiles: int,
+#     tile_to_index: dict,
+#     terminated: bool,
+#     truncated: bool,
+# ) -> float:
+#     """
+#     Calculates reward. Only gives non-zero reward at the end of an episode.
+#     Penalizes truncation (contradiction).
+#     Rewards successful termination based on proximity to target tile count.
+#     """
+#     if truncated:
+#         # print("Truncated, reward: -1000") # Debug print
+#         return -1000.0  # Heavy penalty for contradictions
 
-    if target_tile not in tile_to_index:
-        print(f"Warning: Target tile '{target_tile}' not found in tile_to_index.")
-        return -500.0  # Penalize if setup is wrong
+#     if not terminated:
+#         return 0.0  # No reward during the episode
 
-    target_idx = tile_to_index[target_tile]
+#     # --- Reward calculation only if terminated successfully ---
+#     target_tile = "X"  # The tile we want to count
+#     desired_target_count = 20  # Example target count
 
-    # Create a one-hot representation for the target tile
-    target_one_hot = np.zeros(num_tiles, dtype=bool)  # Use bool to match grid dtype
-    target_one_hot[target_idx] = True
+#     if target_tile not in tile_to_index:
+#         print(f"Warning: Target tile '{target_tile}' not found in tile_to_index.")
+#         return -500.0  # Penalize if setup is wrong
 
-    # Count cells that have collapsed *exactly* to the target tile
-    # Ensure grid is boolean before comparison
-    matches = np.all(grid == target_one_hot, axis=-1)
-    count = np.sum(matches)
+#     target_idx = tile_to_index[target_tile]
 
-    # Reward based on how close the count is to the desired count
-    # Using squared error gives a stronger signal near the target.
-    # Normalize the error? Max possible error is max(desired, width*height)
-    max_possible_count = grid.shape[0] * grid.shape[1]
-    # Max possible squared error: difference between desired and 0, or desired and max_possible
-    max_error_sq = float(
-        max(
-            (desired_target_count - 0) ** 2,
-            (desired_target_count - max_possible_count) ** 2,
-        )
-    )
-    error_sq = float((desired_target_count - count) ** 2)
+#     # Create a one-hot representation for the target tile
+#     target_one_hot = np.zeros(num_tiles, dtype=bool)  # Use bool to match grid dtype
+#     target_one_hot[target_idx] = True
 
-    # Scale reward between 0 (max error) and +100 (perfect match)
-    # Avoid division by zero if max_error_sq is 0 (e.g., 1x1 grid, desired=0)
-    if max_error_sq > 1e-6:
-        # Linear scaling: reward = 100 * (1 - sqrt(error_sq) / sqrt(max_error_sq))
-        # Quadratic scaling (more penalty further away):
-        normalized_reward = 100.0 * (1.0 - (error_sq / max_error_sq))
-    else:
-        normalized_reward = 100.0 if error_sq < 1e-6 else 0.0
+#     # Count cells that have collapsed *exactly* to the target tile
+#     # Ensure grid is boolean before comparison
+#     matches = np.all(grid == target_one_hot, axis=-1)
+#     count = np.sum(matches)
 
-    # Ensure reward is non-negative for successful termination
-    final_reward = max(0.0, normalized_reward)
-    # print(f"Terminated. Count={count}, Desired={desired_target_count}, Reward={final_reward}") # Debug print
-    return final_reward
+#     # Reward based on how close the count is to the desired count
+#     # Using squared error gives a stronger signal near the target.
+#     # Normalize the error? Max possible error is max(desired, width*height)
+#     max_possible_count = grid.shape[0] * grid.shape[1]
+#     # Max possible squared error: difference between desired and 0, or desired and max_possible
+#     max_error_sq = float(
+#         max(
+#             (desired_target_count - 0) ** 2,
+#             (desired_target_count - max_possible_count) ** 2,
+#         )
+#     )
+#     error_sq = float((desired_target_count - count) ** 2)
 
+#     # Scale reward between 0 (max error) and +100 (perfect match)
+#     # Avoid division by zero if max_error_sq is 0 (e.g., 1x1 grid, desired=0)
+#     if max_error_sq > 1e-6:
+#         # Linear scaling: reward = 100 * (1 - sqrt(error_sq) / sqrt(max_error_sq))
+#         # Quadratic scaling (more penalty further away):
+#         normalized_reward = 100.0 * (1.0 - (error_sq / max_error_sq))
+#     else:
+#         normalized_reward = 100.0 if error_sq < 1e-6 else 0.0
 
-# # Target subarray to count
-# target = np.array([0, 1, 0])
+#     # Ensure reward is non-negative for successful termination
+#     final_reward = max(0.0, normalized_reward)
+#     # print(f"Terminated. Count={count}, Desired={desired_target_count}, Reward={final_reward}") # Debug print
+#     return final_reward
 
-
-# # Count occurrences of the target subarray along the last dimension
-# matches = np.all(array == target, axis=-1)
 class WFCWrapper(gym.Env):
     """
     Gymnasium Environment for Wave Function Collapse controlled by an RL agent.
@@ -265,10 +321,25 @@ class WFCWrapper(gym.Env):
             truncated = True
             terminated = False  # Cannot be both terminated and truncated
 
-        # Calculate reward (only non-zero at the end)
-        reward = fake_reward(
-            self.grid, self.num_tiles, self.tile_to_index, terminated, truncated
-        )
+        # Calculate reward using solvability check instead of fake_reward
+        if terminated:
+            # Convert the WFC grid format to a format suitable for check_solvability
+            collapsed_grid = np.zeros((self.map_length, self.map_width), dtype=np.int32)
+            for y in range(self.map_length):
+                for x in range(self.map_width):
+                    possibilities = self.grid[y, x, :]
+                    if np.count_nonzero(possibilities) == 1:
+                        collapsed_grid[y, x] = np.argmax(possibilities)
+                    else:
+                        collapsed_grid[y, x] = -1
+            
+            reward = binary_reward(collapsed_grid, tile_info)
+        elif truncated:
+            # Penalty for contradictions or exceeding max steps
+            reward = -1.0
+        else:
+            # No reward during the episode
+            reward = 0.0
 
         # Get the next observation
         observation = self.get_observation()
