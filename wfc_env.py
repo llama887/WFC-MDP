@@ -1,3 +1,5 @@
+from collections import deque
+
 import gymnasium as gym  # Use Gymnasium
 import numpy as np
 from gymnasium import spaces
@@ -11,10 +13,11 @@ from biome_wfc import (  # We might not need render_wfc_grid if we keep console 
     render_wfc_grid,
 )
 
+
 def grid_to_binary_map(grid: list[list[set[str]]]) -> np.ndarray:
     """Converts the WFC grid into a binary map.
-       Empty cells (0) are those whose single tile name starts with 'sand' or 'path',
-       solid cells (1) are everything else.
+    Empty cells (0) are those whose single tile name starts with 'sand' or 'path',
+    solid cells (1) are everything else.
     """
     height = len(grid)
     width = len(grid[0])
@@ -38,10 +41,12 @@ def calc_num_regions(binary_map: np.ndarray) -> int:
     h, w = binary_map.shape
     visited = np.zeros((h, w), dtype=bool)
     num_regions = 0
+
     def neighbors(y, x):
-        for ny, nx in ((y-1,x), (y+1,x), (y,x-1), (y,x+1)):
+        for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
             if 0 <= ny < h and 0 <= nx < w:
                 yield ny, nx
+
     for y in range(h):
         for x in range(w):
             if binary_map[y, x] == 0 and not visited[y, x]:
@@ -58,10 +63,10 @@ def calc_num_regions(binary_map: np.ndarray) -> int:
     return num_regions
 
 
-from collections import deque
 def calc_longest_path(binary_map: np.ndarray) -> int:
     """Computes the longest shortest path among all empty cells (value 0) using BFS."""
     h, w = binary_map.shape
+
     def bfs(start_y, start_x):
         visited = -np.ones((h, w), dtype=int)
         q = deque()
@@ -72,12 +77,13 @@ def calc_longest_path(binary_map: np.ndarray) -> int:
             y, x = q.popleft()
             d = visited[y, x]
             max_dist = max(max_dist, d)
-            for ny, nx in ((y-1,x), (y+1,x), (y,x-1), (y,x+1)):
+            for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
                 if 0 <= ny < h and 0 <= nx < w:
                     if binary_map[ny, nx] == 0 and visited[ny, nx] == -1:
                         visited[ny, nx] = d + 1
                         q.append((ny, nx))
         return max_dist
+
     overall_max = 0
     for y in range(h):
         for x in range(w):
@@ -125,24 +131,21 @@ def grid_to_array(
 # wfc_next_collapse_position is replaced by find_lowest_entropy_cell from biome_wfc
 
 
-def compute_reward(grid: list[list[set[str]]], initial_path_length: int) -> float:
-    """Computes the reward based on regions connectivity and increase in longest path.
-       Regions: +100 reward if there's a single connected empty region; else -100.
-       Path: Scales linearly up to +100 when the longest path increases by at least 20 tiles.
+def compute_reward(grid: list[list[set[str]]], target_path_length: int) -> float:
+    """Computes the reward based on regions connectivity and how far we are from the target path length.
+    Regions: +100 reward if there's a single connected empty region; else -100.
+    Path: Scales linearly up to +100 when the longest path increases by at least 20 tiles.
     """
     binary_map = grid_to_binary_map(grid)
     regions = calc_num_regions(binary_map)
     current_path = calc_longest_path(binary_map)
-    
+
     region_reward = 100.0 if regions == 1 else -100.0
 
-    target_improvement = 20
-    improvement = current_path - initial_path_length
-    if improvement >= target_improvement:
+    if current_path >= target_path_length:
         path_reward = 100.0
     else:
-        path_reward = (improvement / target_improvement) * 100.0
-
+        path_reward = 100.0 / (abs(target_path_length - current_path) + 1)
     return region_reward + path_reward
 
 
@@ -177,6 +180,7 @@ class WFCWrapper(gym.Env):
         adjacency_bool: np.ndarray,
         num_tiles: int,
         tile_to_index: dict[str, int],  # Add tile_to_index
+        target_path_length: int = 50,
     ):
         super().__init__()  # Call parent constructor
         self.all_tiles = tile_symbols
@@ -210,6 +214,7 @@ class WFCWrapper(gym.Env):
         self.current_step = 0
         # Set a maximum number of steps to prevent infinite loops if termination fails
         self.max_steps = self.map_length * self.map_width + 10  # Allow some buffer
+        self.target_path_length = target_path_length
 
     def get_observation(self) -> np.ndarray:
         """Constructs the observation array (needs to be float32)."""
@@ -274,8 +279,16 @@ class WFCWrapper(gym.Env):
             terminated = False  # Cannot be both terminated and truncated
 
         # Calculate reward using the updated grid and initial longest path
-        reward = compute_reward(self.grid, self.initial_path_length)
+        reward = (
+            compute_reward(self.grid, self.target_path_length)
+            if terminated
+            else 0
+            if not truncated
+            else -1000
+        )
 
+        if reward != 0:
+            print(reward)
         # Get the next observation
         observation = self.get_observation()
         info = {}  # Provide additional info if needed (e.g., current step count)
@@ -299,8 +312,6 @@ class WFCWrapper(gym.Env):
         self.grid = initialize_wfc_grid(self.map_width, self.map_length, self.all_tiles)
         self.current_step = 0
         # Compute and store initial longest path
-        binary_map = grid_to_binary_map(self.grid)
-        self.initial_path_length = calc_longest_path(binary_map)
         observation = self.get_observation()
         info = {}  # Can provide initial info if needed
         # print("Environment Reset") # Debug print
@@ -378,7 +389,7 @@ if __name__ == "__main__":
 
         # Instead of console rendering, call the biome_wfc rendering (using pygame)
         render_wfc_grid(env.grid, tile_images)
-        pygame.time.delay(1)  # Delay for visualization (in milliseconds)
+        # pygame.time.delay(1)  # Delay for visualization (in milliseconds)
 
         # Process pygame events for window closure
         for event in pygame.event.get():
