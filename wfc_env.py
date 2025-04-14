@@ -176,7 +176,7 @@ class WFCWrapper(gym.Env):
 
         # Initial grid state using the function from biome_wfc
         # self.grid will hold the current state (list of lists of sets)
-        self.grid = initialize_wfc_grid(self.map_length, self.map_width, self.all_tiles)
+        self.grid = initialize_wfc_grid(self.map_width, self.map_length, self.all_tiles)
         # Keep a way to reset easily if needed, maybe store initial args?
         # Or just call initialize_wfc_grid again in reset.
 
@@ -286,7 +286,7 @@ class WFCWrapper(gym.Env):
         """Resets the environment to the initial state."""
         super().reset(seed=seed)  # Handle seeding correctly via Gymnasium Env
         # Re-initialize the grid using the function from biome_wfc
-        self.grid = initialize_wfc_grid(self.map_length, self.map_width, self.all_tiles)
+        self.grid = initialize_wfc_grid(self.map_width, self.map_length, self.all_tiles)
         self.current_step = 0
         observation = self.get_observation()
         info = {}  # Can provide initial info if needed
