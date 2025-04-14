@@ -12,11 +12,10 @@ from stable_baselines3.common.evaluation import evaluate_policy  # For final eva
 from stable_baselines3.common.monitor import Monitor
 
 # Import functions from biome_wfc instead of fast_wfc
-from biome_wfc import (
-    initialize_wfc_grid,
-    find_lowest_entropy_cell,
+from biome_wfc import (  # We might not need render_wfc_grid if we keep console rendering
     biome_wfc_step,
-    # We might not need render_wfc_grid if we keep console rendering
+    find_lowest_entropy_cell,
+    initialize_wfc_grid,
 )
 
 
@@ -41,29 +40,32 @@ def grid_to_array(
                 if idx != -1 and num_tiles > 1:
                     arr[y, x] = idx / (num_tiles - 1)
                 elif idx != -1 and num_tiles == 1:
-                    arr[y, x] = 0.0 # Handle single tile case
+                    arr[y, x] = 0.0  # Handle single tile case
                 else:
-                    arr[y, x] = -1.0 # Should not happen if tile_to_index is correct
+                    arr[y, x] = -1.0  # Should not happen if tile_to_index is correct
             elif num_options == 0:
-                 # Contradiction cell
-                 arr[y, x] = -2.0 # Use a different value for contradiction? Or stick to -1? Let's use -1.
-                 arr[y, x] = -1.0
+                # Contradiction cell
+                arr[
+                    y, x
+                ] = -2.0  # Use a different value for contradiction? Or stick to -1? Let's use -1.
+                arr[y, x] = -1.0
             else:
                 # Undecided cell
                 arr[y, x] = -1.0
     return arr.flatten()
+
 
 # wfc_next_collapse_position is replaced by find_lowest_entropy_cell from biome_wfc
 
 
 def fake_reward(
     grid: list[list[set[str]]],  # Grid is now list of lists of sets
-    tile_symbols: list[str], # Use symbols list
-    tile_to_index: dict[str, int], # Use the mapping
+    tile_symbols: list[str],  # Use symbols list
+    tile_to_index: dict[str, int],  # Use the mapping
     terminated: bool,
     truncated: bool,
 ) -> float:
-    num_tiles = len(tile_symbols) # Get num_tiles from symbols list
+    num_tiles = len(tile_symbols)  # Get num_tiles from symbols list
     """
     Calculates reward. Only gives non-zero reward at the end of an episode.
     Penalizes truncation (contradiction).
@@ -87,7 +89,7 @@ def fake_reward(
     target_idx = tile_to_index[target_tile]
 
     # Create a one-hot representation for the target tile
-    target_idx = tile_to_index[target_tile] # Keep this
+    target_idx = tile_to_index[target_tile]  # Keep this
 
     # Count cells collapsed exactly to the target tile by iterating through the list-of-sets grid
     count = 0
@@ -103,7 +105,7 @@ def fake_reward(
     # Reward calculation based on count remains the same conceptually
     # Normalize the error? Max possible error is max(desired, width*height)
     max_possible_count = grid.shape[0] * grid.shape[1]
-    max_possible_count = map_length * map_width # Use calculated dimensions
+    max_possible_count = map_length * map_width  # Use calculated dimensions
     # Max possible squared error calculation remains the same
     max_error_sq = float(
         max(
@@ -111,7 +113,9 @@ def fake_reward(
             (desired_target_count - max_possible_count) ** 2,
         )
     )
-    error_sq = float((desired_target_count - count) ** 2) # Error calculation remains the same
+    error_sq = float(
+        (desired_target_count - count) ** 2
+    )  # Error calculation remains the same
 
     # Scale reward between 0 (max error) and +100 (perfect match)
     # Avoid division by zero if max_error_sq is 0 (e.g., 1x1 grid, desired=0)
@@ -170,9 +174,7 @@ class WFCWrapper(gym.Env):
 
         # Initial grid state using the function from biome_wfc
         # self.grid will hold the current state (list of lists of sets)
-        self.grid = initialize_wfc_grid(
-            self.map_length, self.map_width, self.all_tiles
-        )
+        self.grid = initialize_wfc_grid(self.map_length, self.map_width, self.all_tiles)
         # Keep a way to reset easily if needed, maybe store initial args?
         # Or just call initialize_wfc_grid again in reset.
 
@@ -199,10 +201,14 @@ class WFCWrapper(gym.Env):
         """Constructs the observation array (needs to be float32)."""
         # Convert the list-of-sets grid to the flat numpy array format
         map_flat = grid_to_array(
-            self.grid, self.all_tiles, self.tile_to_index, self.map_length, self.map_width
+            self.grid,
+            self.all_tiles,
+            self.tile_to_index,
+            self.map_length,
+            self.map_width,
         )
         # Find the next cell to collapse using the function from biome_wfc
-        pos_tuple = find_lowest_entropy_cell(self.grid) # Returns (x, y) or None
+        pos_tuple = find_lowest_entropy_cell(self.grid)  # Returns (x, y) or None
 
         # Handle case where grid is fully collapsed (pos_tuple is None)
         if pos_tuple is None:
@@ -239,12 +245,12 @@ class WFCWrapper(gym.Env):
         # It modifies the grid in-place and returns terminated/truncated status
         # Note: biome_wfc_step expects action_probs, not logits
         self.grid, terminated, truncated = biome_wfc_step(
-            self.grid,          # The list-of-sets grid
-            self.adjacency,     # Adjacency rules (numpy bool array)
-            self.all_tiles,     # List of tile symbols
-            self.tile_to_index, # Tile symbol to index map
-            action_probs,       # Action probabilities from agent
-            deterministic=False # Use stochastic collapse during training
+            self.grid,  # The list-of-sets grid
+            self.adjacency,  # Adjacency rules (numpy bool array)
+            self.all_tiles,  # List of tile symbols
+            self.tile_to_index,  # Tile symbol to index map
+            action_probs,  # Action probabilities from agent
+            deterministic=False,  # Use stochastic collapse during training
         )
 
         # Check for truncation due to reaching max steps
@@ -278,9 +284,7 @@ class WFCWrapper(gym.Env):
         """Resets the environment to the initial state."""
         super().reset(seed=seed)  # Handle seeding correctly via Gymnasium Env
         # Re-initialize the grid using the function from biome_wfc
-        self.grid = initialize_wfc_grid(
-            self.map_length, self.map_width, self.all_tiles
-        )
+        self.grid = initialize_wfc_grid(self.map_length, self.map_width, self.all_tiles)
         self.current_step = 0
         observation = self.get_observation()
         info = {}  # Can provide initial info if needed
