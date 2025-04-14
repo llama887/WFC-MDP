@@ -16,6 +16,8 @@ from biome_wfc import (  # We might not need render_wfc_grid if we keep console 
     biome_wfc_step,
     find_lowest_entropy_cell,
     initialize_wfc_grid,
+    load_tile_images,
+    render_wfc_grid,
 )
 
 
@@ -327,65 +329,19 @@ class WFCWrapper(gym.Env):
 
 
 if __name__ == "__main__":
-    # --- Argument Parsing ---
-    parser = argparse.ArgumentParser(description="Train PPO for WFC Environment.")
-    parser.add_argument(
-        "--hyperparams",
-        type=str,
-        default=None,  # Default is None, meaning use defaults below
-        help="Path to YAML file containing hyperparameters (e.g., best_wfc_hyperparams.yaml).",
-    )
-    parser.add_argument(
-        "--load-best",
-        action="store_true",  # Make it a flag
-        help="Load hyperparameters from the default 'best_wfc_hyperparams.yaml' file.",
-    )
-    parser.add_argument(
-        "--total-timesteps",
-        type=int,
-        default=1_000_000,  # Default training timesteps
-        help="Total number of timesteps for training.",
-    )
-    parser.add_argument(
-        "--map-length",
-        type=int,
-        default=12,
-        help="Length (height) of the map.",
-    )
-    parser.add_argument(
-        "--map-width",
-        type=int,
-        default=20,
-        help="Width of the map.",
-    )
-    parser.add_argument(
-        "--log-dir",
-        type=str,
-        default="./ppo_wfc_logs/",
-        help="Directory to save logs and models.",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed for reproducibility.",
-    )
-    args = parser.parse_args()
+    import pygame
+    import numpy as np
 
-    # --- Constants and Setup ---
-    # Use map dimensions from args
-    MAP_LENGTH = args.map_length
-    MAP_WIDTH = args.map_width
-    LOG_DIR = args.log_dir
-    os.makedirs(LOG_DIR, exist_ok=True)
-    DEFAULT_HYPERPARAMS_FILE = "best_wfc_hyperparams.yaml"
+    # Use biome_wfc rendering: load tile images (opens a pygame window)
+    tile_images = load_tile_images()
 
-    # Define Tiles (ensure this matches the set used in tuning if loading params)
+    # Define environment parameters (using the same tile set as in our training setup)
+    MAP_LENGTH = 12
+    MAP_WIDTH = 20
+
     PAC_TILES = {
         " ": {"edges": {"U": "OPEN", "R": "OPEN", "D": "OPEN", "L": "OPEN"}},
-        "X": {
-            "edges": {"U": "OPEN", "R": "OPEN", "D": "OPEN", "L": "OPEN"}
-        },  # Example target tile
+        "X": {"edges": {"U": "OPEN", "R": "OPEN", "D": "OPEN", "L": "OPEN"}},
         "═": {"edges": {"U": "OPEN", "R": "LINE", "D": "OPEN", "L": "LINE"}},
         "║": {"edges": {"U": "LINE", "R": "OPEN", "D": "LINE", "L": "OPEN"}},
         "╔": {"edges": {"U": "OPEN", "R": "LINE", "D": "LINE", "L": "OPEN"}},
@@ -399,105 +355,20 @@ if __name__ == "__main__":
     num_tiles = len(tile_symbols)
     tile_to_index = {s: i for i, s in enumerate(tile_symbols)}
 
-    # Precompute Adjacency Matrix
+    # Precompute the adjacency_bool as before
     adjacency_bool = np.zeros((num_tiles, 4, num_tiles), dtype=np.bool_)
     for i, tile_a in enumerate(tile_symbols):
         for d, direction in enumerate(DIRECTIONS):
             for j, tile_b in enumerate(tile_symbols):
-                # Ensure edges exist for both tiles before accessing
-                if (
-                    "edges" in PAC_TILES[tile_a]
-                    and direction in PAC_TILES[tile_a]["edges"]
-                    and "edges" in PAC_TILES[tile_b]
-                    and OPPOSITE_DIRECTION[direction] in PAC_TILES[tile_b]["edges"]
-                ):
+                if ("edges" in PAC_TILES[tile_a] and direction in PAC_TILES[tile_a]["edges"] and
+                    "edges" in PAC_TILES[tile_b] and OPPOSITE_DIRECTION[direction] in PAC_TILES[tile_b]["edges"]):
                     edge_a = PAC_TILES[tile_a]["edges"][direction]
                     edge_b = PAC_TILES[tile_b]["edges"][OPPOSITE_DIRECTION[direction]]
                     if edge_a == edge_b:
                         adjacency_bool[i, d, j] = True
-                # else: Handle tiles without defined edges if necessary (implicitly incompatible)
 
-    # --- Hyperparameter Loading ---
-    # Define default hyperparameters (SB3 PPO defaults + common adjustments)
-    ppo_params = {
-        "learning_rate": 3e-4,
-        "n_steps": 2048,
-        "batch_size": 64,
-        "n_epochs": 10,
-        "gamma": 0.99,  # Default gamma, not tuned but kept here
-        "gae_lambda": 0.95,
-        "clip_range": 0.2,
-        "ent_coef": 0.0,
-        "vf_coef": 0.5,
-        "max_grad_norm": 0.5,
-        "seed": args.seed,  # Pass seed from args
-        "device": "cpu",  # Default to CPU, can be changed
-    }
-
-    hyperparams_file_to_load = None
-    if args.hyperparams:
-        hyperparams_file_to_load = args.hyperparams
-        print(
-            f"Attempting to load hyperparameters from specified file: {hyperparams_file_to_load}"
-        )
-    elif args.load_best:
-        if os.path.exists(DEFAULT_HYPERPARAMS_FILE):
-            hyperparams_file_to_load = DEFAULT_HYPERPARAMS_FILE
-            print(
-                f"Attempting to load hyperparameters from default best file: {hyperparams_file_to_load}"
-            )
-        else:
-            print(
-                f"Warning: --load-best flag set, but default file '{DEFAULT_HYPERPARAMS_FILE}' not found. Using default parameters."
-            )
-
-    if hyperparams_file_to_load:
-        try:
-            with open(hyperparams_file_to_load, "r") as f:
-                loaded_params_yaml = yaml.safe_load(f)
-                # Expecting a structure like {'ppo': {'learning_rate': ...}}
-                if (
-                    loaded_params_yaml
-                    and isinstance(loaded_params_yaml, dict)
-                    and "ppo" in loaded_params_yaml
-                ):
-                    loaded_ppo_params = loaded_params_yaml["ppo"]
-                    if isinstance(loaded_ppo_params, dict):
-                        # Update the defaults with the loaded params
-                        ppo_params.update(loaded_ppo_params)
-                        print("Successfully loaded and updated hyperparameters:")
-                        # Print loaded params neatly
-                        for key, value in loaded_ppo_params.items():
-                            print(f"  - {key}: {value}")
-                    else:
-                        print(
-                            f"Warning: 'ppo' key in YAML file '{hyperparams_file_to_load}' does not contain a dictionary. Using default parameters."
-                        )
-                else:
-                    print(
-                        f"Warning: YAML file '{hyperparams_file_to_load}' has incorrect format or missing 'ppo' key. Using default parameters."
-                    )
-        except FileNotFoundError:
-            print(
-                f"Error: Hyperparameter file not found: {hyperparams_file_to_load}. Using default parameters."
-            )
-        except yaml.YAMLError as e:
-            print(
-                f"Error parsing YAML file {hyperparams_file_to_load}: {e}. Using default parameters."
-            )
-        except Exception as e:
-            print(
-                f"Error loading hyperparameters from {hyperparams_file_to_load}: {e}. Using default parameters."
-            )
-    else:
-        print("Using default hyperparameters:")
-        # Print default params neatly
-        for key, value in ppo_params.items():
-            print(f"  - {key}: {value}")
-
-    # --- Environment Creation ---
-    # Use a lambda function to pass arguments easily, especially for VecEnv later if needed
-    env_kwargs = dict(
+    # Create the WFC environment instance
+    env = WFCWrapper(
         map_length=MAP_LENGTH,
         map_width=MAP_WIDTH,
         tile_symbols=tile_symbols,
@@ -505,129 +376,28 @@ if __name__ == "__main__":
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
     )
-    # Wrap the environment with Monitor to log rewards and episode info
-    env = Monitor(
-        WFCWrapper(**env_kwargs), filename=os.path.join(LOG_DIR, "monitor.csv")
-    )
-    # Create a separate Monitor-wrapped instance for evaluation
-    eval_env = Monitor(WFCWrapper(**env_kwargs))
 
-    # Check if the environment follows the Gym interface.
-    try:
-        check_env(env, warn=True)
-        print("Environment check passed!")
-    except Exception as e:
-        print(f"Environment check failed: {e}")
-        print("Attempting to continue, but the environment might be incompatible.")
-        # Consider exiting if check fails: exit(1)
+    # Reset the environment to its initial state
+    obs, info = env.reset()
 
-    # --- Callbacks ---
-    # Save checkpoints less frequently during longer training runs
-    # Ensure save_freq is at least 1
-    save_freq_checkpoints = max(
-        args.total_timesteps // 20, 5000
-    )  # e.g., save 20 times or every 5k steps
-    checkpoint_callback = CheckpointCallback(
-        save_freq=save_freq_checkpoints,
-        save_path=LOG_DIR,
-        name_prefix="ppo_wfc_checkpoint",
-    )
+    running = True
+    while running:
+        # Sample a random action (agent's output) from the environment's action space
+        action = env.action_space.sample()
+        obs, reward, terminated, truncated, info = env.step(action)
 
-    # Evaluate less frequently but maybe more episodes for better estimate
-    # Ensure eval_freq is at least 1
-    eval_freq_callback = max(
-        args.total_timesteps // 50, 2000
-    )  # e.g., eval 50 times or every 2k steps
-    eval_callback = EvalCallback(
-        eval_env,
-        best_model_save_path=os.path.join(
-            LOG_DIR, "best_model"
-        ),  # Save best model here
-        log_path=LOG_DIR,
-        eval_freq=eval_freq_callback,
-        n_eval_episodes=10,  # More episodes for robust evaluation
-        deterministic=True,
-        render=False,
-        warn=False,  # Suppress callback warnings during training
-    )
+        # Instead of console rendering, call the biome_wfc rendering (using pygame)
+        render_wfc_grid(env.grid, tile_images)
+        pygame.time.delay(200)  # Delay for visualization (in milliseconds)
 
-    # --- Model Training ---
-    # Use the loaded/default ppo_params dictionary
-    # Ensure seed is passed correctly if loaded from YAML or args
-    if "seed" not in ppo_params:
-        ppo_params["seed"] = args.seed  # Ensure seed is set
+        # Process pygame events for window closure
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
 
-    model = PPO(
-        "MlpPolicy",
-        env,
-        verbose=1,
-        tensorboard_log=LOG_DIR,
-        **ppo_params,  # Unpack the hyperparameter dictionary
-    )
+        if terminated or truncated:
+            print("WFC completed successfully." if terminated else "WFC failed (contradiction).")
+            obs, info = env.reset()
 
-    print("\n--- Training Configuration ---")
-    print(f"Total Timesteps: {args.total_timesteps}")
-    print(f"Map Dimensions: {MAP_LENGTH}x{MAP_WIDTH}")
-    print(f"Log Directory: {LOG_DIR}")
-    print("PPO Hyperparameters:")
-    # Print effective hyperparameters used by the model
-    model_params = model.get_parameters()
-    policy_params = model_params.get("policy", {})  # PPO stores most params directly
-    for key, value in policy_params.items():
-        # Filter out large objects like optimizer state for clarity
-        if (
-            isinstance(value, (int, float, str, bool, list, tuple))
-            and key != "optimizer_class"
-            and key != "optimizer_kwargs"
-        ):
-            print(f"  {key}: {value}")
-    # Print others that might not be in policy dict directly
-    print(f"  learning_rate: {model.learning_rate}")
-    print(f"  n_steps: {model.n_steps}")
-    print(f"  batch_size: {model.batch_size}")
-    print(f"  n_epochs: {model.n_epochs}")
-    print(f"  seed: {ppo_params.get('seed')}")  # Get seed from original dict
-    print("----------------------------\n")
-
-    print(f"Starting training for {args.total_timesteps} timesteps...")
-    try:
-        model.learn(
-            total_timesteps=args.total_timesteps,
-            callback=[checkpoint_callback, eval_callback],
-            progress_bar=True,  # Show progress bar
-        )
-    except KeyboardInterrupt:
-        print("\nTraining interrupted by user.")
-
-    # Save the final model
-    final_model_path = os.path.join(LOG_DIR, "ppo_wfc_final")
-    model.save(final_model_path)
-    print(f"\nFinal model saved to {final_model_path}.zip")
-
-    # Optional: Load the best model found during training and evaluate it
-    best_model_path = os.path.join(LOG_DIR, "best_model", "best_model.zip")
-    if os.path.exists(best_model_path):
-        print(f"\nLoading best model from {best_model_path} for final evaluation...")
-        try:
-            # Load the best model using the eval_env
-            best_model = PPO.load(best_model_path, env=eval_env)
-            # Evaluate the loaded best model
-            mean_reward, std_reward = evaluate_policy(
-                best_model,
-                eval_env,  # Use the monitored eval_env
-                n_eval_episodes=20,
-                deterministic=True,
-                warn=False,
-            )
-            print(
-                f"Best model evaluation: Mean reward = {mean_reward:.2f} +/- {std_reward:.2f}"
-            )
-        except Exception as e:
-            print(f"Could not load or evaluate best model: {e}")
-    else:
-        print("\nBest model checkpoint not found.")
-
-    env.close()
-    eval_env.close()
-    print("\nTraining finished.")
-    print("\nTraining finished.")
+    pygame.quit()
+    exit(0)
