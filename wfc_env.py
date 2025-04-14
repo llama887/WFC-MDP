@@ -58,70 +58,7 @@ def fake_reward(
     terminated: bool,
     truncated: bool,
 ) -> float:
-    num_tiles = len(tile_symbols)  # Get num_tiles from symbols list
-    """
-    Calculates reward. Only gives non-zero reward at the end of an episode.
-    Penalizes truncation (contradiction).
-    Rewards successful termination based on proximity to target tile count.
-    """
-    if truncated:
-        # print("Truncated, reward: -1000") # Debug print
-        return -1000.0  # Heavy penalty for contradictions
-
-    if not terminated:
-        return 0.0  # No reward during the episode
-
-    # --- Reward calculation only if terminated successfully ---
-    target_tile = "X"  # The tile we want to count
-    desired_target_count = 20  # Example target count
-
-    if target_tile not in tile_to_index:
-        print(f"Warning: Target tile '{target_tile}' not found in tile_to_index.")
-        return -500.0  # Penalize if setup is wrong
-
-    target_idx = tile_to_index[target_tile]
-
-    # Create a one-hot representation for the target tile
-    target_idx = tile_to_index[target_tile]  # Keep this
-
-    # Count cells collapsed exactly to the target tile by iterating through the list-of-sets grid
-    count = 0
-    map_length = len(grid)
-    map_width = len(grid[0]) if map_length > 0 else 0
-    for y in range(map_length):
-        for x in range(map_width):
-            cell_set = grid[y][x]
-            # Check if the set contains exactly one element which is the target tile
-            if len(cell_set) == 1 and next(iter(cell_set)) == target_tile:
-                count += 1
-
-    # Reward calculation based on count remains the same conceptually
-    # Normalize the error? Max possible error is max(desired, width*height)
-    max_possible_count = grid.shape[0] * grid.shape[1]
-    max_possible_count = map_length * map_width  # Use calculated dimensions
-    # Max possible squared error calculation remains the same
-    max_error_sq = float(
-        max(
-            (desired_target_count - 0) ** 2,
-            (desired_target_count - max_possible_count) ** 2,
-        )
-    )
-    error_sq = float(
-        (desired_target_count - count) ** 2
-    )  # Error calculation remains the same
-
-    # Scale reward between 0 (max error) and +100 (perfect match)
-    # Avoid division by zero if max_error_sq is 0 (e.g., 1x1 grid, desired=0)
-    if max_error_sq > 1e-6:
-        # Linear scaling: reward = 100 * (1 - sqrt(error_sq) / sqrt(max_error_sq))
-        # Quadratic scaling (more penalty further away):
-        normalized_reward = 100.0 * (1.0 - (error_sq / max_error_sq))
-    else:
-        normalized_reward = 100.0 if error_sq < 1e-6 else 0.0
-
-    # Ensure reward is non-negative for successful termination
-    final_reward = max(0.0, normalized_reward)
-    # print(f"Terminated. Count={count}, Desired={desired_target_count}, Reward={final_reward}") # Debug print
+    final_reward = 0
     return final_reward
 
 
@@ -331,6 +268,7 @@ if __name__ == "__main__":
     MAP_WIDTH = 20
 
     from biome_adjacency_rules import create_adjacency_matrix
+
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     num_tiles = len(tile_symbols)
 
