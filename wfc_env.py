@@ -1,15 +1,6 @@
-import argparse  # Import argparse
-import os
-
 import gymnasium as gym  # Use Gymnasium
 import numpy as np
-import yaml  # Import yaml
 from gymnasium import spaces
-from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
-from stable_baselines3.common.env_checker import check_env
-from stable_baselines3.common.evaluation import evaluate_policy  # For final evaluation
-from stable_baselines3.common.monitor import Monitor
 
 # Import functions from biome_wfc instead of fast_wfc
 from biome_wfc import (  # We might not need render_wfc_grid if we keep console rendering
@@ -329,8 +320,8 @@ class WFCWrapper(gym.Env):
 
 
 if __name__ == "__main__":
-    import pygame
     import numpy as np
+    import pygame
 
     # Use biome_wfc rendering: load tile images (opens a pygame window)
     tile_images = load_tile_images()
@@ -360,8 +351,12 @@ if __name__ == "__main__":
     for i, tile_a in enumerate(tile_symbols):
         for d, direction in enumerate(DIRECTIONS):
             for j, tile_b in enumerate(tile_symbols):
-                if ("edges" in PAC_TILES[tile_a] and direction in PAC_TILES[tile_a]["edges"] and
-                    "edges" in PAC_TILES[tile_b] and OPPOSITE_DIRECTION[direction] in PAC_TILES[tile_b]["edges"]):
+                if (
+                    "edges" in PAC_TILES[tile_a]
+                    and direction in PAC_TILES[tile_a]["edges"]
+                    and "edges" in PAC_TILES[tile_b]
+                    and OPPOSITE_DIRECTION[direction] in PAC_TILES[tile_b]["edges"]
+                ):
                     edge_a = PAC_TILES[tile_a]["edges"][direction]
                     edge_b = PAC_TILES[tile_b]["edges"][OPPOSITE_DIRECTION[direction]]
                     if edge_a == edge_b:
@@ -396,7 +391,11 @@ if __name__ == "__main__":
                 running = False
 
         if terminated or truncated:
-            print("WFC completed successfully." if terminated else "WFC failed (contradiction).")
+            print(
+                "WFC completed successfully."
+                if terminated
+                else "WFC failed (contradiction)."
+            )
             obs, info = env.reset()
 
     pygame.quit()
