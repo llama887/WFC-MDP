@@ -14,7 +14,7 @@ from stable_baselines3.common.evaluation import evaluate_policy  # For final eva
 from stable_baselines3.common.monitor import Monitor
 
 from fast_wfc import fast_wfc_collapse_step
-
+from pacman_maze import PacmanMaze
 
 def grid_to_array(
     grid: np.ndarray,
@@ -126,84 +126,6 @@ def check_solvability(grid, tile_info):
     # Check if all walkable positions are reachable
     return len(visited) == len(walkable_positions)
 
-def binary_reward(grid, tile_info):
-    """
-    Calculate a binary reward based on level connectivity.
-    
-    Args:
-        grid: The tile grid representing the level
-        tile_info: Dict containing walkable tile indices
-    
-    Returns:
-        float: 1.0 if all floor spaces are connected, 0.0 otherwise
-    """
-    return 1.0 if check_solvability(grid, tile_info) else 0.0
-
-# def fake_reward(
-#     grid: np.ndarray,
-#     num_tiles: int,
-#     tile_to_index: dict,
-#     terminated: bool,
-#     truncated: bool,
-# ) -> float:
-#     """
-#     Calculates reward. Only gives non-zero reward at the end of an episode.
-#     Penalizes truncation (contradiction).
-#     Rewards successful termination based on proximity to target tile count.
-#     """
-#     if truncated:
-#         # print("Truncated, reward: -1000") # Debug print
-#         return -1000.0  # Heavy penalty for contradictions
-
-#     if not terminated:
-#         return 0.0  # No reward during the episode
-
-#     # --- Reward calculation only if terminated successfully ---
-#     target_tile = "X"  # The tile we want to count
-#     desired_target_count = 20  # Example target count
-
-#     if target_tile not in tile_to_index:
-#         print(f"Warning: Target tile '{target_tile}' not found in tile_to_index.")
-#         return -500.0  # Penalize if setup is wrong
-
-#     target_idx = tile_to_index[target_tile]
-
-#     # Create a one-hot representation for the target tile
-#     target_one_hot = np.zeros(num_tiles, dtype=bool)  # Use bool to match grid dtype
-#     target_one_hot[target_idx] = True
-
-#     # Count cells that have collapsed *exactly* to the target tile
-#     # Ensure grid is boolean before comparison
-#     matches = np.all(grid == target_one_hot, axis=-1)
-#     count = np.sum(matches)
-
-#     # Reward based on how close the count is to the desired count
-#     # Using squared error gives a stronger signal near the target.
-#     # Normalize the error? Max possible error is max(desired, width*height)
-#     max_possible_count = grid.shape[0] * grid.shape[1]
-#     # Max possible squared error: difference between desired and 0, or desired and max_possible
-#     max_error_sq = float(
-#         max(
-#             (desired_target_count - 0) ** 2,
-#             (desired_target_count - max_possible_count) ** 2,
-#         )
-#     )
-#     error_sq = float((desired_target_count - count) ** 2)
-
-#     # Scale reward between 0 (max error) and +100 (perfect match)
-#     # Avoid division by zero if max_error_sq is 0 (e.g., 1x1 grid, desired=0)
-#     if max_error_sq > 1e-6:
-#         # Linear scaling: reward = 100 * (1 - sqrt(error_sq) / sqrt(max_error_sq))
-#         # Quadratic scaling (more penalty further away):
-#         normalized_reward = 100.0 * (1.0 - (error_sq / max_error_sq))
-#     else:
-#         normalized_reward = 100.0 if error_sq < 1e-6 else 0.0
-
-#     # Ensure reward is non-negative for successful termination
-#     final_reward = max(0.0, normalized_reward)
-#     # print(f"Terminated. Count={count}, Desired={desired_target_count}, Reward={final_reward}") # Debug print
-#     return final_reward
-
 class WFCWrapper(gym.Env):
     """
     Gymnasium Environment for Wave Function Collapse controlled by an RL agent.
@@ -211,10 +133,7 @@ class WFCWrapper(gym.Env):
     Observation: Flattened grid state + normalized coordinates of the next cell to collapse.
                  Grid cells: Value is index/(num_tiles-1) if collapsed, -1.0 if undecided.
     Action: A vector of preferences (logits) for each tile type for the selected cell.
-    Reward: Sparse reward given only at the end of the episode.
-            + Scaled reward (0 to 100) based on proximity to target tile count for successful termination.
-            - 1000 for truncation (contradiction or max steps).
-            0 otherwise.
+    Reward: Based on the PCGRL binary reward mechanism, considering connectivity and path length.
     Termination: Grid is fully collapsed (all cells have exactly one possibility).
     Truncation: A contradiction occurs during propagation OR max steps reached.
     """
@@ -237,6 +156,7 @@ class WFCWrapper(gym.Env):
         self.map_length: int = map_length
         self.map_width: int = map_width
         self.tile_to_index = tile_to_index  # Store tile_to_index
+        self._maze = PacmanMaze()
 
         # Initial grid state (all possibilities True)
         self.initial_grid = np.ones(
@@ -263,6 +183,30 @@ class WFCWrapper(gym.Env):
         self.current_step = 0
         # Set a maximum number of steps to prevent infinite loops if termination fails
         self.max_steps = self.map_length * self.map_width + 10  # Allow some buffer
+        
+        # Store previous stats for reward calculation
+        self.previous_stats = None
+
+    def _grid_to_chars(self):
+        """Convert the internal grid representation to a 2D grid of characters for reward calculation."""
+        grid_chars = np.empty((self.map_length, self.map_width), dtype='<U10')
+        
+        for y in range(self.map_length):
+            for x in range(self.map_width):
+                if x < self.grid.shape[1] and y < self.grid.shape[0]:
+                    possibilities = self.grid[y, x, :]
+                    if np.count_nonzero(possibilities) == 1:
+                        idx = int(np.argmax(possibilities))
+                        if idx < len(self.all_tiles):
+                            grid_chars[y, x] = self.all_tiles[idx]
+                        else:
+                            grid_chars[y, x] = "#"  # Default to wall for invalid indices
+                    else:
+                        grid_chars[y, x] = "?"  # Uncollapsed cells
+                else:
+                    grid_chars[y, x] = "#"  # Outside grid bounds
+        
+        return grid_chars
 
     def get_observation(self) -> np.ndarray:
         """Constructs the observation array (needs to be float32)."""
@@ -317,51 +261,84 @@ class WFCWrapper(gym.Env):
 
         # Check for truncation due to reaching max steps
         if not terminated and not truncated and self.current_step >= self.max_steps:
-            # print(f"Max steps reached ({self.current_step}), truncating.") # Debug print
             truncated = True
             terminated = False  # Cannot be both terminated and truncated
 
-        # Calculate reward using solvability check instead of fake_reward
+        # Calculate reward using PCGRL binary reward approach
+        grid_chars = self._grid_to_chars()
+        current_stats = self._maze.get_stats(grid_chars)
+        
+        # Calculate reward based on PCGRL binary reward mechanism
         if terminated:
-            # Convert the WFC grid format to a format suitable for check_solvability
-            collapsed_grid = np.zeros((self.map_length, self.map_width), dtype=np.int32)
-            for y in range(self.map_length):
-                for x in range(self.map_width):
-                    possibilities = self.grid[y, x, :]
-                    if np.count_nonzero(possibilities) == 1:
-                        collapsed_grid[y, x] = np.argmax(possibilities)
-                    else:
-                        collapsed_grid[y, x] = -1
+            # For completed grids, we want to have fewer connected regions (ideally 1) 
+            # and longer paths (more gameplay)
+            regions_score = 5.0 / max(1, current_stats["regions"])  # Higher for fewer regions
+            path_length_score = 0.1 * current_stats["path-length"]  # Higher for longer paths
             
-            reward = binary_reward(collapsed_grid, tile_info)
+            # Combined reward - weighted toward having a single connected region
+            reward = regions_score + path_length_score
+            
+            # Bonus for fully connected levels (single region)
+            if current_stats["regions"] == 1:
+                reward += 5.0
+                
+            # Debug information
+            info = {
+                "steps": self.current_step,
+                "terminated_reason": "completed",
+                "regions": current_stats["regions"],
+                "path_length": current_stats["path-length"],
+                "reward": reward
+            }
         elif truncated:
             # Penalty for contradictions or exceeding max steps
-            reward = -1.0
+            reward = -10.0
+            
+            info = {
+                "steps": self.current_step,
+                "truncated_reason": "contradiction" if self.current_step < self.max_steps else "max_steps",
+                "regions": current_stats["regions"],
+                "path_length": current_stats["path-length"],
+                "reward": reward
+            }
         else:
-            # No reward during the episode
-            reward = 0.0
+            # During the episode (intermediate steps), provide smaller guidance rewards
+            # Small incentive to maintain connectivity
+            connectivity_progress = 0.1 / max(1, current_stats["regions"])
+            
+            # Small incentive for maintaining long paths
+            path_progress = 0.01 * current_stats["path-length"]
+            
+            # Combined intermediate reward
+            reward = connectivity_progress + path_progress
+            
+            info = {
+                "steps": self.current_step,
+                "regions": current_stats["regions"],
+                "path_length": current_stats["path-length"],
+                "reward": reward
+            }
 
         # Get the next observation
         observation = self.get_observation()
-        info = {}  # Provide additional info if needed (e.g., current step count)
-        info["steps"] = self.current_step
-        if terminated:
-            info["terminated_reason"] = "completed"
-        if truncated:
-            info["truncated_reason"] = (
-                "contradiction" if self.current_step < self.max_steps else "max_steps"
-            )
-
+        
         # Ensure reward is float
         reward = float(reward)
 
         return observation, reward, terminated, truncated, info
+
 
     def reset(self, seed=None, options=None):
         """Resets the environment to the initial state."""
         super().reset(seed=seed)  # Handle seeding correctly via Gymnasium Env
         self.grid = self.initial_grid.copy()
         self.current_step = 0
+        self.previous_stats = None  # Reset previous stats
+        
+        # Initialize stats with baseline values (completely open grid)
+        grid_chars = self._grid_to_chars()
+        self.previous_stats = self._maze.get_stats(grid_chars)
+        
         observation = self.get_observation()
         info = {}  # Can provide initial info if needed
         # print("Environment Reset") # Debug print
@@ -702,5 +679,4 @@ if __name__ == "__main__":
 
     env.close()
     eval_env.close()
-    print("\nTraining finished.")
     print("\nTraining finished.")
