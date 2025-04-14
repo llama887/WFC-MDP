@@ -11,78 +11,59 @@ from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.evaluation import evaluate_policy  # For final evaluation
 from stable_baselines3.common.monitor import Monitor
 
-from fast_wfc import fast_wfc_collapse_step
+# Import functions from biome_wfc instead of fast_wfc
+from biome_wfc import (
+    initialize_wfc_grid,
+    find_lowest_entropy_cell,
+    biome_wfc_step,
+    # We might not need render_wfc_grid if we keep console rendering
+)
 
 
 def grid_to_array(
-    grid: np.ndarray,
-    all_tiles: list[str],
+    grid: list[list[set[str]]],  # Grid is now list of lists of sets
+    tile_symbols: list[str],  # Renamed for consistency
+    tile_to_index: dict[str, int],  # Need mapping
     map_length: int,
     map_width: int,
 ) -> np.ndarray:
+    """Converts the list-of-sets grid to a flattened numpy array for the observation."""
     arr = np.empty((map_length, map_width), dtype=np.float32)
+    num_tiles = len(tile_symbols)
     for y in range(map_length):
         for x in range(map_width):
-            possibilities = grid[y, x, :]
-            if np.count_nonzero(possibilities) == 1:
-                idx = int(np.argmax(possibilities))
-                arr[y, x] = idx / (len(all_tiles) - 1)
+            cell_set = grid[y][x]
+            num_options = len(cell_set)
+            if num_options == 1:
+                # Collapsed cell
+                tile_name = next(iter(cell_set))
+                idx = tile_to_index.get(tile_name, -1)  # Get index from map
+                if idx != -1 and num_tiles > 1:
+                    arr[y, x] = idx / (num_tiles - 1)
+                elif idx != -1 and num_tiles == 1:
+                    arr[y, x] = 0.0 # Handle single tile case
+                else:
+                    arr[y, x] = -1.0 # Should not happen if tile_to_index is correct
+            elif num_options == 0:
+                 # Contradiction cell
+                 arr[y, x] = -2.0 # Use a different value for contradiction? Or stick to -1? Let's use -1.
+                 arr[y, x] = -1.0
             else:
-                # Use a distinct value for undecided cells, e.g., -1, normalized later if needed by model
-                # Or keep as 0.5 if model handles it. Let's use -1 for clarity.
+                # Undecided cell
                 arr[y, x] = -1.0
     return arr.flatten()
 
-
-def wfc_next_collapse_position(grid: np.ndarray) -> tuple[int, int]:
-    """Finds the non-collapsed cell with the lowest entropy (fewest options)."""
-    min_entropy = float("inf")
-    best_cell = (-1, -1)  # Initialize with invalid cell indicator
-    map_length, map_width, num_tiles = grid.shape
-    found_undecided = False
-
-    # Precompute log factors if calculating true entropy, otherwise use count
-    # weights = np.ones(num_tiles) # Example: assume uniform weight initially
-    # log_weights_sum = np.log(np.sum(weights))
-
-    for y in range(map_length):
-        for x in range(map_width):
-            possibilities = grid[y, x, :]
-            options = np.count_nonzero(possibilities)
-
-            if options > 1:  # Only consider cells not yet collapsed
-                found_undecided = True
-                # Use number of options as a simple proxy for entropy (lower is better)
-                entropy = options
-                # Add small noise to break ties randomly (helps exploration)
-                entropy += np.random.rand() * 1e-6
-
-                if entropy < min_entropy:
-                    min_entropy = entropy
-                    best_cell = (x, y)
-
-    # If no undecided cells found, return the indicator (-1, -1)
-    if not found_undecided:
-        return (-1, -1)
-
-    # This fallback should ideally not be needed if the loop logic is correct,
-    # but acts as a safeguard if all remaining cells have the same minimal entropy.
-    if best_cell == (-1, -1) and found_undecided:
-        for y in range(map_length):
-            for x in range(map_width):
-                if np.count_nonzero(grid[y, x, :]) > 1:
-                    return (x, y)  # Return the first undecided cell found
-
-    return best_cell
+# wfc_next_collapse_position is replaced by find_lowest_entropy_cell from biome_wfc
 
 
 def fake_reward(
-    grid: np.ndarray,
-    num_tiles: int,
-    tile_to_index: dict,
+    grid: list[list[set[str]]],  # Grid is now list of lists of sets
+    tile_symbols: list[str], # Use symbols list
+    tile_to_index: dict[str, int], # Use the mapping
     terminated: bool,
     truncated: bool,
 ) -> float:
+    num_tiles = len(tile_symbols) # Get num_tiles from symbols list
     """
     Calculates reward. Only gives non-zero reward at the end of an episode.
     Penalizes truncation (contradiction).
@@ -106,26 +87,31 @@ def fake_reward(
     target_idx = tile_to_index[target_tile]
 
     # Create a one-hot representation for the target tile
-    target_one_hot = np.zeros(num_tiles, dtype=bool)  # Use bool to match grid dtype
-    target_one_hot[target_idx] = True
+    target_idx = tile_to_index[target_tile] # Keep this
 
-    # Count cells that have collapsed *exactly* to the target tile
-    # Ensure grid is boolean before comparison
-    matches = np.all(grid == target_one_hot, axis=-1)
-    count = np.sum(matches)
+    # Count cells collapsed exactly to the target tile by iterating through the list-of-sets grid
+    count = 0
+    map_length = len(grid)
+    map_width = len(grid[0]) if map_length > 0 else 0
+    for y in range(map_length):
+        for x in range(map_width):
+            cell_set = grid[y][x]
+            # Check if the set contains exactly one element which is the target tile
+            if len(cell_set) == 1 and next(iter(cell_set)) == target_tile:
+                count += 1
 
-    # Reward based on how close the count is to the desired count
-    # Using squared error gives a stronger signal near the target.
+    # Reward calculation based on count remains the same conceptually
     # Normalize the error? Max possible error is max(desired, width*height)
     max_possible_count = grid.shape[0] * grid.shape[1]
-    # Max possible squared error: difference between desired and 0, or desired and max_possible
+    max_possible_count = map_length * map_width # Use calculated dimensions
+    # Max possible squared error calculation remains the same
     max_error_sq = float(
         max(
             (desired_target_count - 0) ** 2,
             (desired_target_count - max_possible_count) ** 2,
         )
     )
-    error_sq = float((desired_target_count - count) ** 2)
+    error_sq = float((desired_target_count - count) ** 2) # Error calculation remains the same
 
     # Scale reward between 0 (max error) and +100 (perfect match)
     # Avoid division by zero if max_error_sq is 0 (e.g., 1x1 grid, desired=0)
@@ -182,12 +168,13 @@ class WFCWrapper(gym.Env):
         self.map_width: int = map_width
         self.tile_to_index = tile_to_index  # Store tile_to_index
 
-        # Initial grid state (all possibilities True)
-        self.initial_grid = np.ones(
-            (self.map_length, self.map_width, self.num_tiles), dtype=bool
+        # Initial grid state using the function from biome_wfc
+        # self.grid will hold the current state (list of lists of sets)
+        self.grid = initialize_wfc_grid(
+            self.map_length, self.map_width, self.all_tiles
         )
-        # self.grid will hold the current state during an episode
-        self.grid = self.initial_grid.copy()
+        # Keep a way to reset easily if needed, maybe store initial args?
+        # Or just call initialize_wfc_grid again in reset.
 
         # Action space: Agent outputs preferences (logits) for each tile type.
         # Needs to be float32 for SB3.
@@ -210,21 +197,22 @@ class WFCWrapper(gym.Env):
 
     def get_observation(self) -> np.ndarray:
         """Constructs the observation array (needs to be float32)."""
+        # Convert the list-of-sets grid to the flat numpy array format
         map_flat = grid_to_array(
-            self.grid, self.all_tiles, self.map_length, self.map_width
+            self.grid, self.all_tiles, self.tile_to_index, self.map_length, self.map_width
         )
-        pos = wfc_next_collapse_position(self.grid)
+        # Find the next cell to collapse using the function from biome_wfc
+        pos_tuple = find_lowest_entropy_cell(self.grid) # Returns (x, y) or None
 
-        # Handle case where grid is fully collapsed (pos is (-1, -1))
-        if pos == (-1, -1):
-            # If fully collapsed, the position doesn't matter much, use (0,0)
-            # The episode should terminate based on this state anyway.
+        # Handle case where grid is fully collapsed (pos_tuple is None)
+        if pos_tuple is None:
+            # If fully collapsed or contradiction, position is irrelevant for next step
             pos_array = np.array([0.0, 0.0], dtype=np.float32)
         else:
             # Normalize the collapse position (x, y) to be between 0 and 1
-            # Avoid division by zero if width/length is 1
-            norm_x = pos[0] / (self.map_width - 1) if self.map_width > 1 else 0.0
-            norm_y = pos[1] / (self.map_length - 1) if self.map_length > 1 else 0.0
+            x, y = pos_tuple
+            norm_x = x / (self.map_width - 1) if self.map_width > 1 else 0.0
+            norm_y = y / (self.map_length - 1) if self.map_length > 1 else 0.0
             pos_array = np.array([norm_x, norm_y], dtype=np.float32)
 
         # Ensure final observation is float32
@@ -244,19 +232,19 @@ class WFCWrapper(gym.Env):
             np.sum(action_exp) + 1e-8
         )  # Add epsilon for stability
 
-        # Ensure probabilities are float64 for the Numba function if required
-        action_probs_64 = action_probs.astype(np.float64)
+        # action_probs are already float32, biome_wfc_step expects list or numpy array
+        # No need to convert to float64 unless biome_wfc specifically requires it (it doesn't seem to)
 
-        # Call the core WFC collapse and propagate step
-        # deterministic=False during training allows stochastic choice based on probs
-        self.grid, terminated, truncated = fast_wfc_collapse_step(
-            self.grid,
-            self.map_width,
-            self.map_length,
-            self.num_tiles,
-            self.adjacency,
-            action_probs_64,  # Pass normalized probabilities as float64
-            deterministic=False,
+        # Call the biome_wfc_step function
+        # It modifies the grid in-place and returns terminated/truncated status
+        # Note: biome_wfc_step expects action_probs, not logits
+        self.grid, terminated, truncated = biome_wfc_step(
+            self.grid,          # The list-of-sets grid
+            self.adjacency,     # Adjacency rules (numpy bool array)
+            self.all_tiles,     # List of tile symbols
+            self.tile_to_index, # Tile symbol to index map
+            action_probs,       # Action probabilities from agent
+            deterministic=False # Use stochastic collapse during training
         )
 
         # Check for truncation due to reaching max steps
@@ -265,9 +253,9 @@ class WFCWrapper(gym.Env):
             truncated = True
             terminated = False  # Cannot be both terminated and truncated
 
-        # Calculate reward (only non-zero at the end)
+        # Calculate reward using the updated grid (list of sets)
         reward = fake_reward(
-            self.grid, self.num_tiles, self.tile_to_index, terminated, truncated
+            self.grid, self.all_tiles, self.tile_to_index, terminated, truncated
         )
 
         # Get the next observation
@@ -289,7 +277,10 @@ class WFCWrapper(gym.Env):
     def reset(self, seed=None, options=None):
         """Resets the environment to the initial state."""
         super().reset(seed=seed)  # Handle seeding correctly via Gymnasium Env
-        self.grid = self.initial_grid.copy()
+        # Re-initialize the grid using the function from biome_wfc
+        self.grid = initialize_wfc_grid(
+            self.map_length, self.map_width, self.all_tiles
+        )
         self.current_step = 0
         observation = self.get_observation()
         info = {}  # Can provide initial info if needed
@@ -303,17 +294,20 @@ class WFCWrapper(gym.Env):
             for y in range(self.map_length):
                 row_str = ""
                 for x in range(self.map_width):
-                    possibilities = self.grid[y, x, :]
-                    num_options = np.count_nonzero(possibilities)
+                    cell_set = self.grid[y][x]
+                    num_options = len(cell_set)
                     if num_options == 1:
-                        idx = np.argmax(possibilities)
-                        row_str += self.all_tiles[idx] + " "
+                        # Collapsed cell
+                        tile_name = next(iter(cell_set))
+                        row_str += tile_name + " "
                     elif num_options == self.num_tiles:
-                        row_str += "? "  # Not touched yet (all possibilities)
+                        # Not touched yet (all possibilities)
+                        row_str += "? "
                     elif num_options == 0:
-                        row_str += "! "  # Contradiction
+                        # Contradiction
+                        row_str += "! "
                     else:
-                        # Indicate superposition simply
+                        # Undecided cell (superposition)
                         row_str += ". "
                 print(row_str.strip())
             print("-" * (self.map_width * 2))
