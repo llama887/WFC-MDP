@@ -62,48 +62,147 @@ def find_lowest_entropy_cell(grid):
     return random.choice(candidates) if candidates else None
 
 
-# Collapse a cell to a single tile
-def collapse_cell(grid, tile_symbols, x, y):
+# Collapse a cell to a single tile based on action probabilities
+def collapse_cell(grid, tile_symbols, tile_to_index, x, y, action_probs, deterministic=False):
+    """
+    Collapses the cell (x, y) by choosing a tile based on action_probs.
+
+    Args:
+        grid: The current WFC grid (list of lists of sets).
+        tile_symbols: List of all tile names.
+        tile_to_index: Mapping from tile name to index.
+        x, y: Coordinates of the cell to collapse.
+        action_probs: A list or numpy array of probabilities/weights for each tile index.
+        deterministic: If True, choose the tile with the highest probability.
+
+    Returns:
+        The chosen tile name, or None if the cell had no possibilities.
+    """
     possible_tiles = list(grid[y][x])
-    chosen_tile = random.choice(possible_tiles)
-    grid[y][x] = {chosen_tile}
+    if not possible_tiles:
+        return None # Should not happen if find_lowest_entropy found a valid cell
+
+    chosen_tile = None # Initialize chosen_tile
+
+    if deterministic:
+        best_tile = None
+        max_prob = -1.0
+        for tile in possible_tiles:
+            idx = tile_to_index[tile]
+            # Ensure index is within bounds of action_probs
+            if 0 <= idx < len(action_probs):
+                prob = action_probs[idx]
+                if prob > max_prob:
+                    max_prob = prob
+                    best_tile = tile
+        chosen_tile = best_tile
+    else:
+        # Weighted random selection
+        weights = []
+        valid_tiles = []
+        total_weight = 0.0
+        for tile in possible_tiles:
+            idx = tile_to_index[tile]
+            # Ensure index is within bounds and weight is non-negative
+            if 0 <= idx < len(action_probs):
+                weight = max(0.0, action_probs[idx])
+                if weight > 1e-9: # Use a small epsilon to avoid floating point issues with zero weights
+                    weights.append(weight)
+                    valid_tiles.append(tile)
+                    total_weight += weight
+
+        if total_weight > 1e-9 and valid_tiles: # Use weighted choice if possible
+            rand_val = random.uniform(0, total_weight)
+            current_sum = 0.0
+            # Default to last valid tile in case of floating point issues
+            chosen_tile = valid_tiles[-1]
+            for i, tile in enumerate(valid_tiles):
+                current_sum += weights[i]
+                if rand_val <= current_sum:
+                    chosen_tile = tile
+                    break
+        elif possible_tiles: # Check if there were original possibilities
+            # Fallback to uniform random choice among the original possibilities if all weights are zero or invalid
+            chosen_tile = random.choice(possible_tiles)
+        # If possible_tiles was empty initially, chosen_tile remains None
+
+    if chosen_tile:
+        grid[y][x] = {chosen_tile}
+
     return chosen_tile
 
 
 # Propagate constraints to neighbors
-def propagate_constraints(grid, adjacency_bool, tile_to_index, x, y):
-    stack = [(x, y)]
+def propagate_constraints(grid, adjacency_bool, tile_to_index, start_x, start_y):
+    """
+    Propagates constraints starting from cell (start_x, start_y).
+
+    Returns:
+        bool: True if propagation succeeded, False if a contradiction was found
+              (a cell ended up with zero possibilities).
+    """
+    stack = [(start_x, start_y)]
+    height = len(grid)
+    width = len(grid[0])
 
     while stack:
-        x, y = stack.pop()
-        current_possibilities = grid[y][x]
+        curr_x, curr_y = stack.pop()
+        # If the cell that was popped was already empty (due to prior contradiction), skip
+        if not grid[curr_y][curr_x]:
+            continue
 
-        for dir_idx, (dx, dy) in enumerate(
-            [(0, -1), (0, 1), (-1, 0), (1, 0)]
-        ):  # U, D, L, R
-            nx, ny = x + dx, y + dy
+        current_possibilities = grid[curr_y][curr_x]
 
-            if 0 <= nx < len(grid[0]) and 0 <= ny < len(grid):
-                neighbor_possibilities = grid[ny][nx].copy()
-                changed = False
+        # Directions: 0:U, 1:D, 2:L, 3:R (match adjacency_bool if it uses this order)
+        # Check biome_adjacency_rules.py: DIRECTIONS = ["U", "D", "L", "R"] -> (0, -1), (0, 1), (-1, 0), (1, 0)
+        for dir_idx, (dx, dy) in enumerate([(0, -1), (0, 1), (-1, 0), (1, 0)]): # U, D, L, R
+            nx, ny = curr_x + dx, curr_y + dy
 
-                for neighbor_tile in list(grid[ny][nx]):
-                    # Check if any current tile allows this neighbor in the given direction
-                    compatible = False
+            if 0 <= nx < width and 0 <= ny < height:
+                original_neighbor_possibilities = grid[ny][nx]
+                # If neighbor is already empty, no need to process further from it
+                if not original_neighbor_possibilities:
+                    continue
+
+                removed_options = set()
+
+                for neighbor_tile in original_neighbor_possibilities:
+                    neighbor_idx = tile_to_index[neighbor_tile]
+                    # Check if *any* tile currently possible in (curr_x, curr_y)
+                    # allows 'neighbor_tile' in the direction 'dir_idx'.
+                    is_compatible = False
                     for current_tile in current_possibilities:
                         current_idx = tile_to_index[current_tile]
-                        neighbor_idx = tile_to_index[neighbor_tile]
-                        if adjacency_bool[current_idx, dir_idx, neighbor_idx]:
-                            compatible = True
-                            break
+                        # Check adjacency: current_idx -> neighbor_idx in direction dir_idx
+                        # Ensure indices are valid before accessing adjacency_bool
+                        if 0 <= current_idx < adjacency_bool.shape[0] and \
+                           0 <= dir_idx < adjacency_bool.shape[1] and \
+                           0 <= neighbor_idx < adjacency_bool.shape[2]:
+                            if adjacency_bool[current_idx, dir_idx, neighbor_idx]:
+                                is_compatible = True
+                                break # Found a compatible tile, no need to check others
+                        # else: Handle potential index out of bounds if necessary, though tile_to_index should be correct
 
-                    if not compatible:
-                        neighbor_possibilities.discard(neighbor_tile)
-                        changed = True
+                    if not is_compatible:
+                        # This neighbor_tile is not supported by any possibility in the current cell.
+                        removed_options.add(neighbor_tile)
 
-                if changed:
-                    grid[ny][nx] = neighbor_possibilities
-                    stack.append((nx, ny))
+                if removed_options:
+                    new_neighbor_possibilities = original_neighbor_possibilities - removed_options
+                    if not new_neighbor_possibilities:
+                        # Contradiction detected!
+                        grid[ny][nx] = set() # Mark as empty
+                        return False # Signal failure
+
+                    # Only update and add to stack if possibilities actually changed
+                    if len(new_neighbor_possibilities) < len(original_neighbor_possibilities):
+                         grid[ny][nx] = new_neighbor_possibilities
+                         # Add the neighbor to the stack to propagate constraints *from* it.
+                         # Avoid adding if already in stack? Simple check:
+                         if (nx, ny) not in stack:
+                             stack.append((nx, ny))
+
+    return True # Propagation succeeded without contradiction
 
 
 # Render the WFC grid
@@ -125,27 +224,59 @@ def render_wfc_grid(grid, tile_images):
     pygame.display.flip()
 
 
-# Main WFC Algorithm
+# Main WFC Algorithm (Standalone execution example)
 def run_wfc(width, height, tile_images, adjacency_bool, tile_symbols, tile_to_index):
     grid = initialize_wfc_grid(width, height, tile_symbols)
     running = True
+    terminated = False
+    truncated = False
+    num_tiles = len(tile_symbols) # Get number of tiles for dummy action
 
-    while running:
+    while running and not terminated and not truncated:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
 
-        # Find and collapse the next cell
-        next_cell = find_lowest_entropy_cell(grid)
-        if not next_cell:
-            break  # All cells are resolved or in contradiction
+        if not running: # Exit if QUIT event was processed
+            break
 
-        x, y = next_cell
-        collapse_cell(grid, tile_symbols, x, y)
-        propagate_constraints(grid, adjacency_bool, tile_to_index, x, y)
+        # --- WFC Step ---
+        # Create dummy action probabilities (e.g., uniform) for standalone run
+        # In RL, this would come from the agent's policy
+        dummy_action_probs = [1.0 / num_tiles] * num_tiles
 
+        # Perform one step
+        grid, terminated, truncated = biome_wfc_step(
+            grid,
+            adjacency_bool,
+            tile_symbols,
+            tile_to_index,
+            dummy_action_probs,
+            deterministic=False # Use stochastic collapse for variety
+        )
+        # --- End WFC Step ---
+
+
+        # Render the current state
         render_wfc_grid(grid, tile_images)
-        pygame.time.delay(100)
+        pygame.time.delay(50) # Shorter delay for faster visualization
+
+        if terminated:
+            print("WFC Completed Successfully!")
+        elif truncated:
+            print("WFC Failed (Contradiction)!")
+            # Optionally render the grid one last time to show the contradiction state
+            render_wfc_grid(grid, tile_images)
+            pygame.time.delay(1000) # Pause to see the failure
+
+
+    # Keep the final state visible until quit, unless already quit by event
+    while running:
+         for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+         pygame.time.delay(10) # Prevent high CPU usage in final wait loop
+
 
     return grid
 
@@ -167,11 +298,7 @@ if __name__ == "__main__":
         tile_to_index,
     )
 
-    # Keep the window open until closed
-    waiting = True
-    while waiting:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                waiting = False
+    # The run_wfc function now handles the final display loop internally.
+    # No need for the extra waiting loop here.
 
     pygame.quit()
