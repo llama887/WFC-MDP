@@ -205,6 +205,95 @@ def propagate_constraints(grid, adjacency_bool, tile_to_index, start_x, start_y)
     return True # Propagation succeeded without contradiction
 
 
+def biome_wfc_step(grid, adjacency_bool, tile_symbols, tile_to_index, action_probs, deterministic=False):
+    """
+    Performs a single collapse and propagate step for the biome WFC.
+
+    Args:
+        grid: The current WFC grid state (list of lists of sets).
+        adjacency_bool: The precomputed adjacency rules.
+        tile_symbols: List of all tile names.
+        tile_to_index: Mapping from tile name to index.
+        action_probs: Probabilities/weights for tile selection from the RL agent.
+        deterministic: Whether to use deterministic (max prob) or stochastic selection.
+
+    Returns:
+        tuple: (grid, terminated, truncated)
+            - grid: The updated grid state.
+            - terminated: True if all cells are collapsed.
+            - truncated: True if a contradiction occurred.
+    """
+    # 1. Find the cell with the lowest entropy
+    next_cell_coords = find_lowest_entropy_cell(grid)
+
+    if next_cell_coords is None:
+        # Check if it's because all cells are collapsed or because of a previous contradiction
+        contradiction_found = False
+        all_collapsed = True
+        for r in grid:
+            for cell in r:
+                if not cell: # Found an empty set -> contradiction occurred previously
+                     contradiction_found = True
+                     all_collapsed = False # Ensure terminated is False if contradiction
+                     break
+                if len(cell) > 1:
+                    all_collapsed = False
+            if contradiction_found:
+                break
+        if contradiction_found:
+             return grid, False, True # Truncated (pre-existing contradiction)
+        if all_collapsed:
+             return grid, True, False # Terminated (successfully completed)
+        # If neither, it's an unexpected state, treat as truncated
+        return grid, False, True
+
+
+    x, y = next_cell_coords
+
+    # 2. Collapse the chosen cell using the action probabilities
+    chosen_tile = collapse_cell(grid, tile_symbols, tile_to_index, x, y, action_probs, deterministic)
+
+    if chosen_tile is None:
+        # This implies the cell chosen by find_lowest_entropy was already empty,
+        # or collapse failed unexpectedly. Indicates a contradiction state.
+        return grid, False, True # Truncated (contradiction during collapse)
+
+    # 3. Propagate constraints from the collapsed cell
+    success = propagate_constraints(grid, adjacency_bool, tile_to_index, x, y)
+
+    if not success:
+        # Propagation itself detected a contradiction
+        return grid, False, True # Truncated (contradiction during propagation)
+
+    # 4. Check if the process is finished *after* propagation
+    # Re-calling find_lowest_entropy_cell tells us if any undecided cells remain.
+    if find_lowest_entropy_cell(grid) is None:
+         # Need to double-check if it's completion or contradiction again,
+         # as propagation might have resolved everything or caused a new contradiction.
+        contradiction_found = False
+        all_collapsed = True
+        for r in grid:
+            for cell in r:
+                if not cell: # Check for contradiction created by propagation
+                     contradiction_found = True
+                     all_collapsed = False
+                     break
+                if len(cell) > 1:
+                    all_collapsed = False
+            if contradiction_found:
+                 break
+        if contradiction_found:
+             return grid, False, True # Truncated (contradiction post-propagation)
+        if all_collapsed:
+             return grid, True, False # Terminated (all collapsed post-propagation)
+        # If neither, unexpected state
+        return grid, False, True
+
+
+    # Otherwise, the process continues, not terminated, not truncated
+    return grid, False, False
+
+
 # Render the WFC grid
 def render_wfc_grid(grid, tile_images):
     screen.fill((255, 255, 255))
