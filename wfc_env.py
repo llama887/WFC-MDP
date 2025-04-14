@@ -264,7 +264,7 @@ if __name__ == "__main__":
     tile_images = load_tile_images()
 
     # Define environment parameters (using the same tile set as in our training setup)
-    MAP_LENGTH = 12
+    MAP_LENGTH = 15
     MAP_WIDTH = 20
 
     from biome_adjacency_rules import create_adjacency_matrix
