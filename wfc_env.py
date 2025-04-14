@@ -330,37 +330,9 @@ if __name__ == "__main__":
     MAP_LENGTH = 12
     MAP_WIDTH = 20
 
-    PAC_TILES = {
-        " ": {"edges": {"U": "OPEN", "R": "OPEN", "D": "OPEN", "L": "OPEN"}},
-        "X": {"edges": {"U": "OPEN", "R": "OPEN", "D": "OPEN", "L": "OPEN"}},
-        "═": {"edges": {"U": "OPEN", "R": "LINE", "D": "OPEN", "L": "LINE"}},
-        "║": {"edges": {"U": "LINE", "R": "OPEN", "D": "LINE", "L": "OPEN"}},
-        "╔": {"edges": {"U": "OPEN", "R": "LINE", "D": "LINE", "L": "OPEN"}},
-        "╗": {"edges": {"U": "OPEN", "R": "OPEN", "D": "LINE", "L": "LINE"}},
-        "╚": {"edges": {"U": "LINE", "R": "LINE", "D": "OPEN", "L": "OPEN"}},
-        "╝": {"edges": {"U": "LINE", "R": "OPEN", "D": "OPEN", "L": "LINE"}},
-    }
-    OPPOSITE_DIRECTION = {"U": "D", "D": "U", "L": "R", "R": "L"}
-    DIRECTIONS = ["U", "R", "D", "L"]
-    tile_symbols = list(PAC_TILES.keys())
+    from biome_adjacency_rules import create_adjacency_matrix
+    adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     num_tiles = len(tile_symbols)
-    tile_to_index = {s: i for i, s in enumerate(tile_symbols)}
-
-    # Precompute the adjacency_bool as before
-    adjacency_bool = np.zeros((num_tiles, 4, num_tiles), dtype=np.bool_)
-    for i, tile_a in enumerate(tile_symbols):
-        for d, direction in enumerate(DIRECTIONS):
-            for j, tile_b in enumerate(tile_symbols):
-                if (
-                    "edges" in PAC_TILES[tile_a]
-                    and direction in PAC_TILES[tile_a]["edges"]
-                    and "edges" in PAC_TILES[tile_b]
-                    and OPPOSITE_DIRECTION[direction] in PAC_TILES[tile_b]["edges"]
-                ):
-                    edge_a = PAC_TILES[tile_a]["edges"][direction]
-                    edge_b = PAC_TILES[tile_b]["edges"][OPPOSITE_DIRECTION[direction]]
-                    if edge_a == edge_b:
-                        adjacency_bool[i, d, j] = True
 
     # Create the WFC environment instance
     env = WFCWrapper(
