@@ -50,16 +50,33 @@ def grid_to_array(
 
 # wfc_next_collapse_position is replaced by find_lowest_entropy_cell from biome_wfc
 
-
 def fake_reward(
-    grid: list[list[set[str]]],  # Grid is now list of lists of sets
-    tile_symbols: list[str],  # Use symbols list
-    tile_to_index: dict[str, int],  # Use the mapping
+    grid: list[list[set[str]]],
+    tile_symbols: list[str],
+    tile_to_index: dict[str, int],
     terminated: bool,
     truncated: bool,
 ) -> float:
-    final_reward = 0
-    return final_reward
+    """Calculate reward based on water tiles and completion status."""
+    if truncated:
+        return -1000.0  # Large penalty for contradictions
+    
+    if not terminated:
+        return 0.0  # No reward during process
+    
+    # Count water tiles
+    water_count = 0
+    for row in grid:
+        for cell in row:
+            if len(cell) == 1 and "water" in next(iter(cell)).lower():
+                water_count += 1
+    
+    # Base reward proportional to number of water tiles
+    # Max reward of 100 if all tiles are waters (probably not desirable)
+    total_tiles = len(grid) * len(grid[0])
+    reward = (water_count / total_tiles) * 100
+    
+    return float(reward)
 
 
 # # Target subarray to count
@@ -259,16 +276,19 @@ class WFCWrapper(gym.Env):
 if __name__ == "__main__":
     import numpy as np
     import pygame
+    import os
+
+    # Create output directory if it doesn't exist
+    os.makedirs("wfc_reward_img", exist_ok=True)
 
     # Use biome_wfc rendering: load tile images (opens a pygame window)
     tile_images = load_tile_images()
 
-    # Define environment parameters (using the same tile set as in our training setup)
+    # Define environment parameters
     MAP_LENGTH = 15
     MAP_WIDTH = 20
 
     from biome_adjacency_rules import create_adjacency_matrix
-
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     num_tiles = len(tile_symbols)
 
@@ -282,30 +302,31 @@ if __name__ == "__main__":
         tile_to_index=tile_to_index,
     )
 
-    # Reset the environment to its initial state
+    # Reset the environment
     obs, info = env.reset()
-
     running = True
+    
     while running:
-        # Sample a random action (agent's output) from the environment's action space
+        # Sample a random action
         action = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(action)
 
-        # Instead of console rendering, call the biome_wfc rendering (using pygame)
-        render_wfc_grid(env.grid, tile_images)
-        pygame.time.delay(1)  # Delay for visualization (in milliseconds)
+        # Render with current step count and reward
+        current_reward = render_wfc_grid(
+            env.grid, 
+            tile_images,
+            save_filename=reward if terminated or truncated else None
+        )
+        
+        # pygame.time.delay(1)  # Delay for visualization
 
-        # Process pygame events for window closure
+        # Process pygame events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
 
         if terminated or truncated:
-            print(
-                "WFC completed successfully."
-                if terminated
-                else "WFC failed (contradiction)."
-            )
+            print(f"WFC ({'completed' if terminated else 'failed'}) with reward: {current_reward:.1f}")
             obs, info = env.reset()
 
     pygame.quit()

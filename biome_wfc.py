@@ -309,22 +309,53 @@ def biome_wfc_step(
 
 
 # Render the WFC grid
-def render_wfc_grid(grid, tile_images):
+def render_wfc_grid(grid, tile_images, save_filename=None):
+    """
+    Render the WFC grid and optionally save with reward info in filename.
+    
+    Args:
+        grid: The WFC grid (list of lists of sets)
+        tile_images: Dictionary mapping tile names to pygame surfaces
+        save_filename: Optional base filename to save with reward info
+    """
     screen.fill((255, 255, 255))
-
+    
+    # Count water tiles and total tiles
+    water_count = 0
+    total_tiles = len(grid) * len(grid[0])
+    
     for y in range(len(grid)):
         for x in range(len(grid[0])):
             if len(grid[y][x]) == 1:
                 tile_name = next(iter(grid[y][x]))
                 screen.blit(tile_images[tile_name], (x * TILE_SIZE, y * TILE_SIZE))
+                
+                # Count water tiles
+                if "water" in tile_name.lower():
+                    water_count += 1
             else:
+                # Draw undecided cells in white
                 pygame.draw.rect(
                     screen,
                     (255, 255, 255),
                     (x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE),
                 )
-
+    
+    # Calculate reward (percentage of water tiles)
+    water_percentage = (water_count / total_tiles) * 100 if total_tiles > 0 else 0
     pygame.display.flip()
+    
+    # Save to file if requested
+    if save_filename:
+        # Generate filename with reward info
+        reward_str = f"water_{water_count}_{water_percentage:.1f}%"
+        filename = f"wfc_reward_img/{reward_str}.png"
+        
+        # Save the current screen surface
+        pygame.image.save(screen, filename)
+        print(f"Saved WFC output to: {filename}")
+    
+    return water_percentage
 
 
 # Main WFC Algorithm (Standalone execution example)
@@ -398,7 +429,15 @@ if __name__ == "__main__":
         tile_to_index,
     )
 
-    # The run_wfc function now handles the final display loop internally.
-    # No need for the extra waiting loop here.
+    # After the WFC completes, render one final time and save with reward
+    water_score = render_wfc_grid(final_grid, tile_images, save_filename="wfc_output")
+    
+    # Keep the final state visible until quit
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+        pygame.time.delay(1)
 
     pygame.quit()
