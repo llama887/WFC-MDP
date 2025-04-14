@@ -344,9 +344,9 @@ def run_wfc(width, height, tile_images, adjacency_bool, tile_symbols, tile_to_in
             break
 
         # --- WFC Step ---
-        # Create dummy action probabilities (e.g., uniform) for standalone run
+        # Create dummy action probabilities using random values for standalone run
         # In RL, this would come from the agent's policy
-        dummy_action_probs = [1.0 / num_tiles] * num_tiles
+        dummy_action_probs = [random.random() for _ in range(num_tiles)]
 
         # Perform one step
         grid, terminated, truncated = biome_wfc_step(
