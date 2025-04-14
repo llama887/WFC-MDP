@@ -3,7 +3,7 @@ import numpy as np
 import random
 import os
 
-from biome_tile import *
+from biome_adjacency_rules import *
 
 # Initialize Pygame
 pygame.init()
