@@ -293,7 +293,7 @@ if __name__ == "__main__":
 
         # Instead of console rendering, call the biome_wfc rendering (using pygame)
         render_wfc_grid(env.grid, tile_images)
-        pygame.time.delay(200)  # Delay for visualization (in milliseconds)
+        pygame.time.delay(1)  # Delay for visualization (in milliseconds)
 
         # Process pygame events for window closure
         for event in pygame.event.get():
