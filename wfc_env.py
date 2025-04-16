@@ -2,9 +2,8 @@ from enum import Enum, auto
 
 import gymnasium as gym  # Use Gymnasium
 import numpy as np
+import pygame
 from gymnasium import spaces
-
-from binary_task import calc_longest_path, calc_num_regions, grid_to_binary_map
 
 # Import functions from biome_wfc instead of fast_wfc
 from biome_wfc import (  # We might not need render_wfc_grid if we keep console rendering
@@ -14,6 +13,7 @@ from biome_wfc import (  # We might not need render_wfc_grid if we keep console 
     load_tile_images,
     render_wfc_grid,
 )
+from tasks.binary_task import calc_longest_path, calc_num_regions, grid_to_binary_map
 
 
 class Task(Enum):
@@ -105,8 +105,6 @@ class WFCWrapper(gym.Env):
     Termination: Grid is fully collapsed (all cells have exactly one possibility).
     Truncation: A contradiction occurs during propagation OR max steps reached.
     """
-
-    metadata = {"render_modes": ["human"], "render_fps": 10}  # Add metadata, adjust FPS
 
     def __init__(
         self,
@@ -223,8 +221,8 @@ class WFCWrapper(gym.Env):
             else -1000
         )
 
-        if reward != 0:
-            print(reward)
+        # if reward != 0:
+        #     print(reward)
         # Get the next observation
         observation = self.get_observation()
         info = {}  # Provide additional info if needed (e.g., current step count)
@@ -253,7 +251,7 @@ class WFCWrapper(gym.Env):
         # print("Environment Reset") # Debug print
         return observation, info
 
-    def render(self, mode="human"):
+    def render(self, mode):
         """Renders the current grid state to the console."""
         if mode == "human":
             print(f"--- Step: {self.current_step} ---")
@@ -289,8 +287,14 @@ class WFCWrapper(gym.Env):
 
 
 if __name__ == "__main__":
-    import numpy as np
-    import pygame
+    # Initialize Pygame
+    pygame.init()
+    SCREEN_WIDTH = 640
+    SCREEN_HEIGHT = 480
+    TILE_SIZE = 32
+
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    pygame.display.set_caption("Evolving WFC")
 
     # Use biome_wfc rendering: load tile images (opens a pygame window)
     tile_images = load_tile_images()
@@ -325,7 +329,7 @@ if __name__ == "__main__":
         obs, reward, terminated, truncated, info = env.step(action)
 
         # Instead of console rendering, call the biome_wfc rendering (using pygame)
-        render_wfc_grid(env.grid, tile_images)
+        render_wfc_grid(env.grid, tile_images, screen)
         # pygame.time.delay(1)  # Delay for visualization (in milliseconds)
 
         # Process pygame events for window closure
@@ -342,7 +346,4 @@ if __name__ == "__main__":
             obs, info = env.reset()
 
     pygame.quit()
-    exit(0)
-    exit(0)
-    exit(0)
     exit(0)

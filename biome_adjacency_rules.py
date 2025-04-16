@@ -483,15 +483,9 @@ def print_adjacency_compatibility():
 
 
 # print_adjacency_compatibility()
-
-# Initialize Pygame
-pygame.init()
 SCREEN_WIDTH = 640
 SCREEN_HEIGHT = 480
 TILE_SIZE = 32
-
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Tile Renderer")
 
 
 # Load all tile images
@@ -544,4 +538,9 @@ def main():
 
 
 if __name__ == "__main__":
+    # Initialize Pygame
+    pygame.init()
+
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    pygame.display.set_caption("Tile Renderer")
     main()

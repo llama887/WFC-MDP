@@ -2,16 +2,7 @@ import random
 
 import pygame
 
-from biome_adjacency_rules import *
-
-# Initialize Pygame
-pygame.init()
-SCREEN_WIDTH = 640
-SCREEN_HEIGHT = 480
-TILE_SIZE = 32
-
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Evolving WFC")
+from biome_adjacency_rules import TILE_SIZE, TILES, create_adjacency_matrix
 
 
 # Load all tile images
@@ -309,7 +300,7 @@ def biome_wfc_step(
 
 
 # Render the WFC grid
-def render_wfc_grid(grid, tile_images):
+def render_wfc_grid(grid, tile_images, screen):
     screen.fill((255, 255, 255))
 
     for y in range(len(grid)):
@@ -382,6 +373,15 @@ def run_wfc(width, height, tile_images, adjacency_bool, tile_symbols, tile_to_in
 
 
 if __name__ == "__main__":
+    # Initialize Pygame
+    pygame.init()
+    SCREEN_WIDTH = 640
+    SCREEN_HEIGHT = 480
+    TILE_SIZE = 32
+
+    screen: pygame.Surface = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    pygame.display.set_caption("Evolving WFC")
+
     tile_images = load_tile_images()
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
 
