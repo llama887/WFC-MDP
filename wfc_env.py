@@ -1,8 +1,10 @@
-from collections import deque
+from enum import Enum, auto
 
 import gymnasium as gym  # Use Gymnasium
 import numpy as np
 from gymnasium import spaces
+
+from binary_task import calc_longest_path, calc_num_regions, grid_to_binary_map
 
 # Import functions from biome_wfc instead of fast_wfc
 from biome_wfc import (  # We might not need render_wfc_grid if we keep console rendering
@@ -14,82 +16,11 @@ from biome_wfc import (  # We might not need render_wfc_grid if we keep console 
 )
 
 
-def grid_to_binary_map(grid: list[list[set[str]]]) -> np.ndarray:
-    """Converts the WFC grid into a binary map.
-    Empty cells (0) are those whose single tile name starts with 'sand' or 'path',
-    solid cells (1) are everything else.
-    """
-    height = len(grid)
-    width = len(grid[0])
-    binary_map = np.ones((height, width), dtype=np.int32)  # default solid (1)
-    for y in range(height):
-        for x in range(width):
-            cell = grid[y][x]
-            if len(cell) == 1:
-                tile_name = next(iter(cell))
-                if tile_name.startswith("sand") or tile_name.startswith("path"):
-                    binary_map[y, x] = 0  # empty
-                else:
-                    binary_map[y, x] = 1  # solid
-            else:
-                binary_map[y, x] = 1
-    return binary_map
-
-
-def calc_num_regions(binary_map: np.ndarray) -> int:
-    """Counts connected regions of empty cells (value 0) using flood-fill."""
-    h, w = binary_map.shape
-    visited = np.zeros((h, w), dtype=bool)
-    num_regions = 0
-
-    def neighbors(y, x):
-        for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
-            if 0 <= ny < h and 0 <= nx < w:
-                yield ny, nx
-
-    for y in range(h):
-        for x in range(w):
-            if binary_map[y, x] == 0 and not visited[y, x]:
-                num_regions += 1
-                stack = [(y, x)]
-                while stack:
-                    cy, cx = stack.pop()
-                    if visited[cy, cx]:
-                        continue
-                    visited[cy, cx] = True
-                    for ny, nx in neighbors(cy, cx):
-                        if binary_map[ny, nx] == 0 and not visited[ny, nx]:
-                            stack.append((ny, nx))
-    return num_regions
-
-
-def calc_longest_path(binary_map: np.ndarray) -> int:
-    """Computes the longest shortest path among all empty cells (value 0) using BFS."""
-    h, w = binary_map.shape
-
-    def bfs(start_y, start_x):
-        visited = -np.ones((h, w), dtype=int)
-        q = deque()
-        visited[start_y, start_x] = 0
-        q.append((start_y, start_x))
-        max_dist = 0
-        while q:
-            y, x = q.popleft()
-            d = visited[y, x]
-            max_dist = max(max_dist, d)
-            for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
-                if 0 <= ny < h and 0 <= nx < w:
-                    if binary_map[ny, nx] == 0 and visited[ny, nx] == -1:
-                        visited[ny, nx] = d + 1
-                        q.append((ny, nx))
-        return max_dist
-
-    overall_max = 0
-    for y in range(h):
-        for x in range(w):
-            if binary_map[y, x] == 0:
-                overall_max = max(overall_max, bfs(y, x))
-    return overall_max
+class Task(Enum):
+    # TODO: replace place holder biomes with real biome specifications
+    BIOME1 = auto()
+    BIOME2 = auto()
+    BINARY = auto()
 
 
 def grid_to_array(
@@ -128,25 +59,30 @@ def grid_to_array(
     return arr.flatten()
 
 
-# wfc_next_collapse_position is replaced by find_lowest_entropy_cell from biome_wfc
+def compute_reward(grid: list[list[set[str]]], task: Task) -> float:
+    """Computes the reward based task
 
-
-def compute_reward(grid: list[list[set[str]]], target_path_length: int) -> float:
-    """Computes the reward based on regions connectivity and how far we are from the target path length.
+    Binary Task: reward is based on regions connectivity and how far we are from the target path length.
     Regions: +100 reward if there's a single connected empty region; else -100.
     Path: Scales linearly up to +100 when the longest path increases by at least 20 tiles.
     """
-    binary_map = grid_to_binary_map(grid)
-    regions = calc_num_regions(binary_map)
-    current_path = calc_longest_path(binary_map)
+    match task:
+        case Task.BINARY:
+            TARGET_PATH_LENGTH = 100
+            binary_map = grid_to_binary_map(grid)
+            regions = calc_num_regions(binary_map)
+            current_path = calc_longest_path(binary_map)
 
-    region_reward = 100.0 if regions == 1 else -100.0
+            region_reward = 100.0 if regions == 1 else -100.0
 
-    if current_path >= target_path_length:
-        path_reward = 100.0
-    else:
-        path_reward = 100.0 / (abs(target_path_length - current_path) + 1)
-    return region_reward + path_reward
+            if current_path >= TARGET_PATH_LENGTH:
+                path_reward = 100.0
+            else:
+                path_reward = 100.0 / (abs(TARGET_PATH_LENGTH - current_path) + 1)
+            return region_reward + path_reward
+        case _:
+            # TODO: incorporate biome rewards
+            return 0
 
 
 # # Target subarray to count
@@ -180,7 +116,7 @@ class WFCWrapper(gym.Env):
         adjacency_bool: np.ndarray,
         num_tiles: int,
         tile_to_index: dict[str, int],  # Add tile_to_index
-        target_path_length: int = 50,
+        task: Task,
     ):
         super().__init__()  # Call parent constructor
         self.all_tiles = tile_symbols
@@ -214,7 +150,7 @@ class WFCWrapper(gym.Env):
         self.current_step = 0
         # Set a maximum number of steps to prevent infinite loops if termination fails
         self.max_steps = self.map_length * self.map_width + 10  # Allow some buffer
-        self.target_path_length = target_path_length
+        self.task = task
 
     def get_observation(self) -> np.ndarray:
         """Constructs the observation array (needs to be float32)."""
@@ -280,7 +216,7 @@ class WFCWrapper(gym.Env):
 
         # Calculate reward using the updated grid and initial longest path
         reward = (
-            compute_reward(self.grid, self.target_path_length)
+            compute_reward(self.grid, self.task)
             if terminated
             else 0
             if not truncated
@@ -376,6 +312,7 @@ if __name__ == "__main__":
         adjacency_bool=adjacency_bool,
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
+        task=Task.BINARY,
     )
 
     # Reset the environment to its initial state
@@ -405,4 +342,7 @@ if __name__ == "__main__":
             obs, info = env.reset()
 
     pygame.quit()
+    exit(0)
+    exit(0)
+    exit(0)
     exit(0)
