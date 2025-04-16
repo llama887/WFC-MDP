@@ -1,10 +1,14 @@
+import argparse
 import copy
-import random
+import math
 import os
-from multiprocessing import Pool, cpu_count
+import random
 import time
+import yaml
+from multiprocessing import Pool, cpu_count
 
 import numpy as np
+import optuna
 import pygame
 from scipy.stats import truncnorm
 from tqdm import tqdm
@@ -189,58 +193,246 @@ def evolve(
         # Flatten and trim the offspring list
         offspring = [child for pair in reproduction_results for child in pair][:number_of_offspring_needed]
         population = survivors + offspring
+    # Ensure the best agent is returned even if the population is empty or has issues
+    if population:
+        population.sort(key=lambda x: x.reward, reverse=True)
+        current_best = population[0]
+        if best_agent is None or current_best.reward > best_agent.reward:
+            best_agent = copy.deepcopy(current_best)
+    elif best_agent is None:
+        # Handle edge case where population is empty and no best_agent was ever found
+        print("Warning: Evolution resulted in an empty population and no best agent.")
+        # Optionally return a dummy agent or raise an error
+        # For now, returning None as best_agent
+        pass
+
+
     return population, best_agent
 
 
-if __name__ == "__main__":
-    # Use biome_wfc rendering: load tile images (opens a pygame window)
-    tile_images = load_tile_images()
+# --- Optuna Objective Function ---
 
-    # Define environment parameters (using the same tile set as in our training setup)
-    MAP_LENGTH = 15
-    MAP_WIDTH = 20
+def objective(trial: optuna.Trial, base_env: WFCWrapper, generations_per_trial: int) -> float:
+    """Objective function for Optuna hyperparameter optimization."""
+    # Suggest hyperparameters
+    population_size = trial.suggest_int("population_size", 50, 200, step=10)
+    number_of_actions_mutated_mean = trial.suggest_int("number_of_actions_mutated_mean", 1, 50)
+    number_of_actions_mutated_standard_deviation = trial.suggest_float(
+        "number_of_actions_mutated_standard_deviation", 1.0, 20.0
+    )
+    action_noise_standard_deviation = trial.suggest_float(
+        "action_noise_standard_deviation", 0.01, 0.5, log=True
+    )
+    survival_rate = trial.suggest_float("survival_rate", 0.1, 0.5)
 
+    # Run evolution with suggested hyperparameters
+    _, best_agent = evolve(
+        env=base_env,
+        generations=generations_per_trial, # Use fewer generations for faster trials
+        population_size=population_size,
+        number_of_actions_mutated_mean=number_of_actions_mutated_mean,
+        number_of_actions_mutated_standard_deviation=number_of_actions_mutated_standard_deviation,
+        action_noise_standard_deviation=action_noise_standard_deviation,
+        survival_rate=survival_rate,
+    )
+
+    # Return the reward of the best agent found in this trial
+    return best_agent.reward if best_agent else float("-inf")
+
+
+# --- Main Execution Logic ---
+
+def setup_environment(map_length: int, map_width: int) -> WFCWrapper:
+    """Initializes and returns the WFC environment."""
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     num_tiles = len(tile_symbols)
-
-    # Create the WFC environment instance
     env = WFCWrapper(
-        map_length=MAP_LENGTH,
-        map_width=MAP_WIDTH,
+        map_length=map_length,
+        map_width=map_width,
         tile_symbols=tile_symbols,
         adjacency_bool=adjacency_bool,
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
-        task=Task.BINARY,
+        task=Task.BINARY, # Assuming BINARY task, adjust if needed
     )
+    return env
 
-    start = time.time()
-    number_of_generations = 10
-    best_population, best_agent = evolve(env, population_size=100, generations=number_of_generations)
-    end = time.time()
-    print(
-        f"Total time taken: {end - start} seconds over {number_of_generations} generations | Average time per generation: {(end - start) / number_of_generations}"
-    )
-    
-    # render the best map
-    # Initialize Pygame
+def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images):
+    """Renders the action sequence of the best agent."""
+    if not best_agent:
+        print("No best agent found to render.")
+        return
     pygame.init()
-    SCREEN_WIDTH = 640
-    SCREEN_HEIGHT = 480
-    TILE_SIZE = 32
-
+    SCREEN_WIDTH = env.map_width * 32  # Adjust screen size based on map
+    SCREEN_HEIGHT = env.map_length * 32
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption("Evolving WFC")
-    best_action_sequence = (
-        best_agent.action_sequence if best_agent else best_population[0].action_sequence
-    )
+    pygame.display.set_caption("Best Evolved WFC Map")
+
     env.reset()
     total_reward = 0
-    for action in best_action_sequence:
-        obs, reward, terminated, truncated, info = env.step(action)
+    print("Rendering best agent's action sequence...")
+    for action in tqdm(best_agent.action_sequence, desc="Rendering Steps"):
+        _, reward, _, _, _ = env.step(action)
         total_reward += reward
         render_wfc_grid(env.grid, tile_images, screen)
-        pygame.time.delay(10)
-    print(f"Total reward: {total_reward}")
-    pygame.time.delay(100)
+        pygame.time.delay(5) # Slightly faster rendering
+
+    print(f"Final map reward for the best agent: {total_reward:.4f}")
+    print(f"Best agent reward during evolution: {best_agent.reward:.4f}") # Print the reward recorded during evolution
+
+    # Keep the window open for a bit
+    print("Displaying final map for 5 seconds...")
+    pygame.time.delay(5000)
     pygame.quit()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Evolve WFC agents with optional hyperparameter tuning.")
+    parser.add_argument(
+        "--load-hyperparameters",
+        type=str,
+        default=None,
+        help="Path to a YAML file containing hyperparameters to load.",
+    )
+    parser.add_argument(
+        "--generations",
+        type=int,
+        default=100,
+        help="Number of generations to run evolution for (used when loading hyperparameters or after tuning).",
+    )
+    parser.add_argument(
+        "--optuna-trials",
+        type=int,
+        default=50, # Number of trials for Optuna optimization
+        help="Number of trials to run for Optuna hyperparameter search.",
+    )
+    parser.add_argument(
+        "--generations-per-trial",
+        type=int,
+        default=20, # Fewer generations during tuning for speed
+        help="Number of generations to run for each Optuna trial.",
+    )
+    parser.add_argument(
+        "--map-length",
+        type=int,
+        default=15,
+        help="Length of the map grid.",
+    )
+    parser.add_argument(
+        "--map-width",
+        type=int,
+        default=20,
+        help="Width of the map grid.",
+    )
+    parser.add_argument(
+        "--hyperparameter-dir",
+        type=str,
+        default="hyperparameters",
+        help="Directory to save/load hyperparameters.",
+    )
+    parser.add_argument(
+        "--output-file",
+        type=str,
+        default="best_hyperparameters.yaml",
+        help="Filename for the saved hyperparameters YAML.",
+    )
+
+
+    args = parser.parse_args()
+
+    # --- Environment and Pygame Setup ---
+    print("Setting up environment...")
+    env = setup_environment(args.map_length, args.map_width)
+    print("Loading tile images for rendering...")
+    tile_images = load_tile_images() # Load images needed for rendering later
+
+    hyperparams = {}
+    best_agent = None
+
+    if args.load_hyperparameters:
+        # --- Load Hyperparameters and Run Evolution ---
+        print(f"Loading hyperparameters from: {args.load_hyperparameters}")
+        try:
+            with open(args.load_hyperparameters, 'r') as f:
+                hyperparams = yaml.safe_load(f)
+            print("Successfully loaded hyperparameters:", hyperparams)
+
+            print(f"Running evolution for {args.generations} generations with loaded hyperparameters...")
+            start_time = time.time()
+            _, best_agent = evolve(
+                env=env,
+                generations=args.generations,
+                population_size=hyperparams['population_size'],
+                number_of_actions_mutated_mean=hyperparams['number_of_actions_mutated_mean'],
+                number_of_actions_mutated_standard_deviation=hyperparams['number_of_actions_mutated_standard_deviation'],
+                action_noise_standard_deviation=hyperparams['action_noise_standard_deviation'],
+                survival_rate=hyperparams['survival_rate'],
+            )
+            end_time = time.time()
+            print(f"Evolution finished in {end_time - start_time:.2f} seconds.")
+
+        except FileNotFoundError:
+            print(f"Error: Hyperparameter file not found at {args.load_hyperparameters}")
+            exit(1)
+        except Exception as e:
+            print(f"Error loading or using hyperparameters: {e}")
+            exit(1)
+
+    else:
+        # --- Run Optuna Hyperparameter Optimization ---
+        print(f"Running Optuna hyperparameter search for {args.optuna_trials} trials...")
+        study = optuna.create_study(direction="maximize")
+        start_time = time.time()
+        study.optimize(
+            lambda trial: objective(trial, env, args.generations_per_trial),
+            n_trials=args.optuna_trials,
+            n_jobs=cpu_count() # Use multiple cores for trials if available
+        )
+        end_time = time.time()
+        print(f"Optuna optimization finished in {end_time - start_time:.2f} seconds.")
+
+        hyperparams = study.best_params
+        best_value = study.best_value
+        print(f"\nBest trial completed with reward: {best_value:.4f}")
+        print("Best hyperparameters found:")
+        for key, value in hyperparams.items():
+            print(f"  {key}: {value}")
+
+        # Ensure the hyperparameters directory exists
+        hyperparam_dir = args.hyperparameter_dir
+        os.makedirs(hyperparam_dir, exist_ok=True)
+        output_path = os.path.join(hyperparam_dir, args.output_file)
+
+        # Save the best hyperparameters
+        print(f"Saving best hyperparameters to: {output_path}")
+        try:
+            with open(output_path, 'w') as f:
+                yaml.dump(hyperparams, f, default_flow_style=False)
+        except Exception as e:
+            print(f"Error saving hyperparameters: {e}")
+
+        # Optional: Run evolution one more time with the best found hyperparameters
+        print(f"\nRunning final evolution for {args.generations} generations with best hyperparameters...")
+        start_time = time.time()
+        _, best_agent = evolve(
+            env=env,
+            generations=args.generations,
+            population_size=hyperparams['population_size'],
+            number_of_actions_mutated_mean=hyperparams['number_of_actions_mutated_mean'],
+            number_of_actions_mutated_standard_deviation=hyperparams['number_of_actions_mutated_standard_deviation'],
+            action_noise_standard_deviation=hyperparams['action_noise_standard_deviation'],
+            survival_rate=hyperparams['survival_rate'],
+        )
+        end_time = time.time()
+        print(f"Final evolution finished in {end_time - start_time:.2f} seconds.")
+
+
+    # --- Render the result from the best agent ---
+    if best_agent:
+        print("\nInitializing Pygame for rendering the best map...")
+        pygame.init()
+        render_best_agent(env, best_agent, tile_images)
+    else:
+        print("\nNo best agent was found during the process.")
+
+    print("Script finished.")
