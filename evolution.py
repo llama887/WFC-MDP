@@ -240,23 +240,6 @@ def objective(trial: optuna.Trial, base_env: WFCWrapper, generations_per_trial: 
     return best_agent.reward if best_agent else float("-inf")
 
 
-# --- Main Execution Logic ---
-
-def setup_environment(map_length: int, map_width: int) -> WFCWrapper:
-    """Initializes and returns the WFC environment."""
-    adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
-    num_tiles = len(tile_symbols)
-    env = WFCWrapper(
-        map_length=map_length,
-        map_width=map_width,
-        tile_symbols=tile_symbols,
-        adjacency_bool=adjacency_bool,
-        num_tiles=num_tiles,
-        tile_to_index=tile_to_index,
-        task=Task.BINARY, # Assuming BINARY task, adjust if needed
-    )
-    return env
-
 def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images):
     """Renders the action sequence of the best agent."""
     if not best_agent:
@@ -313,18 +296,6 @@ if __name__ == "__main__":
         help="Number of generations to run for each Optuna trial.",
     )
     parser.add_argument(
-        "--map-length",
-        type=int,
-        default=15,
-        help="Length of the map grid.",
-    )
-    parser.add_argument(
-        "--map-width",
-        type=int,
-        default=20,
-        help="Width of the map grid.",
-    )
-    parser.add_argument(
         "--hyperparameter-dir",
         type=str,
         default="hyperparameters",
@@ -340,10 +311,23 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # --- Environment and Pygame Setup ---
-    print("Setting up environment...")
-    env = setup_environment(args.map_length, args.map_width)
-    print("Loading tile images for rendering...")
+    # Define environment parameters (using the same tile set as in our training setup)
+    MAP_LENGTH = 15
+    MAP_WIDTH = 20
+
+    adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
+    num_tiles = len(tile_symbols)
+
+    # Create the WFC environment instance
+    env = WFCWrapper(
+        map_length=MAP_LENGTH,
+        map_width=MAP_WIDTH,
+        tile_symbols=tile_symbols,
+        adjacency_bool=adjacency_bool,
+        num_tiles=num_tiles,
+        tile_to_index=tile_to_index,
+        task=Task.BINARY,
+    )
     tile_images = load_tile_images() # Load images needed for rendering later
 
     hyperparams = {}
@@ -386,7 +370,7 @@ if __name__ == "__main__":
         study.optimize(
             lambda trial: objective(trial, env, args.generations_per_trial),
             n_trials=args.optuna_trials,
-            n_jobs=cpu_count() # Use multiple cores for trials if available
+            n_jobs=2 # Use multiple cores for trials if available
         )
         end_time = time.time()
         print(f"Optuna optimization finished in {end_time - start_time:.2f} seconds.")
