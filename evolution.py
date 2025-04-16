@@ -1,6 +1,8 @@
 import copy
 import random
+import os
 from multiprocessing import Pool, cpu_count
+import time
 
 import numpy as np
 import pygame
@@ -13,6 +15,7 @@ from biome_wfc import (  # We might not need render_wfc_grid if we keep console 
     render_wfc_grid,
 )
 from wfc_env import Task, WFCWrapper
+import math
 
 
 class PopulationMember:
@@ -68,7 +71,10 @@ class PopulationMember:
 
     def run_action_sequence(self):
         self.reward = 0
-        for action in self.action_sequence:
+        for idx, action in enumerate(self.action_sequence):
+            # Optionally add an occasional print if you want to trace action steps:
+            # if idx % 50 == 0:
+            #     print(f"[run_action_sequence] Process {os.getpid()} - at action index {idx}", flush=True)
             _, reward, _, _, _ = self.env.step(action)
             self.reward += reward
 
@@ -78,16 +84,6 @@ class PopulationMember:
         parent2: "PopulationMember",
         method: str = "one_point",
     ) -> tuple["PopulationMember", "PopulationMember"]:
-        """
-        Create two offspring by combining the parents' action_sequences.
-
-        Args:
-            parent1, parent2: the two parents to crossover.
-            method: "one_point" or "uniform".
-
-        Returns:
-            child1, child2: new PopulationMember instances.
-        """
         seq1 = parent1.action_sequence
         seq2 = parent2.action_sequence
         length = len(seq1)
@@ -105,7 +101,6 @@ class PopulationMember:
             mask = np.random.rand(length) < 0.5
             child_seq1 = np.where(mask, seq1, seq2)
             child_seq2 = np.where(mask, seq2, seq1)
-
         else:
             raise ValueError(f"Unknown crossover method: {method!r}")
 
@@ -159,48 +154,40 @@ def evolve(
 ):
     best_agent: PopulationMember | None = None
     population = [PopulationMember(env) for _ in range(population_size)]
-    for generation in tqdm(range(generations)):
+    for generation in tqdm(range(generations), desc="Generations"):
+        # Evaluate the entire population in parallel
         with Pool(min(cpu_count(), population_size)) as pool:
             population = pool.map(run_member, population)
         population.sort(key=lambda x: x.reward, reverse=True)
         best = population[0]
-        print(f"\nGeneration {generation + 1} | Best reward = {best.reward:.4f}")
         if best_agent is None or best.reward > best_agent.reward:
             best_agent = copy.deepcopy(best)
 
+        # Determine survivors and reproduce
         n_survivors = max(2, int(population_size * survival_rate))
         survivors = population[:n_survivors]
         offspring: list[PopulationMember] = []
         number_of_offspring_needed = population_size - n_survivors
 
-        def parent_pair_generator():
-            """Infinite generator of random parent‑pairs + GA params."""
-            while True:
-                p1, p2 = random.sample(survivors, 2)
-                yield (
-                    p1,
-                    p2,
-                    number_of_actions_mutated_mean,
-                    number_of_actions_mutated_standard_deviation,
-                    action_noise_standard_deviation,
-                )
+
+        pairs_needed = math.ceil(number_of_offspring_needed / 2)
+
+        # Generate exactly the number of pairs required.
+        pairs_args = [
+            (
+                *random.sample(survivors, 2),
+                number_of_actions_mutated_mean,
+                number_of_actions_mutated_standard_deviation,
+                action_noise_standard_deviation,
+            )
+            for _ in range(pairs_needed)
+        ]
 
         with Pool(cpu_count()) as pool:
-            for child1, child2 in pool.imap_unordered(
-                reproduce_pair, parent_pair_generator()
-            ):
-                offspring.append(child1)
-                # only append the second child if we still need more
-                if len(offspring) < number_of_offspring_needed:
-                    offspring.append(child2)
-                # stop as soon as we have enough
-                if len(offspring) >= number_of_offspring_needed:
-                    pool.terminate()
-                    break
+            reproduction_results = pool.map(reproduce_pair, pairs_args)
 
-        # trim in case we got one extra
-        offspring = offspring[:number_of_offspring_needed]
-
+        # Flatten and trim the offspring list
+        offspring = [child for pair in reproduction_results for child in pair][:number_of_offspring_needed]
         population = survivors + offspring
     return population, best_agent
 
@@ -226,15 +213,15 @@ if __name__ == "__main__":
         tile_to_index=tile_to_index,
         task=Task.BINARY,
     )
-    import time
 
     start = time.time()
-    number_of_generations = 5
-    best_population, best_agent = evolve(env, generations=number_of_generations)
+    number_of_generations = 10
+    best_population, best_agent = evolve(env, population_size=100, generations=number_of_generations)
     end = time.time()
     print(
-        f"Total time taken: {end - start} seconds over {number_of_generations} | Average time per generation: {(end - start) / number_of_generations}"
+        f"Total time taken: {end - start} seconds over {number_of_generations} generations | Average time per generation: {(end - start) / number_of_generations}"
     )
+    
     # render the best map
     # Initialize Pygame
     pygame.init()
@@ -248,12 +235,12 @@ if __name__ == "__main__":
         best_agent.action_sequence if best_agent else best_population[0].action_sequence
     )
     env.reset()
-    print("Rendering best")
     total_reward = 0
     for action in best_action_sequence:
         obs, reward, terminated, truncated, info = env.step(action)
         total_reward += reward
         render_wfc_grid(env.grid, tile_images, screen)
         pygame.time.delay(10)
-    print(f"Best Reward: {total_reward}")
+    print(f"Total reward: {total_reward}")
+    pygame.time.delay(100)
     pygame.quit()
