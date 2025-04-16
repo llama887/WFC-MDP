@@ -38,7 +38,7 @@ def initialize_wfc_grid(width, height, tile_symbols):
 
 
 # Find the cell with the lowest entropy (fewest possibilities)
-def find_lowest_entropy_cell(grid):
+def find_lowest_entropy_cell(grid, deterministic: bool = False):
     min_entropy = float("inf")
     candidates = []
 
@@ -49,7 +49,8 @@ def find_lowest_entropy_cell(grid):
                 candidates = [(x, y)]
             elif len(grid[y][x]) == min_entropy:
                 candidates.append((x, y))
-
+    if deterministic:
+        return candidates[0] if candidates else None
     return random.choice(candidates) if candidates else None
 
 

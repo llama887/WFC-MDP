@@ -4,12 +4,12 @@ import math
 import os
 import random
 import time
-import yaml
 from multiprocessing import Pool, cpu_count
 
 import numpy as np
 import optuna
 import pygame
+import yaml
 from scipy.stats import truncnorm
 from tqdm import tqdm
 
@@ -19,7 +19,6 @@ from biome_wfc import (  # We might not need render_wfc_grid if we keep console 
     render_wfc_grid,
 )
 from wfc_env import Task, WFCWrapper
-import math
 
 
 class PopulationMember:
@@ -76,9 +75,6 @@ class PopulationMember:
     def run_action_sequence(self):
         self.reward = 0
         for idx, action in enumerate(self.action_sequence):
-            # Optionally add an occasional print if you want to trace action steps:
-            # if idx % 50 == 0:
-            #     print(f"[run_action_sequence] Process {os.getpid()} - at action index {idx}", flush=True)
             _, reward, _, _, _ = self.env.step(action)
             self.reward += reward
 
@@ -161,7 +157,7 @@ def evolve(
     for generation in tqdm(range(generations), desc="Generations"):
         # Evaluate the entire population in parallel
         with Pool(min(cpu_count(), population_size)) as pool:
-            population = pool.map(run_member, population)
+            population = pool.imap_unordered(run_member, population)
         population.sort(key=lambda x: x.reward, reverse=True)
         best = population[0]
         if best_agent is None or best.reward > best_agent.reward:
@@ -172,7 +168,6 @@ def evolve(
         survivors = population[:n_survivors]
         offspring: list[PopulationMember] = []
         number_of_offspring_needed = population_size - n_survivors
-
 
         pairs_needed = math.ceil(number_of_offspring_needed / 2)
 
@@ -188,10 +183,12 @@ def evolve(
         ]
 
         with Pool(cpu_count()) as pool:
-            reproduction_results = pool.map(reproduce_pair, pairs_args)
+            reproduction_results = pool.imap_unordered(reproduce_pair, pairs_args)
 
         # Flatten and trim the offspring list
-        offspring = [child for pair in reproduction_results for child in pair][:number_of_offspring_needed]
+        offspring = [child for pair in reproduction_results for child in pair][
+            :number_of_offspring_needed
+        ]
         population = survivors + offspring
     # Ensure the best agent is returned even if the population is empty or has issues
     if population:
@@ -206,29 +203,33 @@ def evolve(
         # For now, returning None as best_agent
         pass
 
-
     return population, best_agent
 
 
 # --- Optuna Objective Function ---
 
-def objective(trial: optuna.Trial, base_env: WFCWrapper, generations_per_trial: int) -> float:
+
+def objective(
+    trial: optuna.Trial, base_env: WFCWrapper, generations_per_trial: int
+) -> float:
     """Objective function for Optuna hyperparameter optimization."""
     # Suggest hyperparameters
-    population_size = trial.suggest_int("population_size", 50, 200, step=10)
-    number_of_actions_mutated_mean = trial.suggest_int("number_of_actions_mutated_mean", 1, 50)
+    population_size = trial.suggest_int("population_size", 5, 50)
+    number_of_actions_mutated_mean = trial.suggest_int(
+        "number_of_actions_mutated_mean", 1, 50
+    )
     number_of_actions_mutated_standard_deviation = trial.suggest_float(
         "number_of_actions_mutated_standard_deviation", 1.0, 20.0
     )
     action_noise_standard_deviation = trial.suggest_float(
         "action_noise_standard_deviation", 0.01, 0.5, log=True
     )
-    survival_rate = trial.suggest_float("survival_rate", 0.1, 0.5)
+    survival_rate = trial.suggest_float("survival_rate", 0.1, 0.8)
 
     # Run evolution with suggested hyperparameters
     _, best_agent = evolve(
         env=base_env,
-        generations=generations_per_trial, # Use fewer generations for faster trials
+        generations=generations_per_trial,  # Use fewer generations for faster trials
         population_size=population_size,
         number_of_actions_mutated_mean=number_of_actions_mutated_mean,
         number_of_actions_mutated_standard_deviation=number_of_actions_mutated_standard_deviation,
@@ -258,10 +259,12 @@ def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images
         _, reward, _, _, _ = env.step(action)
         total_reward += reward
         render_wfc_grid(env.grid, tile_images, screen)
-        pygame.time.delay(5) # Slightly faster rendering
+        pygame.time.delay(5)  # Slightly faster rendering
 
     print(f"Final map reward for the best agent: {total_reward:.4f}")
-    print(f"Best agent reward during evolution: {best_agent.reward:.4f}") # Print the reward recorded during evolution
+    print(
+        f"Best agent reward during evolution: {best_agent.reward:.4f}"
+    )  # Print the reward recorded during evolution
 
     # Keep the window open for a bit
     print("Displaying final map for 5 seconds...")
@@ -270,7 +273,9 @@ def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Evolve WFC agents with optional hyperparameter tuning.")
+    parser = argparse.ArgumentParser(
+        description="Evolve WFC agents with optional hyperparameter tuning."
+    )
     parser.add_argument(
         "--load-hyperparameters",
         type=str,
@@ -280,19 +285,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--generations",
         type=int,
-        default=100,
+        default=50,
         help="Number of generations to run evolution for (used when loading hyperparameters or after tuning).",
     )
     parser.add_argument(
         "--optuna-trials",
         type=int,
-        default=50, # Number of trials for Optuna optimization
+        default=20,  # Number of trials for Optuna optimization
         help="Number of trials to run for Optuna hyperparameter search.",
     )
     parser.add_argument(
         "--generations-per-trial",
         type=int,
-        default=20, # Fewer generations during tuning for speed
+        default=10,  # Fewer generations during tuning for speed
         help="Number of generations to run for each Optuna trial.",
     )
     parser.add_argument(
@@ -307,7 +312,6 @@ if __name__ == "__main__":
         default="best_hyperparameters.yaml",
         help="Filename for the saved hyperparameters YAML.",
     )
-
 
     args = parser.parse_args()
 
@@ -327,8 +331,9 @@ if __name__ == "__main__":
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
         task=Task.BINARY,
+        deterministic=True,
     )
-    tile_images = load_tile_images() # Load images needed for rendering later
+    tile_images = load_tile_images()  # Load images needed for rendering later
 
     hyperparams = {}
     best_agent = None
@@ -337,26 +342,36 @@ if __name__ == "__main__":
         # --- Load Hyperparameters and Run Evolution ---
         print(f"Loading hyperparameters from: {args.load_hyperparameters}")
         try:
-            with open(args.load_hyperparameters, 'r') as f:
+            with open(args.load_hyperparameters, "r") as f:
                 hyperparams = yaml.safe_load(f)
             print("Successfully loaded hyperparameters:", hyperparams)
 
-            print(f"Running evolution for {args.generations} generations with loaded hyperparameters...")
+            print(
+                f"Running evolution for {args.generations} generations with loaded hyperparameters..."
+            )
             start_time = time.time()
             _, best_agent = evolve(
                 env=env,
                 generations=args.generations,
-                population_size=hyperparams['population_size'],
-                number_of_actions_mutated_mean=hyperparams['number_of_actions_mutated_mean'],
-                number_of_actions_mutated_standard_deviation=hyperparams['number_of_actions_mutated_standard_deviation'],
-                action_noise_standard_deviation=hyperparams['action_noise_standard_deviation'],
-                survival_rate=hyperparams['survival_rate'],
+                population_size=hyperparams["population_size"],
+                number_of_actions_mutated_mean=hyperparams[
+                    "number_of_actions_mutated_mean"
+                ],
+                number_of_actions_mutated_standard_deviation=hyperparams[
+                    "number_of_actions_mutated_standard_deviation"
+                ],
+                action_noise_standard_deviation=hyperparams[
+                    "action_noise_standard_deviation"
+                ],
+                survival_rate=hyperparams["survival_rate"],
             )
             end_time = time.time()
             print(f"Evolution finished in {end_time - start_time:.2f} seconds.")
 
         except FileNotFoundError:
-            print(f"Error: Hyperparameter file not found at {args.load_hyperparameters}")
+            print(
+                f"Error: Hyperparameter file not found at {args.load_hyperparameters}"
+            )
             exit(1)
         except Exception as e:
             print(f"Error loading or using hyperparameters: {e}")
@@ -364,13 +379,15 @@ if __name__ == "__main__":
 
     else:
         # --- Run Optuna Hyperparameter Optimization ---
-        print(f"Running Optuna hyperparameter search for {args.optuna_trials} trials...")
+        print(
+            f"Running Optuna hyperparameter search for {args.optuna_trials} trials..."
+        )
         study = optuna.create_study(direction="maximize")
         start_time = time.time()
         study.optimize(
             lambda trial: objective(trial, env, args.generations_per_trial),
             n_trials=args.optuna_trials,
-            n_jobs=2 # Use multiple cores for trials if available
+            n_jobs=2,  # Use multiple cores for trials if available
         )
         end_time = time.time()
         print(f"Optuna optimization finished in {end_time - start_time:.2f} seconds.")
@@ -390,26 +407,33 @@ if __name__ == "__main__":
         # Save the best hyperparameters
         print(f"Saving best hyperparameters to: {output_path}")
         try:
-            with open(output_path, 'w') as f:
+            with open(output_path, "w") as f:
                 yaml.dump(hyperparams, f, default_flow_style=False)
         except Exception as e:
             print(f"Error saving hyperparameters: {e}")
 
         # Optional: Run evolution one more time with the best found hyperparameters
-        print(f"\nRunning final evolution for {args.generations} generations with best hyperparameters...")
+        print(
+            f"\nRunning final evolution for {args.generations} generations with best hyperparameters..."
+        )
         start_time = time.time()
         _, best_agent = evolve(
             env=env,
             generations=args.generations,
-            population_size=hyperparams['population_size'],
-            number_of_actions_mutated_mean=hyperparams['number_of_actions_mutated_mean'],
-            number_of_actions_mutated_standard_deviation=hyperparams['number_of_actions_mutated_standard_deviation'],
-            action_noise_standard_deviation=hyperparams['action_noise_standard_deviation'],
-            survival_rate=hyperparams['survival_rate'],
+            population_size=hyperparams["population_size"],
+            number_of_actions_mutated_mean=hyperparams[
+                "number_of_actions_mutated_mean"
+            ],
+            number_of_actions_mutated_standard_deviation=hyperparams[
+                "number_of_actions_mutated_standard_deviation"
+            ],
+            action_noise_standard_deviation=hyperparams[
+                "action_noise_standard_deviation"
+            ],
+            survival_rate=hyperparams["survival_rate"],
         )
         end_time = time.time()
         print(f"Final evolution finished in {end_time - start_time:.2f} seconds.")
-
 
     # --- Render the result from the best agent ---
     if best_agent:

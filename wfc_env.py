@@ -113,32 +113,31 @@ class WFCWrapper(gym.Env):
         tile_symbols: list[str],
         adjacency_bool: np.ndarray,
         num_tiles: int,
-        tile_to_index: dict[str, int],  # Add tile_to_index
+        tile_to_index: dict[str, int],
         task: Task,
+        deterministic: bool,
     ):
-        super().__init__()  # Call parent constructor
+        super().__init__()
         self.all_tiles = tile_symbols
         self.adjacency = adjacency_bool
         self.num_tiles = num_tiles
         self.map_length: int = map_length
         self.map_width: int = map_width
-        self.tile_to_index = tile_to_index  # Store tile_to_index
+        self.tile_to_index = tile_to_index
+        self.deterministic = deterministic
 
         # Initial grid state using the function from biome_wfc
         # self.grid will hold the current state (list of lists of sets)
         self.grid = initialize_wfc_grid(self.map_width, self.map_length, self.all_tiles)
-        # Keep a way to reset easily if needed, maybe store initial args?
-        # Or just call initialize_wfc_grid again in reset.
 
         # Action space: Agent outputs preferences (logits) for each tile type.
-        # Needs to be float32 for SB3.
         self.action_space: spaces.Box = spaces.Box(
             low=-1, high=1, shape=(self.num_tiles,), dtype=np.float32
         )
 
         # Observation space: Flattened map + normalized coordinates of the next cell to collapse
         # Map values range from -1 (undecided) to 1 (max index / max index).
-        # Coordinates range from 0 to 1. Needs to be float32 for SB3.
+        # Coordinates range from 0 to 1.
         self.observation_space: spaces.Box = spaces.Box(
             low=-1.0,  # Lower bound changed due to -1 for undecided cells
             high=1.0,
@@ -161,7 +160,9 @@ class WFCWrapper(gym.Env):
             self.map_width,
         )
         # Find the next cell to collapse using the function from biome_wfc
-        pos_tuple = find_lowest_entropy_cell(self.grid)  # Returns (x, y) or None
+        pos_tuple = find_lowest_entropy_cell(
+            self.grid, deterministic=self.deterministic
+        )  # Returns (x, y) or None
 
         # Handle case where grid is fully collapsed (pos_tuple is None)
         if pos_tuple is None:
@@ -203,7 +204,7 @@ class WFCWrapper(gym.Env):
             self.all_tiles,  # List of tile symbols
             self.tile_to_index,  # Tile symbol to index map
             action_probs,  # Action probabilities from agent
-            deterministic=False,  # Use stochastic collapse during training
+            deterministic=True,
         )
 
         # Check for truncation due to reaching max steps
@@ -317,6 +318,7 @@ if __name__ == "__main__":
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
         task=Task.BINARY,
+        deterministic=False,
     )
 
     # Reset the environment to its initial state
