@@ -1,0 +1,995 @@
+{
+  "tiles": {
+    "grass": {
+      "id": 0,
+      "edges": {
+        "U": [
+          "grass",
+          "tall_grass",
+          "sand_bl",
+          "sand_b",
+          "sand_br",
+          "water_bl",
+          "water_b",
+          "water_br",
+          "flower",
+          "grass_hill_b"
+        ],
+        "D": [
+          "grass",
+          "tall_grass",
+          "sand_tl",
+          "sand_t",
+          "sand_tr",
+          "water_tl",
+          "water_t",
+          "water_tr",
+          "flower",
+          "grass_hill_t"
+        ],
+        "L": [
+          "grass",
+          "tall_grass",
+          "sand_tr",
+          "sand_r",
+          "sand_br",
+          "water_tr",
+          "water_r",
+          "water_br",
+          "flower",
+          "grass_hill_r",
+          "grass_hill_br"
+        ],
+        "R": [
+          "grass",
+          "tall_grass",
+          "sand_tl",
+          "sand_l",
+          "sand_bl",
+          "water_tl",
+          "water_l",
+          "water_bl",
+          "flower",
+          "grass_hill_l",
+          "grass_hill_bl"
+        ]
+      },
+      "image": "assets/biome/0.png"
+    },
+    "tall_grass": {
+      "id": 1,
+      "edges": {
+        "U": [
+          "tall_grass",
+          "grass",
+          "flower"
+        ],
+        "D": [
+          "tall_grass",
+          "grass",
+          "flower"
+        ],
+        "L": [
+          "tall_grass",
+          "grass",
+          "flower"
+        ],
+        "R": [
+          "tall_grass",
+          "grass",
+          "flower"
+        ]
+      },
+      "image": "assets/biome/1.png"
+    },
+    "flower": {
+      "id": 2,
+      "edges": {
+        "U": [
+          "grass",
+          "tall_grass"
+        ],
+        "D": [
+          "grass",
+          "tall_grass"
+        ],
+        "L": [
+          "grass",
+          "tall_grass"
+        ],
+        "R": [
+          "grass",
+          "tall_grass"
+        ]
+      },
+      "image": "assets/biome/2.png"
+    },
+    "grass_hill_tl": {
+      "id": 3,
+      "edges": {
+        "U": [
+          "grass"
+        ],
+        "D": [
+          "grass_hill_l",
+          "grass_hill_bl"
+        ],
+        "L": [
+          "grass"
+        ],
+        "R": [
+          "grass_hill_t",
+          "grass_hill_tr"
+        ]
+      },
+      "image": "assets/biome/3.png"
+    },
+    "grass_hill_t": {
+      "id": 4,
+      "edges": {
+        "U": [
+          "grass"
+        ],
+        "D": [
+          "grass",
+          "flower",
+          "grass_hill_b"
+        ],
+        "L": [
+          "grass_hill_tl",
+          "grass_hill_t"
+        ],
+        "R": [
+          "grass_hill_tr",
+          "grass_hill_t"
+        ]
+      },
+      "image": "assets/biome/4.png"
+    },
+    "grass_hill_tr": {
+      "id": 5,
+      "edges": {
+        "U": [
+          "grass"
+        ],
+        "D": [
+          "grass_hill_r",
+          "grass_hill_br"
+        ],
+        "L": [
+          "grass_hill_t",
+          "grass_hill_tl"
+        ],
+        "R": [
+          "grass"
+        ]
+      },
+      "image": "assets/biome/5.png"
+    },
+    "grass_hill_l": {
+      "id": 6,
+      "edges": {
+        "U": [
+          "grass_hill_l",
+          "grass_hill_tl"
+        ],
+        "D": [
+          "grass_hill_l",
+          "grass_hill_bl"
+        ],
+        "L": [
+          "grass"
+        ],
+        "R": [
+          "grass",
+          "flower",
+          "grass_hill_r"
+        ]
+      },
+      "image": "assets/biome/6.png"
+    },
+    "grass_hill_r": {
+      "id": 7,
+      "edges": {
+        "U": [
+          "grass_hill_r",
+          "grass_hill_tr"
+        ],
+        "D": [
+          "grass_hill_r",
+          "grass_hill_br"
+        ],
+        "L": [
+          "grass",
+          "flower",
+          "grass_hill_l"
+        ],
+        "R": [
+          "grass"
+        ]
+      },
+      "image": "assets/biome/7.png"
+    },
+    "grass_hill_bl": {
+      "id": 8,
+      "edges": {
+        "U": [
+          "grass_hill_l",
+          "grass_hill_tl"
+        ],
+        "D": [
+          "grass"
+        ],
+        "L": [
+          "grass"
+        ],
+        "R": [
+          "grass_hill_b",
+          "grass_hill_br"
+        ]
+      },
+      "image": "assets/biome/8.png"
+    },
+    "grass_hill_b": {
+      "id": 9,
+      "edges": {
+        "U": [
+          "grass",
+          "flower",
+          "grass_hill_t"
+        ],
+        "D": [
+          "grass"
+        ],
+        "L": [
+          "grass_hill_bl",
+          "grass_hill_b"
+        ],
+        "R": [
+          "grass_hill_br",
+          "grass_hill_b"
+        ]
+      },
+      "image": "assets/biome/9.png"
+    },
+    "grass_hill_br": {
+      "id": 10,
+      "edges": {
+        "U": [
+          "grass_hill_r",
+          "grass_hill_tr"
+        ],
+        "D": [
+          "grass"
+        ],
+        "L": [
+          "grass_hill_b",
+          "grass_hill_bl"
+        ],
+        "R": [
+          "grass"
+        ]
+      },
+      "image": "assets/biome/10.png"
+    },
+    "sand_1": {
+      "id": 11,
+      "edges": {
+        "U": [
+          "sand_1",
+          "sand_2",
+          "sand"
+        ],
+        "D": [
+          "sand_1",
+          "sand_2",
+          "sand"
+        ],
+        "L": [
+          "sand_1",
+          "sand_2",
+          "sand"
+        ],
+        "R": [
+          "sand_1",
+          "sand_2",
+          "sand"
+        ]
+      },
+      "image": "assets/biome/11.png"
+    },
+    "sand_2": {
+      "id": 12,
+      "edges": {
+        "U": [
+          "sand_2",
+          "sand_1",
+          "sand"
+        ],
+        "D": [
+          "sand_2",
+          "sand_1",
+          "sand"
+        ],
+        "L": [
+          "sand_2",
+          "sand_1",
+          "sand"
+        ],
+        "R": [
+          "sand_2",
+          "sand_1",
+          "sand"
+        ]
+      },
+      "image": "assets/biome/12.png"
+    },
+    "sand_tl": {
+      "id": 13,
+      "edges": {
+        "U": [
+          "grass"
+        ],
+        "D": [
+          "sand_l",
+          "sand_bl"
+        ],
+        "L": [
+          "grass"
+        ],
+        "R": [
+          "sand_t",
+          "sand_tr"
+        ]
+      },
+      "image": "assets/biome/13.png"
+    },
+    "sand_t": {
+      "id": 14,
+      "edges": {
+        "U": [
+          "grass"
+        ],
+        "D": [
+          "sand",
+          "sand_1",
+          "sand_2",
+          "sand_b"
+        ],
+        "L": [
+          "sand_tl",
+          "sand_t"
+        ],
+        "R": [
+          "sand_t",
+          "sand_tr"
+        ]
+      },
+      "image": "assets/biome/14.png"
+    },
+    "sand_tr": {
+      "id": 15,
+      "edges": {
+        "U": [
+          "grass"
+        ],
+        "D": [
+          "sand_r",
+          "sand_br"
+        ],
+        "L": [
+          "sand_t",
+          "sand_tl"
+        ],
+        "R": [
+          "grass"
+        ]
+      },
+      "image": "assets/biome/15.png"
+    },
+    "sand_l": {
+      "id": 16,
+      "edges": {
+        "U": [
+          "sand_tl",
+          "sand_l"
+        ],
+        "D": [
+          "sand_l",
+          "sand_bl"
+        ],
+        "L": [
+          "grass"
+        ],
+        "R": [
+          "sand",
+          "sand_1",
+          "sand_2",
+          "sand_r"
+        ]
+      },
+      "image": "assets/biome/16.png"
+    },
+    "sand": {
+      "id": 17,
+      "edges": {
+        "U": [
+          "sand",
+          "sand_1",
+          "sand_2",
+          "sand_t"
+        ],
+        "D": [
+          "sand",
+          "sand_1",
+          "sand_2",
+          "sand_b"
+        ],
+        "L": [
+          "sand_l",
+          "sand",
+          "sand_1",
+          "sand_2"
+        ],
+        "R": [
+          "sand_r",
+          "sand",
+          "sand_1",
+          "sand_2"
+        ]
+      },
+      "image": "assets/biome/17.png"
+    },
+    "sand_r": {
+      "id": 18,
+      "edges": {
+        "U": [
+          "sand_r",
+          "sand_tr"
+        ],
+        "D": [
+          "sand_r",
+          "sand_br"
+        ],
+        "L": [
+          "sand",
+          "sand_1",
+          "sand_2",
+          "sand_l"
+        ],
+        "R": [
+          "grass"
+        ]
+      },
+      "image": "assets/biome/18.png"
+    },
+    "sand_bl": {
+      "id": 19,
+      "edges": {
+        "U": [
+          "sand_l",
+          "sand_tl"
+        ],
+        "D": [
+          "grass"
+        ],
+        "L": [
+          "grass"
+        ],
+        "R": [
+          "sand_b",
+          "sand_br"
+        ]
+      },
+      "image": "assets/biome/19.png"
+    },
+    "sand_b": {
+      "id": 20,
+      "edges": {
+        "U": [
+          "sand_t",
+          "sand",
+          "sand_1",
+          "sand_2"
+        ],
+        "D": [
+          "grass"
+        ],
+        "L": [
+          "sand_b",
+          "sand_bl"
+        ],
+        "R": [
+          "sand_b",
+          "sand_br"
+        ]
+      },
+      "image": "assets/biome/20.png"
+    },
+    "sand_br": {
+      "id": 21,
+      "edges": {
+        "U": [
+          "sand_r",
+          "sand_tr"
+        ],
+        "D": [
+          "grass"
+        ],
+        "L": [
+          "sand_b",
+          "sand_bl"
+        ],
+        "R": [
+          "grass"
+        ]
+      },
+      "image": "assets/biome/21.png"
+    },
+    "path_tl": {
+      "id": 22,
+      "edges": {
+        "U": [
+          "sand_l",
+          "sand_tl"
+        ],
+        "D": [
+          "sand",
+          "sand_1",
+          "sand_2",
+          "sand_b"
+        ],
+        "L": [
+          "sand_tl",
+          "sand_t"
+        ],
+        "R": [
+          "sand",
+          "sand_1",
+          "sand_2",
+          "sand_r"
+        ]
+      },
+      "image": "assets/biome/22.png"
+    },
+    "path_tr": {
+      "id": 23,
+      "edges": {
+        "U": [
+          "sand_r",
+          "sand_tr"
+        ],
+        "D": [
+          "sand",
+          "sand_1",
+          "sand_2",
+          "sand_b"
+        ],
+        "L": [
+          "sand",
+          "sand_1",
+          "sand_2",
+          "sand_l"
+        ],
+        "R": [
+          "sand_t",
+          "sand_tr"
+        ]
+      },
+      "image": "assets/biome/23.png"
+    },
+    "path_bl": {
+      "id": 24,
+      "edges": {
+        "U": [
+          "path_tl",
+          "path_tr",
+          "sand",
+          "sand_1",
+          "sand_2",
+          "sand_t"
+        ],
+        "D": [
+          "sand_bl",
+          "sand_l"
+        ],
+        "L": [
+          "sand_b",
+          "sand_bl"
+        ],
+        "R": [
+          "sand",
+          "sand_1",
+          "sand_2",
+          "path_tr",
+          "path_br",
+          "sand_r"
+        ]
+      },
+      "image": "assets/biome/24.png"
+    },
+    "path_br": {
+      "id": 25,
+      "edges": {
+        "U": [
+          "path_tr",
+          "path_tl",
+          "sand",
+          "sand_1",
+          "sand_2",
+          "sand_t"
+        ],
+        "D": [
+          "sand_r",
+          "sand_br"
+        ],
+        "L": [
+          "sand",
+          "sand_1",
+          "sand_2",
+          "path_bl",
+          "path_tl",
+          "sand_l"
+        ],
+        "R": [
+          "sand_b",
+          "sand_br"
+        ]
+      },
+      "image": "assets/biome/25.png"
+    },
+    "path_lr": {
+      "id": 26,
+      "edges": {
+        "U": [
+          "path_bl"
+        ],
+        "D": [
+          "path_tr"
+        ],
+        "L": [
+          "path_tr"
+        ],
+        "R": [
+          "path_rl"
+        ]
+      },
+      "image": "assets/biome/26.png"
+    },
+    "path_rl": {
+      "id": 27,
+      "edges": {
+        "U": [
+          "path_br"
+        ],
+        "D": [
+          "path_lr"
+        ],
+        "L": [
+          "path_rl"
+        ],
+        "R": [
+          "path_lr"
+        ]
+      },
+      "image": "assets/biome/27.png"
+    },
+    "water_tl": {
+      "id": 28,
+      "edges": {
+        "U": [
+          "grass",
+          "water_br",
+          "sand_br"
+        ],
+        "D": [
+          "water_l",
+          "water_bl"
+        ],
+        "L": [
+          "grass"
+        ],
+        "R": [
+          "water_t",
+          "water_tr"
+        ]
+      },
+      "image": "assets/biome/28.png"
+    },
+    "water_t": {
+      "id": 29,
+      "edges": {
+        "U": [
+          "grass"
+        ],
+        "D": [
+          "water",
+          "water_b"
+        ],
+        "L": [
+          "water_tl",
+          "water_t"
+        ],
+        "R": [
+          "water_tr",
+          "water_t"
+        ]
+      },
+      "image": "assets/biome/29.png"
+    },
+    "water_tr": {
+      "id": 30,
+      "edges": {
+        "U": [
+          "grass"
+        ],
+        "D": [
+          "water_r",
+          "water_br"
+        ],
+        "L": [
+          "water_t",
+          "water_tl"
+        ],
+        "R": [
+          "grass"
+        ]
+      },
+      "image": "assets/biome/30.png"
+    },
+    "water_l": {
+      "id": 31,
+      "edges": {
+        "U": [
+          "water_tl",
+          "water_l"
+        ],
+        "D": [
+          "water_bl",
+          "water_l"
+        ],
+        "L": [
+          "grass"
+        ],
+        "R": [
+          "water",
+          "water_r"
+        ]
+      },
+      "image": "assets/biome/31.png"
+    },
+    "water": {
+      "id": 32,
+      "edges": {
+        "U": [
+          "water_t",
+          "water"
+        ],
+        "D": [
+          "water_b",
+          "water"
+        ],
+        "L": [
+          "water_l",
+          "water"
+        ],
+        "R": [
+          "water_r",
+          "water"
+        ]
+      },
+      "image": "assets/biome/32.png"
+    },
+    "water_r": {
+      "id": 33,
+      "edges": {
+        "U": [
+          "water_tr",
+          "water_r"
+        ],
+        "D": [
+          "water_br",
+          "water_r"
+        ],
+        "L": [
+          "water",
+          "water_l"
+        ],
+        "R": [
+          "grass"
+        ]
+      },
+      "image": "assets/biome/33.png"
+    },
+    "water_bl": {
+      "id": 34,
+      "edges": {
+        "U": [
+          "water_l",
+          "water_tl"
+        ],
+        "D": [
+          "grass"
+        ],
+        "L": [
+          "grass"
+        ],
+        "R": [
+          "water_b",
+          "water_br"
+        ]
+      },
+      "image": "assets/biome/34.png"
+    },
+    "water_b": {
+      "id": 35,
+      "edges": {
+        "U": [
+          "water"
+        ],
+        "D": [
+          "grass"
+        ],
+        "L": [
+          "water_bl",
+          "water_b"
+        ],
+        "R": [
+          "water_br",
+          "water_b"
+        ]
+      },
+      "image": "assets/biome/35.png"
+    },
+    "water_br": {
+      "id": 36,
+      "edges": {
+        "U": [
+          "water_r",
+          "water_tr"
+        ],
+        "D": [
+          "grass"
+        ],
+        "L": [
+          "water_b",
+          "water_bl"
+        ],
+        "R": [
+          "grass"
+        ]
+      },
+      "image": "assets/biome/36.png"
+    },
+    "shore_tl": {
+      "id": 37,
+      "edges": {
+        "U": [
+          "water_l",
+          "water_tl"
+        ],
+        "D": [
+          "water_b"
+        ],
+        "L": [
+          "water_tl",
+          "water_t"
+        ],
+        "R": [
+          "water_r"
+        ]
+      },
+      "image": "assets/biome/37.png"
+    },
+    "shore_tr": {
+      "id": 38,
+      "edges": {
+        "U": [
+          "water_r",
+          "water_tr"
+        ],
+        "D": [
+          "water_b"
+        ],
+        "L": [
+          "water_l"
+        ],
+        "R": [
+          "water_t",
+          "water_tr"
+        ]
+      },
+      "image": "assets/biome/38.png"
+    },
+    "shore_bl": {
+      "id": 39,
+      "edges": {
+        "U": [
+          "shore_tl",
+          "shore_tr",
+          "water_t"
+        ],
+        "D": [
+          "water_bl",
+          "water_l"
+        ],
+        "L": [
+          "water_b",
+          "water_bl"
+        ],
+        "R": [
+          "shore_tr",
+          "shore_br",
+          "water_r"
+        ]
+      },
+      "image": "assets/biome/39.png"
+    },
+    "shore_br": {
+      "id": 40,
+      "edges": {
+        "U": [
+          "shore_tr",
+          "shore_tl",
+          "water_t"
+        ],
+        "D": [
+          "water_r",
+          "water_br"
+        ],
+        "L": [
+          "shore_bl",
+          "shore_tl",
+          "water_l"
+        ],
+        "R": [
+          "water_b",
+          "water_br"
+        ]
+      },
+      "image": "assets/biome/40.png"
+    },
+    "shore_lr": {
+      "id": 41,
+      "edges": {
+        "U": [
+          "shore_bl"
+        ],
+        "D": [
+          "shore_tr"
+        ],
+        "L": [
+          "shore_tr"
+        ],
+        "R": [
+          "shore_rl"
+        ]
+      },
+      "image": "assets/biome/41.png"
+    },
+    "shore_rl": {
+      "id": 42,
+      "edges": {
+        "U": [
+          "shore_br"
+        ],
+        "D": [
+          "shore_lr"
+        ],
+        "L": [
+          "shore_rl"
+        ],
+        "R": [
+          "shore_lr"
+        ]
+      },
+      "image": "assets/biome/42.png"
+    }
+  },
+  "direction_mapping": {
+    "U": 0,
+    "R": 1,
+    "D": 2,
+    "L": 3
+  }
+}

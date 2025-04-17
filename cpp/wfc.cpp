@@ -248,7 +248,7 @@ class Wave {
 class Propagator {
     public:
         // Pattern compatibility rules
-        using PropagatorState = std::vector<std::array<std::vector<unsigned>, 4>>;
+        using PropagatorState = std::vector<std::vector<std::vector<unsigned>>>;
 
     private:
         // Number of patterns
@@ -263,19 +263,21 @@ class Propagator {
         // Queue of (y,x,pattern) tuples to propagate
         std::vector<std::tuple<unsigned, unsigned, unsigned>> propagating;
         // compatible[y][x][pattern][direction] = number of compatible patterns
-        Array3D<std::array<int, 4>> compatible;
+        Array3D<std::vector<int>> compatible;
         
         // Initialize the compatible array
         void init_compatible() noexcept {
-            std::array<int, 4> value;
             for (unsigned y = 0; y < wave_height; y++) {
                 for (unsigned x = 0; x < wave_width; x++) {
                     for (unsigned pattern = 0; pattern < patterns_size; pattern++) {
+                        std::vector<int> value(4, 0);
                         for (int direction = 0; direction < 4; direction++) {
-                            value[direction] = static_cast<unsigned>(
-                                propagator_state[pattern][get_opposite_direction(direction)].size());
+                            if (pattern < propagator_state.size() && direction < propagator_state[pattern].size()) {
+                                value[direction] = static_cast<unsigned>(
+                                    propagator_state[pattern][get_opposite_direction(direction)].size());
+                            }
                         }
-                    compatible.get(y, x, pattern) = value;
+                        compatible.set(y, x, pattern, value);
                     }
                 }
             }
@@ -296,8 +298,8 @@ class Propagator {
         
         // Add a (y,x,pattern) to the propagation queue
         void add_to_propagator(unsigned y, unsigned x, unsigned pattern) noexcept {
-            std::array<int, 4> temp = {};
-            compatible.get(y, x, pattern) = temp;
+            std::vector<int> temp(4, 0);
+            compatible.set(y, x, pattern, temp);
             propagating.emplace_back(y, x, pattern);
         }
         
@@ -310,6 +312,11 @@ class Propagator {
             
                 // Propagate in all four directions
                 for (unsigned direction = 0; direction < 4; direction++) {
+                    // Skip if this pattern doesn't have this direction defined
+                    if (pattern >= propagator_state.size() || direction >= propagator_state[pattern].size()) {
+                        continue;
+                    }
+
                     int dx = directions_x[direction];
                     int dy = directions_y[direction];
                     int x2, y2;
@@ -334,11 +341,13 @@ class Propagator {
                     const std::vector<unsigned> &patterns = propagator_state[pattern][direction];
             
                     // Update compatible counts for all affected patterns
-                    for (auto it = patterns.begin(), it_end = patterns.end(); it < it_end; ++it) {
-                        std::array<int, 4> value = compatible.get(y2, x2, *it);
-                        value[direction]--;
-                        compatible.set(y2, x2, *it, value);
-                
+                    for (auto it = patterns.begin(), it_end = patterns.end(); it < it_end; it++) {
+                        std::vector<int> value = compatible.get(y2, x2, *it);
+                        if (direction < value.size()) {
+                            value[direction]--;
+                            compatible.set(y2, x2, *it, value);
+                        }
+
                         // If no compatible patterns remain in a direction, remove pattern from wave
                         if (value[direction] == 0) {
                             add_to_propagator(y2, x2, *it);
@@ -607,10 +616,12 @@ class WFC {
 // Helper to generate simple adjacency rules for a test
 Propagator::PropagatorState generate_adjacency_rules(int num_patterns) {
     // Initialize the rules
-    Propagator::PropagatorState rules(num_patterns);
+    Propagator::PropagatorState rules;
+    rules.resize(num_patterns);
     
     // Set up some simple adjacency rules
     for (int i = 0; i < num_patterns; i++) {
+        rules[i].resize(4);
         for (int dir = 0; dir < 4; dir++) {
             // Add compatible patterns for each direction
             // Simple rule: patterns can be adjacent if they differ by at most 1
