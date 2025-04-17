@@ -230,7 +230,7 @@ def biome_wfc_step(
             - truncated: True if a contradiction occurred.
     """
     # 1. Find the cell with the lowest entropy
-    next_cell_coords = find_lowest_entropy_cell(grid)
+    next_cell_coords = find_lowest_entropy_cell(grid, deterministic)
 
     if next_cell_coords is None:
         # Check if it's because all cells are collapsed or because of a previous contradiction

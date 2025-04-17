@@ -2,6 +2,7 @@ import argparse
 import copy
 import math
 import os
+import pickle
 import random
 import time
 from multiprocessing import Pool, cpu_count
@@ -157,7 +158,7 @@ def evolve(
     for generation in tqdm(range(generations), desc="Generations"):
         # Evaluate the entire population in parallel
         with Pool(min(cpu_count(), population_size)) as pool:
-            population = pool.imap_unordered(run_member, population)
+            population = pool.map(run_member, population)
         population.sort(key=lambda x: x.reward, reverse=True)
         best = population[0]
         if best_agent is None or best.reward > best_agent.reward:
@@ -183,7 +184,7 @@ def evolve(
         ]
 
         with Pool(cpu_count()) as pool:
-            reproduction_results = pool.imap_unordered(reproduce_pair, pairs_args)
+            reproduction_results = pool.map(reproduce_pair, pairs_args)
 
         # Flatten and trim the offspring list
         offspring = [child for pair in reproduction_results for child in pair][
@@ -312,6 +313,12 @@ if __name__ == "__main__":
         default="best_hyperparameters.yaml",
         help="Filename for the saved hyperparameters YAML.",
     )
+    parser.add_argument(
+        "--best-agent-pickle",
+        type=str,
+        default="best_evolved_binary_agent.yaml",
+        help="Filename for the saved hyperparameters YAML.",
+    )
 
     args = parser.parse_args()
 
@@ -377,7 +384,7 @@ if __name__ == "__main__":
             print(f"Error loading or using hyperparameters: {e}")
             exit(1)
 
-    else:
+    elif not args.best_agent_pickle:
         # --- Run Optuna Hyperparameter Optimization ---
         print(
             f"Running Optuna hyperparameter search for {args.optuna_trials} trials..."
@@ -434,6 +441,9 @@ if __name__ == "__main__":
         )
         end_time = time.time()
         print(f"Final evolution finished in {end_time - start_time:.2f} seconds.")
+    elif args.best_agent_pickle:
+        with open(args.best_agent_pickle, "rb") as f:
+            best_agent = pickle.load(f)
 
     # --- Render the result from the best agent ---
     if best_agent:
@@ -442,5 +452,9 @@ if __name__ == "__main__":
         render_best_agent(env, best_agent, tile_images)
     else:
         print("\nNo best agent was found during the process.")
+
+    # save the best agent in a .pkl file
+    with open("best_evolved_binary_agent.pkl", "wb") as f:
+        pickle.dump(best_agent, f)
 
     print("Script finished.")
