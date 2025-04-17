@@ -7,26 +7,6 @@
 namespace nb = nanobind;
 
 NB_MODULE(wfc_cpp, m) {
-    // // Custom propagator python initialization
-    // m.def("create_propagator_state", [](const nb::list &py_rules){
-    //     Propagator::PropagatorState cpp_rules;
-        
-    //     for (size_t i = 0; i < nb::len(py_rules); i++) {
-    //         std::array<std::vector<unsigned>, 4> pattern_rules;
-    //         nb::list pattern_list = py_rules[i].cast<nb::list>();
-
-    //         for (size_t j = 0; j < 4 && j < nb::len(pattern_list); ++j) {
-    //             nb::list direction_list = pattern_list[j].cast<nb::list>();
-
-    //             for (size_t k = 0; k < nb::len(direction_list); k++) {
-    //                 pattern_rules[j].push_back(direction_list[k].cast<unsigned>());
-    //             }
-    //         }
-    //         cpp_rules.push_back(pattern_rules);
-    //     }
-    //     return cpp_rules;
-    // });
-
     nb::class_<WFC>(m, "WFC")
         .def(nb::init<bool, int, std::vector<double>, 
             Propagator::PropagatorState, unsigned, unsigned>())
