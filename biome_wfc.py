@@ -59,34 +59,41 @@ def collapse_cell(
     grid, tile_symbols, tile_to_index, x, y, action_probs, deterministic: bool = False
 ):
     """
-    Collapses the cell (x, y) by choosing a tile.
+    Collapses the cell (x, y) by choosing a tile based on action_probs.
 
     If deterministic=True:
-      • Pick the tile with the largest action_probs weight.
-      • If all those weights are zero, pick the first tile in tile_symbols.
+      1. Pick the possible tile (in tile_symbols order) with largest action_probs weight.
+      2. If that max weight is <= 0, fall back to the first possible tile in tile_symbols.
     If deterministic=False:
-      • Do the weighted random selection as before.
+      Do the weighted random selection as before, with uniform fallback if all weights zero.
+
+    Returns:
+        The chosen tile name, or None if the cell was already empty.
     """
     possible_tiles = grid[y][x]
     if not possible_tiles:
-        return None  # contradiction or already collapsed
+        return None  # Already empty / contradiction
 
     chosen_tile = None
 
     if deterministic:
-        # 1) Find the possible tile with highest probability
+        # 1) Scan in canonical order for the max-prob tile
         best_tile = None
         max_prob = -float("inf")
-        for tile in possible_tiles:
-            idx = tile_to_index[tile]
-            prob = action_probs[idx] if 0 <= idx < len(action_probs) else 0.0
-            if prob > max_prob:
-                max_prob = prob
-                best_tile = tile
+        for tile in tile_symbols:
+            if tile in possible_tiles:
+                idx = tile_to_index.get(tile, None)
+                prob = (
+                    action_probs[idx]
+                    if idx is not None and 0 <= idx < len(action_probs)
+                    else 0.0
+                )
+                if prob > max_prob:
+                    max_prob = prob
+                    best_tile = tile
 
-        # 2) If that best weight is strictly positive, use it.
-        #    Otherwise, fall back to first-in-order.
-        if max_prob > 0.0 and best_tile is not None:
+        # 2) Use best_tile if it had positive weight; else fallback to first possible
+        if best_tile is not None and max_prob > 0.0:
             chosen_tile = best_tile
         else:
             for tile in tile_symbols:
@@ -95,13 +102,19 @@ def collapse_cell(
                     break
 
     else:
-        # — your existing stochastic code unchanged —
+        # — stochastic path (unchanged) —
         weights = []
         valid_tiles = []
         total = 0.0
+
         for tile in possible_tiles:
-            idx = tile_to_index[tile]
-            w = max(0.0, action_probs[idx] if 0 <= idx < len(action_probs) else 0.0)
+            idx = tile_to_index.get(tile, None)
+            w = (
+                action_probs[idx]
+                if idx is not None and 0 <= idx < len(action_probs)
+                else 0.0
+            )
+            w = max(0.0, w)
             if w > 1e-9:
                 weights.append(w)
                 valid_tiles.append(tile)
@@ -110,16 +123,17 @@ def collapse_cell(
         if total > 1e-9:
             r = random.uniform(0, total)
             cum = 0.0
-            chosen_tile = valid_tiles[-1]
+            chosen_tile = valid_tiles[-1]  # fallback if rounding
             for w, tile in zip(weights, valid_tiles):
                 cum += w
                 if r <= cum:
                     chosen_tile = tile
                     break
         else:
+            # all weights zero → uniform random among possibles
             chosen_tile = random.choice(list(possible_tiles))
 
-    # collapse into that single tile
+    # finally collapse
     grid[y][x] = {chosen_tile}
     return chosen_tile
 
