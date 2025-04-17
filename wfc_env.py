@@ -2,6 +2,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import wfc_cpp
 import numpy as np
+from utils import extract_patterns
 
 class WFCEnv(gym.Env):
     def __init__(self, input_data, height, width):
