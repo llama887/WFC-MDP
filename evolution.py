@@ -316,7 +316,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--best-agent-pickle",
         type=str,
-        default="best_evolved_binary_agent.yaml",
         help="Filename for the saved hyperparameters YAML.",
     )
 

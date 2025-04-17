@@ -1,3 +1,4 @@
+import random
 from enum import Enum, auto
 
 import gymnasium as gym  # Use Gymnasium
@@ -204,7 +205,7 @@ class WFCWrapper(gym.Env):
             self.all_tiles,  # List of tile symbols
             self.tile_to_index,  # Tile symbol to index map
             action_probs,  # Action probabilities from agent
-            deterministic=True,
+            deterministic=self.deterministic,
         )
 
         # Check for truncation due to reaching max steps
@@ -243,6 +244,8 @@ class WFCWrapper(gym.Env):
     def reset(self, seed=None, options=None):
         """Resets the environment to the initial state."""
         super().reset(seed=seed)  # Handle seeding correctly via Gymnasium Env
+        random.seed(seed)
+        np.random.seed(seed)
         # Re-initialize the grid using the function from biome_wfc
         self.grid = initialize_wfc_grid(self.map_width, self.map_length, self.all_tiles)
         self.current_step = 0

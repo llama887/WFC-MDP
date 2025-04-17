@@ -56,75 +56,71 @@ def find_lowest_entropy_cell(grid, deterministic: bool = False):
 
 # Collapse a cell to a single tile based on action probabilities
 def collapse_cell(
-    grid, tile_symbols, tile_to_index, x, y, action_probs, deterministic=False
+    grid, tile_symbols, tile_to_index, x, y, action_probs, deterministic: bool = False
 ):
     """
-    Collapses the cell (x, y) by choosing a tile based on action_probs.
+    Collapses the cell (x, y) by choosing a tile.
 
-    Args:
-        grid: The current WFC grid (list of lists of sets).
-        tile_symbols: List of all tile names.
-        tile_to_index: Mapping from tile name to index.
-        x, y: Coordinates of the cell to collapse.
-        action_probs: A list or numpy array of probabilities/weights for each tile index.
-        deterministic: If True, choose the tile with the highest probability.
-
-    Returns:
-        The chosen tile name, or None if the cell had no possibilities.
+    If deterministic=True:
+      • Pick the tile with the largest action_probs weight.
+      • If all those weights are zero, pick the first tile in tile_symbols.
+    If deterministic=False:
+      • Do the weighted random selection as before.
     """
-    possible_tiles = list(grid[y][x])
+    possible_tiles = grid[y][x]
     if not possible_tiles:
-        return None  # Should not happen if find_lowest_entropy found a valid cell
+        return None  # contradiction or already collapsed
 
-    chosen_tile = None  # Initialize chosen_tile
+    chosen_tile = None
 
     if deterministic:
+        # 1) Find the possible tile with highest probability
         best_tile = None
-        max_prob = -1.0
+        max_prob = -float("inf")
         for tile in possible_tiles:
             idx = tile_to_index[tile]
-            # Ensure index is within bounds of action_probs
-            if 0 <= idx < len(action_probs):
-                prob = action_probs[idx]
-                if prob > max_prob:
-                    max_prob = prob
-                    best_tile = tile
-        chosen_tile = best_tile
-    else:
-        # Weighted random selection
-        weights = []
-        valid_tiles = []
-        total_weight = 0.0
-        for tile in possible_tiles:
-            idx = tile_to_index[tile]
-            # Ensure index is within bounds and weight is non-negative
-            if 0 <= idx < len(action_probs):
-                weight = max(0.0, action_probs[idx])
-                if (
-                    weight > 1e-9
-                ):  # Use a small epsilon to avoid floating point issues with zero weights
-                    weights.append(weight)
-                    valid_tiles.append(tile)
-                    total_weight += weight
+            prob = action_probs[idx] if 0 <= idx < len(action_probs) else 0.0
+            if prob > max_prob:
+                max_prob = prob
+                best_tile = tile
 
-        if total_weight > 1e-9 and valid_tiles:  # Use weighted choice if possible
-            rand_val = random.uniform(0, total_weight)
-            current_sum = 0.0
-            # Default to last valid tile in case of floating point issues
-            chosen_tile = valid_tiles[-1]
-            for i, tile in enumerate(valid_tiles):
-                current_sum += weights[i]
-                if rand_val <= current_sum:
+        # 2) If that best weight is strictly positive, use it.
+        #    Otherwise, fall back to first-in-order.
+        if max_prob > 0.0 and best_tile is not None:
+            chosen_tile = best_tile
+        else:
+            for tile in tile_symbols:
+                if tile in possible_tiles:
                     chosen_tile = tile
                     break
-        elif possible_tiles:  # Check if there were original possibilities
-            # Fallback to uniform random choice among the original possibilities if all weights are zero or invalid
-            chosen_tile = random.choice(possible_tiles)
-        # If possible_tiles was empty initially, chosen_tile remains None
 
-    if chosen_tile:
-        grid[y][x] = {chosen_tile}
+    else:
+        # — your existing stochastic code unchanged —
+        weights = []
+        valid_tiles = []
+        total = 0.0
+        for tile in possible_tiles:
+            idx = tile_to_index[tile]
+            w = max(0.0, action_probs[idx] if 0 <= idx < len(action_probs) else 0.0)
+            if w > 1e-9:
+                weights.append(w)
+                valid_tiles.append(tile)
+                total += w
 
+        if total > 1e-9:
+            r = random.uniform(0, total)
+            cum = 0.0
+            chosen_tile = valid_tiles[-1]
+            for w, tile in zip(weights, valid_tiles):
+                cum += w
+                if r <= cum:
+                    chosen_tile = tile
+                    break
+        else:
+            chosen_tile = random.choice(list(possible_tiles))
+
+    # collapse into that single tile
+    grid[y][x] = {chosen_tile}
     return chosen_tile
 
 
@@ -274,7 +270,7 @@ def biome_wfc_step(
 
     # 4. Check if the process is finished *after* propagation
     # Re-calling find_lowest_entropy_cell tells us if any undecided cells remain.
-    if find_lowest_entropy_cell(grid) is None:
+    if find_lowest_entropy_cell(grid, deterministic) is None:
         # Need to double-check if it's completion or contradiction again,
         # as propagation might have resolved everything or caused a new contradiction.
         contradiction_found = False
