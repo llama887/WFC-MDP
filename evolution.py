@@ -259,7 +259,7 @@ def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images
     for action in tqdm(best_agent.action_sequence, desc="Rendering Steps"):
         _, reward, _, _, _ = env.step(action)
         total_reward += reward
-        render_wfc_grid(env.grid, tile_images, screen)
+        render_wfc_grid(env.grid, tile_images, screen=screen)
         pygame.time.delay(5)  # Slightly faster rendering
 
     print(f"Final map reward for the best agent: {total_reward:.4f}")
