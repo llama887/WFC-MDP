@@ -218,9 +218,7 @@ class WFCWrapper(gym.Env):
         reward = (
             compute_reward(self.grid, self.task)
             if terminated
-            else 0
-            if not truncated
-            else -1000
+            else (-1000 if truncated else 0)
         )
 
         # if reward != 0:

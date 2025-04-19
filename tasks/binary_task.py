@@ -17,9 +17,9 @@ def grid_to_binary_map(grid: list[list[set[str]]]) -> np.ndarray:
             if len(cell) == 1:
                 tile_name = next(iter(cell))
                 if tile_name.startswith("sand") or tile_name.startswith("path"):
-                    binary_map[y, x] = 0  # empty
+                    binary_map[y, x] = 1  # empty
                 else:
-                    binary_map[y, x] = 1  # solid
+                    binary_map[y, x] = 0  # solid
             else:
                 binary_map[y, x] = 1
     return binary_map
