@@ -69,7 +69,7 @@ def compute_reward(grid: list[list[set[str]]], task: Task) -> float:
     """
     match task:
         case Task.BINARY:
-            TARGET_PATH_LENGTH = 100
+            TARGET_PATH_LENGTH = 50
             binary_map = grid_to_binary_map(grid)
             regions = calc_num_regions(binary_map)
             current_path = calc_longest_path(binary_map)
@@ -79,7 +79,7 @@ def compute_reward(grid: list[list[set[str]]], task: Task) -> float:
             if current_path >= TARGET_PATH_LENGTH:
                 path_reward = 100.0
             else:
-                path_reward = 100.0 / (abs(TARGET_PATH_LENGTH - current_path) + 1)
+                path_reward = current_path - TARGET_PATH_LENGTH
             return region_reward + path_reward
         case _:
             # TODO: incorporate biome rewards
