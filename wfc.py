@@ -94,6 +94,9 @@ class Wave:
             # Decrease pattern count
             self.num_patterns_array[i, j] -= 1
             
+            # Debug print
+            print(f"\nnum_possible_patterns:{self.num_patterns_array[i, j]}, p_sum:{self.p_sum[i, j]}")
+            
             # Check for contradiction or very small sum
             if self.num_patterns_array[i, j] == 0 or self.p_sum[i, j] <= 1e-10:
                 self.is_impossible = True
@@ -351,7 +354,6 @@ class WFC:
         """
         # Get cell with minimum entropy
         argmin = self.wave.get_min_entropy(self.rng)
-        
         # No more cells to collapse
         if argmin == -1 or argmin == -2:
             return -1, -1, []

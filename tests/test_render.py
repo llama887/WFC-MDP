@@ -74,8 +74,8 @@ def test_standalone_renderer():
             time.sleep(2)  # Pause to show final result
             break
         
-        # Perform a step with uniform probabilities
-        terminated, truncated = wfc.collapse_step([1.0] * len(patterns))
+        # Perform a step with expert (wfc) probabilities
+        terminated, truncated = wfc.collapse_step(probs)
         
         if terminated or truncated:
             print(f"WFC {'completed successfully' if terminated else 'failed with contradiction'}")
@@ -119,8 +119,9 @@ def test_wfc_env_renderer():
     
     while step_count < num_steps:
         # Create a random action (can be replaced with a trained agent)
-        action = np.random.rand(env.num_patterns)
-        
+        x, y, action = env.get_expert_action()
+        formatted_action = [f"{a:.2f}" for a in action]
+        print(f"Step {step_count}: collapsing cell ({x}, {y}) with action {formatted_action}\n") 
         # Take a step
         obs, reward, terminated, truncated, _ = env.step(action)
         

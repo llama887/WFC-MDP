@@ -124,6 +124,16 @@ class WFCEnv(gym.Env):
 
         return obs, reward, terminated, truncated, info
     
+    def get_expert_action(self):
+        """
+        Get expert action for the next cell to collapse.
+        
+        Returns:
+            Tuple of (x, y, probabilities)
+        """
+        x, y, probabilities = self.wfc.get_next_collapse_cell()
+        return x, y, probabilities
+    
     def _init_renderer(self):
         """Initialize the pygame renderer"""
         self.renderer = WFCRenderer(
