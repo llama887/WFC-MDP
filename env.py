@@ -1,8 +1,8 @@
 import gymnasium as gym
 from gymnasium import spaces
-import wfc_cpp
 import numpy as np
 from utils import extract_patterns
+from wfc import WFC
 
 class WFCEnv(gym.Env):
     """
@@ -45,8 +45,14 @@ class WFCEnv(gym.Env):
             Initial observation
             Info dictionary
         """
-        self.wfc = wfc_cpp.WFC(
-            False, np.random.randint(0, 1e4), 
+        if seed is not None:
+            self.seed = seed
+        elif self.seed is None:
+            self.seed = np.random.randint(0, 1e4)
+        
+        self.wfc = WFC(
+            False, 
+            self.seed, 
             self.frequencies, 
             self.rules, 
             self.height, 
@@ -77,10 +83,6 @@ class WFCEnv(gym.Env):
         Returns:
             Tuple of (observation, reward, terminated, truncated, info)
         """
-        # Normalize action if needed
-        action_sum = action.sum()
-        if sum > 0:
-            action = action / action_sum
 
         # Apply action to collapse next cell
         terminated, truncated = self.wfc.collapse_step(action)

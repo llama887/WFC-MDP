@@ -1,7 +1,7 @@
 import numpy as np
 import json
 from utils import extract_patterns
-import wfc_cpp  # The C++ bindings
+from wfc import WFC
 
 def test_extraction():
     """Test the extraction of patterns, frequencies, and rules."""
@@ -31,7 +31,7 @@ def test_extraction():
 def test_wfc_generation(patterns, frequencies, rules, width=20, height=15, seed=42):
     """Test WFC generation with the extracted patterns."""
     # Create a WFC instance
-    wfc = wfc_cpp.WFC(
+    wfc = WFC(
         False,  # periodic_output
         seed,   # random seed
         frequencies,
