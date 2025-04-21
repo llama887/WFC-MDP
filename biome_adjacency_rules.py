@@ -40,6 +40,7 @@ TILES = {
                 "water_br",
                 "flower",
                 "grass_hill_r",
+                "grass_hill_tr",
                 "grass_hill_br",
             ],
             "R": [
@@ -53,6 +54,7 @@ TILES = {
                 "water_bl",
                 "flower",
                 "grass_hill_l",
+                "grass_hill_tl",
                 "grass_hill_bl",
             ],
         },
@@ -70,26 +72,26 @@ TILES = {
     # flower tile
     "flower": {
         "edges": {
-            "U": ["grass", "tall_grass"],
-            "D": ["grass", "tall_grass"],
-            "L": ["grass", "tall_grass"],
-            "R": ["grass", "tall_grass"],
+            "U": ["grass", "tall_grass", "grass_hill_t"],
+            "D": ["grass", "tall_grass", "grass_hill_b"],
+            "L": ["grass", "tall_grass", "grass_hill_l"],
+            "R": ["grass", "tall_grass", "grass_hill_r"],
         },
         "image": "tiles_32x32_B/tile_13_1.png",
     },
     # hill tiles
     "grass_hill_tl": {  # top left
         "edges": {
-            "U": ["grass"],
+            "U": ["grass", "grass_hill_br", "grass_hill_bl", "grass_hill_b"],
             "D": ["grass_hill_l", "grass_hill_bl"],
-            "L": ["grass"],
+            "L": ["grass", "grass_hill_br", "grass_hill_tr"],
             "R": ["grass_hill_t", "grass_hill_tr"],
         },
         "image": "tiles_32x32_B/tile_12_0.png",
     },
     "grass_hill_t": {  # top
         "edges": {
-            "U": ["grass"],
+            "U": ["grass", "grass_hill_b", "grass_hill_br", "grass_hill_bl"],
             "D": ["grass", "flower", "grass_hill_b"],
             "L": ["grass_hill_tl", "grass_hill_t"],
             "R": ["grass_hill_tr", "grass_hill_t"],
@@ -98,10 +100,10 @@ TILES = {
     },
     "grass_hill_tr": {  # top right
         "edges": {
-            "U": ["grass"],
+            "U": ["grass", "grass_hill_br", "grass_hill_bl", "grass_hill_b"],
             "D": ["grass_hill_r", "grass_hill_br"],
             "L": ["grass_hill_t", "grass_hill_tl"],
-            "R": ["grass"],
+            "R": ["grass", "grass_hill_bl", "grass_hill_tl"],
         },
         "image": "tiles_32x32_B/tile_12_2.png",
     },
@@ -109,7 +111,7 @@ TILES = {
         "edges": {
             "U": ["grass_hill_l", "grass_hill_tl"],
             "D": ["grass_hill_l", "grass_hill_bl"],
-            "L": ["grass"],
+            "L": ["grass", "grass_hill_br", "grass_hill_tr"],
             "R": ["grass", "flower", "grass_hill_r"],
         },
         "image": "tiles_32x32_B/tile_13_0.png",
@@ -119,15 +121,15 @@ TILES = {
             "U": ["grass_hill_r", "grass_hill_tr"],
             "D": ["grass_hill_r", "grass_hill_br"],
             "L": ["grass", "flower", "grass_hill_l"],
-            "R": ["grass"],
+            "R": ["grass", "grass_hill_bl", "grass_hill_tl"],
         },
         "image": "tiles_32x32_B/tile_13_2.png",
     },
     "grass_hill_bl": {  # bottom left
         "edges": {
             "U": ["grass_hill_l", "grass_hill_tl"],
-            "D": ["grass"],
-            "L": ["grass"],
+            "D": ["grass", "grass_hill_tr", "grass_hill_tl", "grass_hill_t"],
+            "L": ["grass", "grass_hill_tr", "grass_hill_br"],
             "R": ["grass_hill_b", "grass_hill_br"],
         },
         "image": "tiles_32x32_B/tile_14_0.png",
@@ -135,7 +137,7 @@ TILES = {
     "grass_hill_b": {  # bottom
         "edges": {
             "U": ["grass", "flower", "grass_hill_t"],
-            "D": ["grass"],
+            "D": ["grass", "grass_hill_tr", "grass_hill_tl", "grass_hill_t"],
             "L": ["grass_hill_bl", "grass_hill_b"],
             "R": ["grass_hill_br", "grass_hill_b"],
         },
@@ -144,9 +146,9 @@ TILES = {
     "grass_hill_br": {  # bottom right
         "edges": {
             "U": ["grass_hill_r", "grass_hill_tr"],
-            "D": ["grass"],
+            "D": ["grass", "grass_hill_tr", "grass_hill_tl", "grass_hill_t"],
             "L": ["grass_hill_b", "grass_hill_bl"],
-            "R": ["grass"],
+            "R": ["grass", "grass_hill_tl", "grass_hill_bl"],
         },
         "image": "tiles_32x32_B/tile_14_2.png",
     },
@@ -254,17 +256,17 @@ TILES = {
     "path_tl": {  # top left
         "edges": {
             "U": ["sand_l", "sand_tl"],
-            "D": ["sand", "sand_1", "sand_2", "sand_b"],
+            "D": ["sand", "sand_1", "sand_2", "sand_b", "path_bl", "path_br"],
             "L": ["sand_tl", "sand_t"],
-            "R": ["sand", "sand_1", "sand_2", "sand_r"],
+            "R": ["sand", "sand_1", "sand_2", "sand_r", "path_tr", "path_br"],
         },
         "image": "tiles_32x32_B/tile_1_3.png",
     },
     "path_tr": {  # top right
         "edges": {
             "U": ["sand_r", "sand_tr"],
-            "D": ["sand", "sand_1", "sand_2", "sand_b"],
-            "L": ["sand", "sand_1", "sand_2", "sand_l"],
+            "D": ["sand", "sand_1", "sand_2", "sand_b", "path_bl", "path_br"],
+            "L": ["sand", "sand_1", "sand_2", "sand_l", "path_bl", "path_tl"],
             "R": ["sand_t", "sand_tr"],
         },
         "image": "tiles_32x32_B/tile_1_4.png",
@@ -289,19 +291,19 @@ TILES = {
     },
     "path_lr": {  # top left bottom right
         "edges": {
-            "U": ["path_bl"],
-            "D": ["path_tr"],
-            "L": ["path_tr"],
-            "R": ["path_rl"],
+            "U": ["sand_l", "sand_tl"],
+            "D": ["sand_r", "sand_br"],
+            "L": ["sand_t", "sand_tl"],
+            "R": ["sand_b", "sand_br"],
         },
         "image": "tiles_32x32_B/tile_3_3.png",
     },
     "path_rl": {  # top right bottom left
         "edges": {
-            "U": ["path_br"],
-            "D": ["path_lr"],
-            "L": ["path_rl"],
-            "R": ["path_lr"],
+            "U": ["sand_r", "sand_tr"],
+            "D": ["sand_l", "sand_bl"],
+            "L": ["sand_b", "sand_bl"],
+            "R": ["sand_t", "sand_tr"],
         },
         "image": "tiles_32x32_B/tile_3_4.png",
     },
@@ -391,54 +393,54 @@ TILES = {
     "shore_tl": {  # top left
         "edges": {
             "U": ["water_l", "water_tl"],
-            "D": ["water_b"],
+            "D": ["water", "water_b", "shore_bl", "shore_ br"],
             "L": ["water_tl", "water_t"],
-            "R": ["water_r"],
+            "R": ["water_r", "shore_tr", "shore_br", "water"],
         },
         "image": "tiles_32x32_B/tile_4_3.png",
     },
     "shore_tr": {  # top right
         "edges": {
             "U": ["water_r", "water_tr"],
-            "D": ["water_b"],
-            "L": ["water_l"],
+            "D": ["water_b", "water", "shore_bl", "shore_br"],
+            "L": ["water_l", "shore_bl", "shore_tl", "water"],
             "R": ["water_t", "water_tr"],
         },
         "image": "tiles_32x32_B/tile_4_4.png",
     },
     "shore_bl": {  # bottom left
         "edges": {
-            "U": ["shore_tl", "shore_tr", "water_t"],
+            "U": ["shore_tl", "shore_tr", "water_t", "water"],
             "D": ["water_bl", "water_l"],
             "L": ["water_b", "water_bl"],
-            "R": ["shore_tr", "shore_br", "water_r"],
+            "R": ["shore_tr", "shore_br", "water_r", "water"],
         },
         "image": "tiles_32x32_B/tile_5_3.png",
     },
     "shore_br": {  # bottom right
         "edges": {
-            "U": ["shore_tr", "shore_tl", "water_t"],
+            "U": ["shore_tr", "shore_tl", "water_t", "water"],
             "D": ["water_r", "water_br"],
-            "L": ["shore_bl", "shore_tl", "water_l"],
+            "L": ["shore_bl", "shore_tl", "water_l", "water"],
             "R": ["water_b", "water_br"],
         },
         "image": "tiles_32x32_B/tile_5_4.png",
     },
     "shore_lr": {  # top left bottom right
         "edges": {
-            "U": ["shore_bl"],
-            "D": ["shore_tr"],
-            "L": ["shore_tr"],
-            "R": ["shore_rl"],
+            "U": ["water_l", "water_tl"],
+            "D": ["water_r", "water_br"],
+            "L": ["water_t", "water_tl"],
+            "R": ["water_b", "water_br"],
         },
         "image": "tiles_32x32_B/tile_6_3.png",
     },
     "shore_rl": {  # top right bottom left
         "edges": {
-            "U": ["shore_br"],
-            "D": ["shore_lr"],
-            "L": ["shore_rl"],
-            "R": ["shore_lr"],
+            "U": ["water_r", "water_tr"],
+            "D": ["water_l", "water_bl"],
+            "L": ["water_b", "water_bl"],
+            "R": ["water_t", "water_tr"],
         },
         "image": "tiles_32x32_B/tile_6_4.png",
     },
@@ -483,15 +485,9 @@ def print_adjacency_compatibility():
 
 
 # print_adjacency_compatibility()
-
-# Initialize Pygame
-pygame.init()
 SCREEN_WIDTH = 640
 SCREEN_HEIGHT = 480
 TILE_SIZE = 32
-
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Tile Renderer")
 
 
 # Load all tile images
@@ -544,4 +540,9 @@ def main():
 
 
 if __name__ == "__main__":
+    # Initialize Pygame
+    pygame.init()
+
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    pygame.display.set_caption("Tile Renderer")
     main()

@@ -1,5 +1,9 @@
+import random
+from enum import Enum, auto
+
 import gymnasium as gym  # Use Gymnasium
 import numpy as np
+import pygame
 from gymnasium import spaces
 
 # Import functions from biome_wfc instead of fast_wfc
@@ -10,6 +14,14 @@ from biome_wfc import (  # We might not need render_wfc_grid if we keep console 
     load_tile_images,
     render_wfc_grid,
 )
+from tasks.binary_task import calc_longest_path, calc_num_regions, grid_to_binary_map
+
+
+class Task(Enum):
+    # TODO: replace place holder biomes with real biome specifications
+    BIOME1 = auto()
+    BIOME2 = auto()
+    BINARY = auto()
 
 
 def grid_to_array(
@@ -48,18 +60,30 @@ def grid_to_array(
     return arr.flatten()
 
 
-# wfc_next_collapse_position is replaced by find_lowest_entropy_cell from biome_wfc
+def compute_reward(grid: list[list[set[str]]], task: Task) -> float:
+    """Computes the reward based task
 
+    Binary Task: reward is based on regions connectivity and how far we are from the target path length.
+    Regions: +100 reward if there's a single connected empty region; else -100.
+    Path: Scales linearly up to +100 when the longest path increases by at least 20 tiles.
+    """
+    match task:
+        case Task.BINARY:
+            TARGET_PATH_LENGTH = 50
+            binary_map = grid_to_binary_map(grid)
+            regions = calc_num_regions(binary_map)
+            current_path = calc_longest_path(binary_map)
 
-def fake_reward(
-    grid: list[list[set[str]]],  # Grid is now list of lists of sets
-    tile_symbols: list[str],  # Use symbols list
-    tile_to_index: dict[str, int],  # Use the mapping
-    terminated: bool,
-    truncated: bool,
-) -> float:
-    final_reward = 0
-    return final_reward
+            region_reward = 100.0 if regions == 1 else -100.0
+
+            if current_path >= TARGET_PATH_LENGTH:
+                path_reward = 100.0
+            else:
+                path_reward = current_path - TARGET_PATH_LENGTH
+            return region_reward + path_reward
+        case _:
+            # TODO: incorporate biome rewards
+            return 0
 
 
 # # Target subarray to count
@@ -83,8 +107,6 @@ class WFCWrapper(gym.Env):
     Truncation: A contradiction occurs during propagation OR max steps reached.
     """
 
-    metadata = {"render_modes": ["human"], "render_fps": 10}  # Add metadata, adjust FPS
-
     def __init__(
         self,
         map_length: int,
@@ -92,31 +114,31 @@ class WFCWrapper(gym.Env):
         tile_symbols: list[str],
         adjacency_bool: np.ndarray,
         num_tiles: int,
-        tile_to_index: dict[str, int],  # Add tile_to_index
+        tile_to_index: dict[str, int],
+        task: Task,
+        deterministic: bool,
     ):
-        super().__init__()  # Call parent constructor
+        super().__init__()
         self.all_tiles = tile_symbols
         self.adjacency = adjacency_bool
         self.num_tiles = num_tiles
         self.map_length: int = map_length
         self.map_width: int = map_width
-        self.tile_to_index = tile_to_index  # Store tile_to_index
+        self.tile_to_index = tile_to_index
+        self.deterministic = deterministic
 
         # Initial grid state using the function from biome_wfc
         # self.grid will hold the current state (list of lists of sets)
         self.grid = initialize_wfc_grid(self.map_width, self.map_length, self.all_tiles)
-        # Keep a way to reset easily if needed, maybe store initial args?
-        # Or just call initialize_wfc_grid again in reset.
 
         # Action space: Agent outputs preferences (logits) for each tile type.
-        # Needs to be float32 for SB3.
         self.action_space: spaces.Box = spaces.Box(
             low=-1, high=1, shape=(self.num_tiles,), dtype=np.float32
         )
 
         # Observation space: Flattened map + normalized coordinates of the next cell to collapse
         # Map values range from -1 (undecided) to 1 (max index / max index).
-        # Coordinates range from 0 to 1. Needs to be float32 for SB3.
+        # Coordinates range from 0 to 1.
         self.observation_space: spaces.Box = spaces.Box(
             low=-1.0,  # Lower bound changed due to -1 for undecided cells
             high=1.0,
@@ -126,6 +148,7 @@ class WFCWrapper(gym.Env):
         self.current_step = 0
         # Set a maximum number of steps to prevent infinite loops if termination fails
         self.max_steps = self.map_length * self.map_width + 10  # Allow some buffer
+        self.task = task
 
     def get_observation(self) -> np.ndarray:
         """Constructs the observation array (needs to be float32)."""
@@ -138,7 +161,9 @@ class WFCWrapper(gym.Env):
             self.map_width,
         )
         # Find the next cell to collapse using the function from biome_wfc
-        pos_tuple = find_lowest_entropy_cell(self.grid)  # Returns (x, y) or None
+        pos_tuple = find_lowest_entropy_cell(
+            self.grid, deterministic=self.deterministic
+        )  # Returns (x, y) or None
 
         # Handle case where grid is fully collapsed (pos_tuple is None)
         if pos_tuple is None:
@@ -180,7 +205,7 @@ class WFCWrapper(gym.Env):
             self.all_tiles,  # List of tile symbols
             self.tile_to_index,  # Tile symbol to index map
             action_probs,  # Action probabilities from agent
-            deterministic=False,  # Use stochastic collapse during training
+            deterministic=self.deterministic,
         )
 
         # Check for truncation due to reaching max steps
@@ -189,11 +214,15 @@ class WFCWrapper(gym.Env):
             truncated = True
             terminated = False  # Cannot be both terminated and truncated
 
-        # Calculate reward using the updated grid (list of sets)
-        reward = fake_reward(
-            self.grid, self.all_tiles, self.tile_to_index, terminated, truncated
+        # Calculate reward using the updated grid and initial longest path
+        reward = (
+            compute_reward(self.grid, self.task)
+            if terminated
+            else (-1000 if truncated else 0)
         )
 
+        # if reward != 0:
+        #     print(reward)
         # Get the next observation
         observation = self.get_observation()
         info = {}  # Provide additional info if needed (e.g., current step count)
@@ -213,15 +242,18 @@ class WFCWrapper(gym.Env):
     def reset(self, seed=None, options=None):
         """Resets the environment to the initial state."""
         super().reset(seed=seed)  # Handle seeding correctly via Gymnasium Env
+        random.seed(seed)
+        np.random.seed(seed)
         # Re-initialize the grid using the function from biome_wfc
         self.grid = initialize_wfc_grid(self.map_width, self.map_length, self.all_tiles)
         self.current_step = 0
+        # Compute and store initial longest path
         observation = self.get_observation()
         info = {}  # Can provide initial info if needed
         # print("Environment Reset") # Debug print
         return observation, info
 
-    def render(self, mode="human"):
+    def render(self, mode):
         """Renders the current grid state to the console."""
         if mode == "human":
             print(f"--- Step: {self.current_step} ---")
@@ -257,13 +289,23 @@ class WFCWrapper(gym.Env):
 
 
 if __name__ == "__main__":
-    import numpy as np
-    import pygame
+    # Initialize Pygame
+    pygame.init()
+    SCREEN_WIDTH = 640
+    SCREEN_HEIGHT = 480
+    TILE_SIZE = 32
+
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    pygame.display.set_caption("Evolving WFC")
+    import os
+
+    # Create output directory if it doesn't exist
+    os.makedirs("wfc_reward_img", exist_ok=True)
 
     # Use biome_wfc rendering: load tile images (opens a pygame window)
     tile_images = load_tile_images()
 
-    # Define environment parameters (using the same tile set as in our training setup)
+    # Define environment parameters
     MAP_LENGTH = 15
     MAP_WIDTH = 20
 
@@ -280,31 +322,37 @@ if __name__ == "__main__":
         adjacency_bool=adjacency_bool,
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
+        task=Task.BINARY,
+        deterministic=False,
     )
 
-    # Reset the environment to its initial state
+    # Reset the environment
     obs, info = env.reset()
-
     running = True
+
     while running:
-        # Sample a random action (agent's output) from the environment's action space
+        # Sample a random action
         action = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(action)
 
-        # Instead of console rendering, call the biome_wfc rendering (using pygame)
-        render_wfc_grid(env.grid, tile_images)
-        pygame.time.delay(1)  # Delay for visualization (in milliseconds)
+        # Render with current step count and reward
+        current_reward = render_wfc_grid(
+            env.grid,
+            tile_images,
+            save_filename=reward if terminated or truncated else None,
+            screen=screen,
+        )
 
-        # Process pygame events for window closure
+        # # pygame.time.delay(1)  # Delay for visualization
+
+        # Process pygame events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
 
         if terminated or truncated:
             print(
-                "WFC completed successfully."
-                if terminated
-                else "WFC failed (contradiction)."
+                f"WFC ({'completed' if terminated else 'failed'}) with reward: {current_reward:.1f}"
             )
             obs, info = env.reset()
 

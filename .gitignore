@@ -176,4 +176,7 @@ cython_debug/
 
 *.zip
 ppo_wfc_logs
+wfc_reward_img
 pcgrl.txt
+
+*.pkl
