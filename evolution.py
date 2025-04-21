@@ -17,7 +17,6 @@ from tqdm import tqdm
 from biome_adjacency_rules import create_adjacency_matrix
 from biome_wfc import (  # We might not need render_wfc_grid if we keep console rendering
     load_tile_images,
-    render_wfc_grid,
 )
 from wfc_env import Task, WFCWrapper
 
@@ -351,7 +350,7 @@ if __name__ == "__main__":
         case "biome2":
             task = Task.BIOME2
         case _:
-            raise(ValueError(f"{args.task} is not a valid task"))
+            raise (ValueError(f"{args.task} is not a valid task"))
     # Create the WFC environment instance
     env = WFCWrapper(
         map_length=MAP_LENGTH,
@@ -477,7 +476,7 @@ if __name__ == "__main__":
         print("\nNo best agent was found during the process.")
 
     # save the best agent in a .pkl file
-    with open("best_evolved_binary_agent.pkl", "wb") as f:
+    with open(f"best_evolved_{args.task}_agent.pkl", "wb") as f:
         pickle.dump(best_agent, f)
 
     print("Script finished.")
