@@ -233,6 +233,7 @@ def reward(
         if abs(river_percent - target_river) > 10 or abs(water_percent - target_pond) > 10:
             combined_score *= 0.5
 
+    print(f"[BiomeReward] river={river_percent:.1f}%, water={water_percent:.1f}%, score={combined_score:.1f}")
     return float(combined_score)
 
 
@@ -675,7 +676,8 @@ if __name__ == "__main__":
         tile_to_index=tile_to_index,
         tile_images=tile_images,
         render_mode="human",
-        task=Task.BINARY,
+        # task=Task.BINARY,
+        task=Task.BIOME1,
         deterministic=False,
     )
 
@@ -686,7 +688,7 @@ if __name__ == "__main__":
     while running:
         # Sample a random action
         action = env.action_space.sample()
-        obs, reward, terminated, truncated, info = env.step(action)
+        obs, reward_val, terminated, truncated, info = env.step(action)
 
         # Render with current step count and reward
         # current_reward = render_wfc_grid(
@@ -705,7 +707,7 @@ if __name__ == "__main__":
                 running = False
 
         if terminated or truncated:
-            print(f"WFC ({'completed' if terminated else 'failed'}) with reward: {reward:.1f}")
+            print(f"WFC ({'completed' if terminated else 'failed'}) with reward: {reward_val:.1f}")
             obs, info = env.reset()
 
     env.close()
