@@ -17,7 +17,7 @@ from tqdm import tqdm
 from biome_adjacency_rules import create_adjacency_matrix
 from biome_wfc import (  # We might not need render_wfc_grid if we keep console rendering
     load_tile_images,
-    render_wfc_grid,
+    # render_wfc_grid,
 )
 from wfc_env import Task, WFCWrapper
 

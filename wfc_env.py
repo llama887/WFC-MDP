@@ -5,10 +5,6 @@ import gymnasium as gym  # Use Gymnasium
 import numpy as np
 import pygame
 from gymnasium import spaces
-import pygame
-import os
-from typing import Dict, Optional
-import pygame
 import os
 from typing import Dict, Optional
 
@@ -16,17 +12,79 @@ from typing import Dict, Optional
 from biome_wfc import (  # We might not need render_wfc_grid if we keep console rendering
     biome_wfc_step, 
     find_lowest_entropy_cell, 
-    initialize_wfc_grid
+    initialize_wfc_grid,
+    load_tile_images
 )
 from tasks.binary_task import calc_longest_path, calc_num_regions, grid_to_binary_map
 
+class BiomeEnvironment:
+    """Class to manage biome-specific parameters and calculations."""
+    def __init__(self):
+        self.biome_weights = {
+            "river": 0,
+            "pond": 0,
+            "grassland": 0,
+            "mountain": 0
+        }
+        
+        self.special_tiles = {
+            "river": ["shore_tl", "shore_tr", "shore_bl", "shore_br", "shore_lr", "shore_rl", 
+                      "water_tl", "water_tr", "water_t", "water_l", "water_r", "water_bl", "water_b", "water_br"],
+            "pond": ["water", "water_tl", "water_tr", "water_t", "water_l", "water_r", 
+                    "water_bl", "water_b", "water_br", "shore_tl", "shore_tr", "shore_bl", "shore_br"],
+            "grassland": ["grass", "tall_grass", "flower"],
+            "mountain": ["grass", "tall_grass", "flower", "grass_hill_tl", "grass_hill_t", 
+                        "grass_hill_tr", "grass_hill_bl", "grass_hill_b", "grass_hill_br", 
+                        "grass_hill_l", "grass_hill_r"]
+        }
+        
+        self.base_weights = {
+            "river": 1.0,
+            "pond": 1.0,
+            "grassland": 1.0,
+            "mountain": 1.0
+        }
+        
+        self.special_multiplier = 2.0
+    
+    def get_dominant_biome(self, grid: list[list[set[str]]]) -> str:
+        """Determines the dominant biome type from the grid with weighted tile counts."""
+        # Reset weights
+        for biome in self.biome_weights:
+            self.biome_weights[biome] = 0
+        
+        for row in grid:
+            for cell in row:
+                if len(cell) == 1:
+                    tile_name = next(iter(cell)).lower()
+                    
+                    # Check for special tiles first
+                    found_special = False
+                    for biome, tiles in self.special_tiles.items():
+                        if any(special_tile in tile_name for special_tile in tiles):
+                            self.biome_weights[biome] += self.base_weights[biome] * self.special_multiplier
+                            found_special = True
+                            break
+        
+        # If no biomes detected (shouldn't happen with collapsed grid), return unknown
+        if all(v == 0 for v in self.biome_weights.values()):
+            return "unknown"
+        
+        # Get the biome with highest weight
+        dominant_biome = max(self.biome_weights.items(), key=lambda x: x[1])[0]
+        return dominant_biome
 
 class Task(Enum):
-    # TODO: replace place holder biomes with real biome specifications
-    BIOME1 = auto()
-    BIOME2 = auto()
-    BINARY = auto()
-
+    """Enum for different task types with associated biome environment."""
+    BIOME1 = (auto(), BiomeEnvironment())
+    BIOME2 = (auto(), BiomeEnvironment())
+    BINARY = (auto(), None)
+    
+    def __new__(cls, value, biome_env):
+        obj = object.__new__(cls)
+        obj._value_ = value
+        obj.biome_env = biome_env
+        return obj
 
 def grid_to_array(
     grid: list[list[set[str]]],  # Grid is now list of lists of sets
@@ -55,147 +113,13 @@ def grid_to_array(
             elif num_options == 0:
                 # Contradiction cell
                 arr[y, x] = -1.0  # Use a different value for contradiction? Or stick to -1? Let's use -1.
-                arr[y, x] = -1.0  # Use a different value for contradiction? Or stick to -1? Let's use -1.
             else:
                 # Undecided cell
                 arr[y, x] = -1.0
     return arr.flatten()
 
-def get_dominant_biome(grid: list[list[set[str]]]) -> str:
-    """Determines the dominant biome type from the grid with weighted tile counts."""
-    biome_weights = {
-        "river": 0,
-        "pond": 0,
-        "grassland": 0,
-        "mountain": 0
-    }
-    
-    # Define special tiles that strongly indicate certain biomes
-    special_tiles = {
-        "river": ["shore_tl", "shore_tr", "shore_bl", "shore_br", "shore_lr", "shore_rl", "water_tl", "water_tr", "water_t", "water_l", "water_r", "water_bl", "water_b", "water_br"],
-        "pond": ["water", "water_tl", "water_tr", "water_t", "water_l", "water_r", "water_bl", "water_b", "water_br", "shore_tl", "shore_tr", "shore_bl", "shore_br"],
-        "grassland": ["grass", "tall_grass", "flower"],
-        "mountain": ["grass", "tall_grass", "flower", "grass_hill_tl", "grass_hill_t", "grass_hill_tr", "grass_hill_bl", "grass_hill_b", "grass_hill_br", "grass_hill_l", "grass_hill_r"]
-    }
-    
-    # Define base weights for each biome
-    base_weights = {
-        "river": 1.0,
-        "pond": 1.0,
-        "grassland": 1.0,
-        "mountain": 1.0
-    }
-    
-    # Define multipliers for special tiles
-    special_multiplier = 2.0
-    
-    for row in grid:
-        for cell in row:
-            if len(cell) == 1:
-                tile_name = next(iter(cell)).lower()
-                
-                # Check for special tiles first
-                found_special = False
-                for biome, tiles in special_tiles.items():
-                    if any(special_tile in tile_name for special_tile in tiles):
-                        biome_weights[biome] += base_weights[biome] * special_multiplier
-                        found_special = True
-                        break
-                
-                # If not a special tile, do generic biome detection
-                # if not found_special:
-                #     if "forest" in tile_name:
-                #         biome_weights["forest"] += base_weights["forest"]
-                #     elif "desert" in tile_name:
-                #         biome_weights["desert"] += base_weights["desert"]
-                #     elif "snow" in tile_name:
-                #         biome_weights["snow"] += base_weights["snow"]
-                #     elif "swamp" in tile_name:
-                #         biome_weights["swamp"] += base_weights["swamp"]
-                #     elif "plains" in tile_name:
-                #         biome_weights["plains"] += base_weights["plains"]
-    
-    # Add additional rules based on tile combinations
-    total_cells = len(grid) * len(grid[0])
-    
-    # If no biomes detected (shouldn't happen with collapsed grid), return unknown
-    if all(v == 0 for v in biome_weights.values()):
-        return "unknown"
-    
-    # Get the biome with highest weight
-    dominant_biome = max(biome_weights.items(), key=lambda x: x[1])[0]
-    return dominant_biome
-def get_dominant_biome(grid: list[list[set[str]]]) -> str:
-    """Determines the dominant biome type from the grid with weighted tile counts."""
-    biome_weights = {
-        "river": 0,
-        "pond": 0,
-        "grassland": 0,
-        "mountain": 0
-    }
-    
-    # Define special tiles that strongly indicate certain biomes
-    special_tiles = {
-        "river": ["shore_tl", "shore_tr", "shore_bl", "shore_br", "shore_lr", "shore_rl", "water_tl", "water_tr", "water_t", "water_l", "water_r", "water_bl", "water_b", "water_br"],
-        "pond": ["water", "water_tl", "water_tr", "water_t", "water_l", "water_r", "water_bl", "water_b", "water_br", "shore_tl", "shore_tr", "shore_bl", "shore_br"],
-        "grassland": ["grass", "tall_grass", "flower"],
-        "mountain": ["grass", "tall_grass", "flower", "grass_hill_tl", "grass_hill_t", "grass_hill_tr", "grass_hill_bl", "grass_hill_b", "grass_hill_br", "grass_hill_l", "grass_hill_r"]
-    }
-    
-    # Define base weights for each biome
-    base_weights = {
-        "river": 1.0,
-        "pond": 1.0,
-        "grassland": 1.0,
-        "mountain": 1.0
-    }
-    
-    # Define multipliers for special tiles
-    special_multiplier = 2.0
-    
-    for row in grid:
-        for cell in row:
-            if len(cell) == 1:
-                tile_name = next(iter(cell)).lower()
-                
-                # Check for special tiles first
-                found_special = False
-                for biome, tiles in special_tiles.items():
-                    if any(special_tile in tile_name for special_tile in tiles):
-                        biome_weights[biome] += base_weights[biome] * special_multiplier
-                        found_special = True
-                        break
-                
-                # If not a special tile, do generic biome detection
-                # if not found_special:
-                #     if "forest" in tile_name:
-                #         biome_weights["forest"] += base_weights["forest"]
-                #     elif "desert" in tile_name:
-                #         biome_weights["desert"] += base_weights["desert"]
-                #     elif "snow" in tile_name:
-                #         biome_weights["snow"] += base_weights["snow"]
-                #     elif "swamp" in tile_name:
-                #         biome_weights["swamp"] += base_weights["swamp"]
-                #     elif "plains" in tile_name:
-                #         biome_weights["plains"] += base_weights["plains"]
-    
-    # Add additional rules based on tile combinations
-    total_cells = len(grid) * len(grid[0])
-    
-    # If no biomes detected (shouldn't happen with collapsed grid), return unknown
-    if all(v == 0 for v in biome_weights.values()):
-        return "unknown"
-    
-    # Get the biome with highest weight
-    dominant_biome = max(biome_weights.items(), key=lambda x: x[1])[0]
-    return dominant_biome
-
 # wfc_next_collapse_position is replaced by find_lowest_entropy_cell from biome_wfc
 
-def reward(
-    grid: list[list[set[str]]],  # Grid is now list of lists of sets
-    tile_symbols: list[str],  # Use symbols list
-    tile_to_index: dict[str, int],  # Use the mapping
 def reward(
     grid: list[list[set[str]]],  # Grid is now list of lists of sets
     tile_symbols: list[str],  # Use symbols list
@@ -204,16 +128,11 @@ def reward(
     truncated: bool,
 ) -> float:
     """Calculate reward based on tiles and completion status."""
-    """Calculate reward based on tiles and completion status."""
     if truncated:
-        return -1000.0
         return -1000.0
     if not terminated:
         return 0.0
-        return 0.0
     
-    total_tiles = len(grid) * len(grid[0])
-    river_count = 0
     total_tiles = len(grid) * len(grid[0])
     river_count = 0
     water_count = 0
@@ -276,7 +195,6 @@ class WFCWrapper(gym.Env):
     """
     Gymnasium Environment for Wave Function Collapse controlled by an RL agent.
     Gymnasium Environment for Wave Function Collapse with graphical rendering.
-    Gymnasium Environment for Wave Function Collapse with graphical rendering.
     Observation: Flattened grid state + normalized coordinates of the next cell to collapse.
                  Grid cells: Value is index/(num_tiles-1) if collapsed, -1.0 if undecided.
     Action: A vector of preferences (logits) for each tile type for the selected cell.
@@ -319,32 +237,26 @@ class WFCWrapper(gym.Env):
         # Initialize pygame if we have tile images and human rendering
         if self.tile_images is not None and self.render_mode == "human":
             pygame.init()
-            self.screen = pygame.display.set_mode(
-                (self.map_width * self.tile_size, self.map_length * self.tile_size))
+            self.screen = pygame.display.set_mode((self.map_width * self.tile_size, self.map_length * self.tile_size))
             pygame.display.set_caption("WFC Environment")
 
         self.grid = initialize_wfc_grid(self.map_width, self.map_length, self.all_tiles)
-        
         
         # Keep a way to reset easily if needed, maybe store initial args?
         # Or just call initialize_wfc_grid again in reset.
         # Action space: Agent outputs preferences (logits) for each tile type.
         # Needs to be float32 for SB3.
-        self.action_space: spaces.Box = spaces.Box(
-            low=-1, high=1, shape=(self.num_tiles,), dtype=np.float32
-        )
+        self.action_space: spaces.Box = spaces.Box(low=-1, high=1, shape=(self.num_tiles,), dtype=np.float32)
 
         # Observation space: Flattened map + normalized coordinates of the next cell to collapse
         # Map values range from -1 (undecided) to 1 (max index / max index).
         # Coordinates range from 0 to 1. Needs to be float32 for SB3.
         self.observation_space: spaces.Box = spaces.Box(
             low=-1.0,   # Lower bound changed due to -1 for undecided cells
-            low=-1.0,   # Lower bound changed due to -1 for undecided cells
             high=1.0,
             shape=(self.map_length * self.map_width + 2,),
             dtype=np.float32,
         )
-        
         
         self.current_step = 0
         self.max_steps = self.map_length * self.map_width + 10
@@ -361,9 +273,7 @@ class WFCWrapper(gym.Env):
             self.map_width,
         )
         # Find the next cell to collapse using the function from biome_wfc
-        pos_tuple = find_lowest_entropy_cell(
-            self.grid, deterministic=self.deterministic
-        )  # Returns (x, y) or None
+        pos_tuple = find_lowest_entropy_cell(self.grid, deterministic=self.deterministic)  # Returns (x, y) or None
 
         # Handle case where grid is fully collapsed (pos_tuple is None)
         if pos_tuple is None:
@@ -384,14 +294,15 @@ class WFCWrapper(gym.Env):
         if not os.path.exists("wfc_reward_img"):
             os.makedirs("wfc_reward_img")
         
-        # Get dominant biome
-        self.dominant_biome = get_dominant_biome(self.grid)
-        
+        # Get dominant biome from the task's biome environment
+        if self.task.biome_env is not None:
+            self.dominant_biome = self.task.biome_env.get_dominant_biome(self.grid)
+        else:
+            self.dominant_biome = "binary"
         filename = f"wfc_reward_img/{self.dominant_biome}_reward_{reward_val:.1f}%.png"
         
         # Create a surface to render the map 
-        surface = pygame.Surface(
-            (self.map_width * self.tile_size, self.map_length * self.tile_size))
+        surface = pygame.Surface((self.map_width * self.tile_size, self.map_length * self.tile_size))
         surface.fill((0, 0, 0))
         
         for y in range(self.map_length):
@@ -400,39 +311,7 @@ class WFCWrapper(gym.Env):
                 if len(cell_set) == 1:
                     tile_name = next(iter(cell_set))
                     if tile_name in self.tile_images:
-                        surface.blit(
-                            self.tile_images[tile_name],
-                            (x * self.tile_size, y * self.tile_size)
-                        )
-        
-        pygame.image.save(surface, filename)
-        print(f"Saved completed map to {filename}")
-
-    def save_completed_map(self, reward_val: float):
-        """Saves the completed map as an image with reward and biome in the filename."""
-        if not os.path.exists("wfc_reward_img"):
-            os.makedirs("wfc_reward_img")
-        
-        # Get dominant biome
-        self.dominant_biome = get_dominant_biome(self.grid)
-        
-        filename = f"wfc_reward_img/{self.dominant_biome}_reward_{reward_val:.1f}%.png"
-        
-        # Create a surface to render the map 
-        surface = pygame.Surface(
-            (self.map_width * self.tile_size, self.map_length * self.tile_size))
-        surface.fill((0, 0, 0))
-        
-        for y in range(self.map_length):
-            for x in range(self.map_width):
-                cell_set = self.grid[y][x]
-                if len(cell_set) == 1:
-                    tile_name = next(iter(cell_set))
-                    if tile_name in self.tile_images:
-                        surface.blit(
-                            self.tile_images[tile_name],
-                            (x * self.tile_size, y * self.tile_size)
-                        )
+                        surface.blit(self.tile_images[tile_name], (x * self.tile_size, y * self.tile_size))
         
         pygame.image.save(surface, filename)
         print(f"Saved completed map to {filename}")
@@ -447,7 +326,6 @@ class WFCWrapper(gym.Env):
         # Convert action (potentially logits) to a probability distribution using softmax
         # Improve numerical stability by subtracting the max before exponentiating
         action_exp = np.exp(action - np.max(action))
-        action_probs = action_exp / (np.sum(action_exp) + 1e-8) # Add epsilon for stability
         action_probs = action_exp / (np.sum(action_exp) + 1e-8) # Add epsilon for stability
 
         # action_probs are already float32, biome_wfc_step expects list or numpy array
@@ -472,7 +350,7 @@ class WFCWrapper(gym.Env):
             terminated = False  # Cannot be both terminated and truncated
 
         # Calculate reward using the updated grid and initial longest path
-        reward = (
+        reward_val = (
             compute_reward(self.grid, self.task)
             if terminated
             else 0
@@ -485,15 +363,7 @@ class WFCWrapper(gym.Env):
         info = {
             "steps": self.current_step,
             "terminated_reason": "completed" if terminated else None,
-            "truncated_reason": (
-        info = {
-            "steps": self.current_step,
-            "terminated_reason": "completed" if terminated else None,
-            "truncated_reason": (
-                "contradiction" if self.current_step < self.max_steps else "max_steps"
-            ) if truncated else None,
-        }
-            ) if truncated else None,
+            "truncated_reason": ("contradiction" if self.current_step < self.max_steps else "max_steps") if truncated else None,
         }
 
         if terminated and self.tile_images is not None:
@@ -501,13 +371,10 @@ class WFCWrapper(gym.Env):
 
         if self.render_mode == "human":
             self.render()
+
         if terminated and self.tile_images is not None:
             self.save_completed_map(reward_val)
 
-        if self.render_mode == "human":
-            self.render()
-
-        return observation, reward_val, terminated, truncated, info
         return observation, reward_val, terminated, truncated, info
 
     def reset(self, seed=None, options=None):
@@ -525,18 +392,9 @@ class WFCWrapper(gym.Env):
             self.render()
             
         return observation, {}
-        
-        if self.render_mode == "human" and self.tile_images is not None:
-            self.render()
-            
-        return observation, {}
 
     def render(self):
-    def render(self):
         """Renders the current grid state to the console."""
-        if self.render_mode is None:
-            return
-        
         if self.render_mode == "human":
             if self.tile_images is not None:
                 # Graphical rendering with tile images
@@ -551,17 +409,13 @@ class WFCWrapper(gym.Env):
                             # Draw the collapsed tile
                             tile_name = next(iter(cell_set))
                             if tile_name in self.tile_images:
-                                self.screen.blit(
-                                    self.tile_images[tile_name],
-                                    (x * self.tile_size, y * self.tile_size)
-                                )
+                                self.screen.blit(self.tile_images[tile_name], (x * self.tile_size, y * self.tile_size))
                         elif num_options == 0:
                             # Draw contradiction (red)
                             pygame.draw.rect(
-                                self.screen,
-                                (255, 0, 0),
-                                (x * self.tile_size, y * self.tile_size, 
-                                 self.tile_size, self.tile_size)
+                                self.screen, 
+                                (255, 0, 0), 
+                                (x * self.tile_size, y * self.tile_size, self.tile_size, self.tile_size)
                             )
                         else:
                             # Draw superposition (gray with number of options)
@@ -569,82 +423,12 @@ class WFCWrapper(gym.Env):
                             pygame.draw.rect(
                                 self.screen,
                                 (shade, shade, shade),
-                                (x * self.tile_size, y * self.tile_size, 
-                                 self.tile_size, self.tile_size)
+                                (x * self.tile_size, y * self.tile_size, self.tile_size, self.tile_size)
                             )
                             # Display number of remaining options
                             font = pygame.font.SysFont(None, 20)
                             text = font.render(None, True, (255, 255, 255))
-                            self.screen.blit(
-                                text,
-                                (x * self.tile_size + 5, y * self.tile_size + 5)
-                            )
-                
-                pygame.display.flip()
-            else:
-                # Fallback to console rendering
-                print(f"--- Step: {self.current_step} ---")
-                for y in range(self.map_length):
-                    row_str = ""
-                    for x in range(self.map_width):
-                        cell_set = self.grid[y][x]
-                        num_options = len(cell_set)
-                        if num_options == 1:
-                            tile_name = next(iter(cell_set))
-                            row_str += tile_name + " "
-                        elif num_options == self.num_tiles:
-                            row_str += "? "
-                        elif num_options == 0:
-                            row_str += "! "
-                        else:
-                            row_str += f"{len(cell_set)} "
-                    print(row_str.strip())
-                print("-" * (self.map_width * 2))
-        if self.render_mode is None:
-            return
-        
-        if self.render_mode == "human":
-            if self.tile_images is not None:
-                # Graphical rendering with tile images
-                self.screen.fill((0, 0, 0))  # Clear screen
-                
-                for y in range(self.map_length):
-                    for x in range(self.map_width):
-                        cell_set = self.grid[y][x]
-                        num_options = len(cell_set)
-                        
-                        if num_options == 1:
-                            # Draw the collapsed tile
-                            tile_name = next(iter(cell_set))
-                            if tile_name in self.tile_images:
-                                self.screen.blit(
-                                    self.tile_images[tile_name],
-                                    (x * self.tile_size, y * self.tile_size)
-                                )
-                        elif num_options == 0:
-                            # Draw contradiction (red)
-                            pygame.draw.rect(
-                                self.screen,
-                                (255, 0, 0),
-                                (x * self.tile_size, y * self.tile_size, 
-                                 self.tile_size, self.tile_size)
-                            )
-                        else:
-                            # Draw superposition (gray with number of options)
-                            shade = min(255, 50 + 205 * (1 - len(cell_set)/self.num_tiles))
-                            pygame.draw.rect(
-                                self.screen,
-                                (shade, shade, shade),
-                                (x * self.tile_size, y * self.tile_size, 
-                                 self.tile_size, self.tile_size)
-                            )
-                            # Display number of remaining options
-                            font = pygame.font.SysFont(None, 20)
-                            text = font.render(None, True, (255, 255, 255))
-                            self.screen.blit(
-                                text,
-                                (x * self.tile_size + 5, y * self.tile_size + 5)
-                            )
+                            self.screen.blit(text, (x * self.tile_size + 5, y * self.tile_size + 5))
                 
                 pygame.display.flip()
             else:
@@ -668,12 +452,9 @@ class WFCWrapper(gym.Env):
                 print("-" * (self.map_width * 2))
         else:
             pass
-            pass
 
     def close(self):
         """Cleans up any resources used by the environment."""
-        if hasattr(self, 'screen'):
-            pygame.quit()
         if hasattr(self, 'screen'):
             pygame.quit()
 
@@ -686,7 +467,6 @@ if __name__ == "__main__":
 
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("Evolving WFC")
-    import os
 
     # Create output directory if it doesn't exist
     os.makedirs("wfc_reward_img", exist_ok=True)
@@ -699,10 +479,8 @@ if __name__ == "__main__":
 
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     tile_images = load_tile_images()  # Load tile images
-    tile_images = load_tile_images()  # Load tile images
     num_tiles = len(tile_symbols)
 
-    # Create the WFC environment instance with graphical rendering
     # Create the WFC environment instance with graphical rendering
     env = WFCWrapper(
         map_length=MAP_LENGTH,
@@ -724,17 +502,7 @@ if __name__ == "__main__":
     while running:
         # Sample a random action
         action = env.action_space.sample()
-        obs, reward, terminated, truncated, info = env.step(action)
-
-        # Render with current step count and reward
-        current_reward = render_wfc_grid(
-            env.grid,
-            tile_images,
-            save_filename=reward if terminated or truncated else None,
-            screen=screen,
-        )
-
-        # # pygame.time.delay(1)  # Delay for visualization
+        obs, reward_val, terminated, truncated, info = env.step(action)
 
         # Process pygame events
         for event in pygame.event.get():
@@ -743,8 +511,6 @@ if __name__ == "__main__":
 
         if terminated or truncated:
             print(f"WFC ({'completed' if terminated else 'failed'}) with reward: {reward_val:.1f}")
-            print(f"WFC ({'completed' if terminated else 'failed'}) with reward: {reward_val:.1f}")
             obs, info = env.reset()
 
-    env.close()
     env.close()
