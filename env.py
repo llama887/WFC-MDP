@@ -189,7 +189,7 @@ if __name__ == "__main__":
         input_data=json_path,
         height=height,
         width=width,
-        seed=42,
+        seed=123,
         render_mode="human",
         tile_size=32
     )
