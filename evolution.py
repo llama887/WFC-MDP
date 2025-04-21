@@ -77,6 +77,10 @@ class PopulationMember:
         self.reward = 0
         for idx, action in enumerate(self.action_sequence):
             _, reward, terminate, truncate, _ = self.env.step(action)
+            if not np.isfinite(reward):
+                print(f"Invalid reward encountered: {reward}")
+                self.reward = float("-inf")
+                break
             self.reward += reward
             if terminate or truncate:
                 break
@@ -259,9 +263,10 @@ def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images
     total_reward = 0
     print("Rendering best agent's action sequence...")
     for action in tqdm(best_agent.action_sequence, desc="Rendering Steps"):
+        # pygame.event.pump()
         _, reward, terminate, truncate, _ = env.step(action)
         total_reward += reward
-        env.render()  # ✅ NEW: use WFCWrapper’s own render method
+        env.render()
         pygame.time.delay(5)
         if terminate or truncate:
             break
@@ -322,7 +327,12 @@ if __name__ == "__main__":
         type=str,
         help="Filename for the saved hyperparameters YAML.",
     )
-
+    parser.add_argument(
+        "--task",
+        type=str,
+        default="binary",
+        help="Task being evaluated",
+    )
     args = parser.parse_args()
 
     # Define environment parameters (using the same tile set as in our training setup)
@@ -332,6 +342,16 @@ if __name__ == "__main__":
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     num_tiles = len(tile_symbols)
 
+    task: Task
+    match args.task:
+        case "binary":
+            task = Task.BINARY
+        case "river":
+            task = Task.River
+        case "biome2":
+            task = Task.BIOME2
+        case _:
+            raise(ValueError(f"{args.task} is not a valid task"))
     # Create the WFC environment instance
     env = WFCWrapper(
         map_length=MAP_LENGTH,
@@ -340,7 +360,7 @@ if __name__ == "__main__":
         adjacency_bool=adjacency_bool,
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
-        task=Task.BINARY,
+        task=task,
         deterministic=True,
     )
     tile_images = load_tile_images()  # Load images needed for rendering later
