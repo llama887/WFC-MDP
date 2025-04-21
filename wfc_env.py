@@ -236,7 +236,14 @@ def reward(
     return float(combined_score)
 
 
-def compute_reward(grid: list[list[set[str]]], task: Task) -> float:
+def compute_reward(
+    grid: list[list[set[str]]],
+    task: Task,
+    tile_symbols: list[str],
+    tile_to_index: dict[str, int],
+    terminated: bool,
+    truncated: bool
+) -> float:
     """Computes the reward based task
 
     Binary Task: reward is based on regions connectivity and how far we are from the target path length.
@@ -257,6 +264,10 @@ def compute_reward(grid: list[list[set[str]]], task: Task) -> float:
             else:
                 path_reward = 100.0 / (abs(TARGET_PATH_LENGTH - current_path) + 1)
             return region_reward + path_reward
+
+        case Task.BIOME1 | Task.BIOME2:
+            return reward(grid, tile_symbols, tile_to_index, terminated, truncated)
+
         case _:
             # TODO: incorporate biome rewards
             return 0
@@ -432,7 +443,14 @@ class WFCWrapper(gym.Env):
 
         # Calculate reward using the updated grid and initial longest path
         reward = (
-            compute_reward(self.grid, self.task)
+            compute_reward(
+                self.grid,
+                self.task,
+                self.all_tiles,
+                self.tile_to_index,
+                terminated,
+                truncated
+            )
             if terminated
             else 0
             if not truncated
@@ -650,7 +668,6 @@ if __name__ == "__main__":
     tile_images = load_tile_images()  # Load tile images
     num_tiles = len(tile_symbols)
 
-    # Create the WFC environment instance with graphical rendering
     # Create the WFC environment instance with graphical rendering
     env = WFCWrapper(
         map_length=MAP_LENGTH,
