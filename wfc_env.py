@@ -19,6 +19,7 @@ from biome_wfc import (  # We might not need render_wfc_grid if we keep console 
     initialize_wfc_grid
 )
 from tasks.binary_task import calc_longest_path, calc_num_regions, grid_to_binary_map
+from biome_adjacency_rules import load_tile_images, create_adjacency_matrix
 
 
 class Task(Enum):
@@ -69,7 +70,7 @@ def get_dominant_biome(grid: list[list[set[str]]]) -> str:
         "grassland": 0,
         "mountain": 0
     }
-    
+
     # Define special tiles that strongly indicate certain biomes
     special_tiles = {
         "river": ["shore_tl", "shore_tr", "shore_bl", "shore_br", "shore_lr", "shore_rl", "water_tl", "water_tr", "water_t", "water_l", "water_r", "water_bl", "water_b", "water_br"],
@@ -193,59 +194,47 @@ def get_dominant_biome(grid: list[list[set[str]]]) -> str:
 # wfc_next_collapse_position is replaced by find_lowest_entropy_cell from biome_wfc
 
 def reward(
-    grid: list[list[set[str]]],  # Grid is now list of lists of sets
-    tile_symbols: list[str],  # Use symbols list
-    tile_to_index: dict[str, int],  # Use the mapping
-def reward(
-    grid: list[list[set[str]]],  # Grid is now list of lists of sets
-    tile_symbols: list[str],  # Use symbols list
-    tile_to_index: dict[str, int],  # Use the mapping
+    grid: list[list[set[str]]],
+    tile_symbols: list[str],
+    tile_to_index: dict[str, int],
     terminated: bool,
     truncated: bool,
-) -> float:
+    ) -> float:
     """Calculate reward based on tiles and completion status."""
-    """Calculate reward based on tiles and completion status."""
+
     if truncated:
-        return -1000.0
         return -1000.0
     if not terminated:
         return 0.0
-        return 0.0
-    
-    total_tiles = len(grid) * len(grid[0])
-    river_count = 0
+
     total_tiles = len(grid) * len(grid[0])
     river_count = 0
     water_count = 0
+
     for row in grid:
         for cell in row:
             if len(cell) == 1:
-                tile_name = next(iter(cell))
-                if "shore" in tile_name.lower() or "water_" in tile_name.lower():
+                tile_name = next(iter(cell)).lower()
+                if "shore" in tile_name or "water_" in tile_name:
                     river_count += 1
-                elif "water" in tile_name.lower():
+                elif "water" in tile_name:
                     water_count += 1
-            if len(cell) == 1:
-                tile_name = next(iter(cell))
-                if "shore" in tile_name.lower() or "water_" in tile_name.lower():
-                    river_count += 1
-                elif "water" in tile_name.lower():
-                    water_count += 1
-    
+
     river_percent = (river_count / total_tiles) * 100
     water_percent = (water_count / total_tiles) * 100
     target_river = 30
     target_pond = 50
-    
+
     river_score = max(0, 100 - abs(river_percent - target_river))
     pond_score = max(0, 100 - abs(water_percent - target_pond))
     combined_score = (river_score * 1.2 + pond_score * 0.8) / 2
-    
+
     if river_percent > 0 and water_percent > 0:
         if abs(river_percent - target_river) > 10 or abs(water_percent - target_pond) > 10:
             combined_score *= 0.5
-    
+
     return float(combined_score)
+
 
 def compute_reward(grid: list[list[set[str]]], task: Task) -> float:
     """Computes the reward based task
@@ -339,13 +328,12 @@ class WFCWrapper(gym.Env):
         # Coordinates range from 0 to 1. Needs to be float32 for SB3.
         self.observation_space: spaces.Box = spaces.Box(
             low=-1.0,   # Lower bound changed due to -1 for undecided cells
-            low=-1.0,   # Lower bound changed due to -1 for undecided cells
             high=1.0,
             shape=(self.map_length * self.map_width + 2,),
             dtype=np.float32,
         )
         
-        
+
         self.current_step = 0
         self.max_steps = self.map_length * self.map_width + 10
         self.task = task
@@ -378,35 +366,6 @@ class WFCWrapper(gym.Env):
 
         # Ensure final observation is float32
         return np.concatenate([map_flat, pos_array]).astype(np.float32)
-
-    def save_completed_map(self, reward_val: float):
-        """Saves the completed map as an image with reward and biome in the filename."""
-        if not os.path.exists("wfc_reward_img"):
-            os.makedirs("wfc_reward_img")
-        
-        # Get dominant biome
-        self.dominant_biome = get_dominant_biome(self.grid)
-        
-        filename = f"wfc_reward_img/{self.dominant_biome}_reward_{reward_val:.1f}%.png"
-        
-        # Create a surface to render the map 
-        surface = pygame.Surface(
-            (self.map_width * self.tile_size, self.map_length * self.tile_size))
-        surface.fill((0, 0, 0))
-        
-        for y in range(self.map_length):
-            for x in range(self.map_width):
-                cell_set = self.grid[y][x]
-                if len(cell_set) == 1:
-                    tile_name = next(iter(cell_set))
-                    if tile_name in self.tile_images:
-                        surface.blit(
-                            self.tile_images[tile_name],
-                            (x * self.tile_size, y * self.tile_size)
-                        )
-        
-        pygame.image.save(surface, filename)
-        print(f"Saved completed map to {filename}")
 
     def save_completed_map(self, reward_val: float):
         """Saves the completed map as an image with reward and biome in the filename."""
@@ -479,6 +438,7 @@ class WFCWrapper(gym.Env):
             if not truncated
             else -1000
         )
+        reward_val = reward
 
         # Get the next observation
         observation = self.get_observation()
@@ -486,29 +446,18 @@ class WFCWrapper(gym.Env):
             "steps": self.current_step,
             "terminated_reason": "completed" if terminated else None,
             "truncated_reason": (
-        info = {
-            "steps": self.current_step,
-            "terminated_reason": "completed" if terminated else None,
-            "truncated_reason": (
                 "contradiction" if self.current_step < self.max_steps else "max_steps"
             ) if truncated else None,
         }
-            ) if truncated else None,
-        }
 
         if terminated and self.tile_images is not None:
             self.save_completed_map(reward_val)
 
         if self.render_mode == "human":
             self.render()
-        if terminated and self.tile_images is not None:
-            self.save_completed_map(reward_val)
-
-        if self.render_mode == "human":
-            self.render()
-
-        return observation, reward_val, terminated, truncated, info
-        return observation, reward_val, terminated, truncated, info
+        # return observation, reward_val, terminated, truncated, info
+        # return observation, reward_val, terminated, truncated, info
+        return observation, reward, terminated, truncated, info
 
     def reset(self, seed=None, options=None):
         """Resets the environment to the initial state."""
@@ -532,15 +481,15 @@ class WFCWrapper(gym.Env):
         return observation, {}
 
     def render(self):
-    def render(self):
         """Renders the current grid state to the console."""
         if self.render_mode is None:
             return
-        
+
         if self.render_mode == "human":
             if self.tile_images is not None:
                 # Graphical rendering with tile images
                 self.screen.fill((0, 0, 0))  # Clear screen
+                font = pygame.font.SysFont(None, 20)
                 
                 for y in range(self.map_length):
                     for x in range(self.map_width):
@@ -573,8 +522,7 @@ class WFCWrapper(gym.Env):
                                  self.tile_size, self.tile_size)
                             )
                             # Display number of remaining options
-                            font = pygame.font.SysFont(None, 20)
-                            text = font.render(None, True, (255, 255, 255))
+                            text = font.render(str(num_options), True, (255, 255, 255))
                             self.screen.blit(
                                 text,
                                 (x * self.tile_size + 5, y * self.tile_size + 5)
@@ -607,6 +555,7 @@ class WFCWrapper(gym.Env):
             if self.tile_images is not None:
                 # Graphical rendering with tile images
                 self.screen.fill((0, 0, 0))  # Clear screen
+                font = pygame.font.SysFont(None, 20)
                 
                 for y in range(self.map_length):
                     for x in range(self.map_width):
@@ -639,8 +588,7 @@ class WFCWrapper(gym.Env):
                                  self.tile_size, self.tile_size)
                             )
                             # Display number of remaining options
-                            font = pygame.font.SysFont(None, 20)
-                            text = font.render(None, True, (255, 255, 255))
+                            text = font.render(str(num_options), True, (255, 255, 255))
                             self.screen.blit(
                                 text,
                                 (x * self.tile_size + 5, y * self.tile_size + 5)
@@ -727,12 +675,13 @@ if __name__ == "__main__":
         obs, reward, terminated, truncated, info = env.step(action)
 
         # Render with current step count and reward
-        current_reward = render_wfc_grid(
-            env.grid,
-            tile_images,
-            save_filename=reward if terminated or truncated else None,
-            screen=screen,
-        )
+        # current_reward = render_wfc_grid(
+        #     env.grid,
+        #     tile_images,
+        #     save_filename=reward if terminated or truncated else None,
+        #     screen=screen,
+        # )
+        env.render()
 
         # # pygame.time.delay(1)  # Delay for visualization
 
@@ -742,9 +691,7 @@ if __name__ == "__main__":
                 running = False
 
         if terminated or truncated:
-            print(f"WFC ({'completed' if terminated else 'failed'}) with reward: {reward_val:.1f}")
-            print(f"WFC ({'completed' if terminated else 'failed'}) with reward: {reward_val:.1f}")
+            print(f"WFC ({'completed' if terminated else 'failed'}) with reward: {reward:.1f}")
             obs, info = env.reset()
 
-    env.close()
     env.close()
