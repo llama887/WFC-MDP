@@ -389,7 +389,7 @@ class WFCWrapper(gym.Env):
         
         filename = f"wfc_reward_img/{self.dominant_biome}_reward_{reward_val:.1f}%.png"
         
-        # Create a surface to render the map 
+        # Create a surface to render the map
         surface = pygame.Surface(
             (self.map_width * self.tile_size, self.map_length * self.tile_size))
         surface.fill((0, 0, 0))

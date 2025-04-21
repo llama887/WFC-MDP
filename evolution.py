@@ -76,8 +76,10 @@ class PopulationMember:
     def run_action_sequence(self):
         self.reward = 0
         for idx, action in enumerate(self.action_sequence):
-            _, reward, _, _, _ = self.env.step(action)
+            _, reward, terminate, truncate, _ = self.env.step(action)
             self.reward += reward
+            if terminate or truncate:
+                break
 
     @staticmethod
     def crossover(
@@ -257,10 +259,12 @@ def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images
     total_reward = 0
     print("Rendering best agent's action sequence...")
     for action in tqdm(best_agent.action_sequence, desc="Rendering Steps"):
-        _, reward, _, _, _ = env.step(action)
+        _, reward, terminate, truncate, _ = env.step(action)
         total_reward += reward
-        render_wfc_grid(env.grid, tile_images, screen=screen)
-        pygame.time.delay(5)  # Slightly faster rendering
+        env.render()  # ✅ NEW: use WFCWrapper’s own render method
+        pygame.time.delay(5)
+        if terminate or truncate:
+            break
 
     print(f"Final map reward for the best agent: {total_reward:.4f}")
     print(
