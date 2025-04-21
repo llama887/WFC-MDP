@@ -179,3 +179,56 @@ class WFCEnv(gym.Env):
         if self.renderer is not None:
             self.renderer.close()
             self.renderer = None
+
+if __name__ == "__main__":
+    import time
+    json_path = 'data/biome.json'
+    width, height = 20, 15
+    # Create environment with renderer
+    env = WFCEnv(
+        input_data=json_path,
+        height=height,
+        width=width,
+        seed=42,
+        render_mode="human",
+        tile_size=32
+    )
+    
+    print("Testing WFCEnv with integrated renderer...")
+    print(f"Grid size: {width}x{height}")
+    print(f"Number of patterns: {env.num_patterns}")
+    
+    # Reset environment
+    obs, _ = env.reset()
+    
+    # Run a fixed number of steps
+    num_steps = 400
+    step_count = 0
+    
+    while step_count < num_steps:
+        # Create a random action (can be replaced with a trained agent)
+        x, y, action = env.get_expert_action()
+        formatted_action = [f"{a:.2f}" for a in action]
+        print(f"Step {step_count}: collapsing cell ({x}, {y}) with action {formatted_action}\n") 
+        # Take a step
+        obs, reward, terminated, truncated, _ = env.step(action)
+        
+        step_count += 1
+        
+        # Handle pygame events
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                break
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                pygame.quit()
+                break
+        
+        # Check if episode is done
+        if terminated or truncated:
+            print(f"Episode finished after {step_count} steps with reward {reward}")
+            time.sleep(2)  # Pause to show final result
+            break
+    
+    # Close environment
+    env.close()

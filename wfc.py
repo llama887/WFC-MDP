@@ -95,7 +95,7 @@ class Wave:
             self.num_patterns_array[i, j] -= 1
             
             # Debug print
-            print(f"\nnum_possible_patterns:{self.num_patterns_array[i, j]}, p_sum:{self.p_sum[i, j]}")
+            # print(f"\nnum_possible_patterns:{self.num_patterns_array[i, j]}, p_sum:{self.p_sum[i, j]}")
             
             # Check for contradiction or very small sum
             if self.num_patterns_array[i, j] == 0 or self.p_sum[i, j] <= 1e-10:
@@ -165,44 +165,45 @@ class Propagator:
         self.propagator_state = propagator_state
         self.patterns_size = len(propagator_state)
         
-        # Queue of (y, x, pattern) tuples to propagate
+        # Queue of cells (y, x) tuples to propagate
         self.propagating = []
+ 
+        # Initialize adjacency bool array for efficient lookups
+        # adjacency_bool[pattern1, direction, pattern2] = True if pattern1 and pattern2 are compatible in this direction
+        self.adjacency_bool = self._create_adjacency_tensor()
+
+    def _create_adjacency_tensor(self) -> np.ndarray:
+        """Create adjacency tensor for compatibility rules"""
+        adjacency_bool = np.zeros((self.patterns_size, 4, self.patterns_size), dtype=bool)
+        for pattern1 in range(self.patterns_size):
+            for direction in range(4):
+                if pattern1 < len(self.propagator_state) and direction < len(self.propagator_state[pattern1]):
+                    for pattern2 in self.propagator_state[pattern1][direction]:
+                        adjacency_bool[pattern1, direction, pattern2] = True
+                        # Also set the opposite direction
+                        adjacency_bool[pattern2, get_opposite_direction(direction), pattern1] = True
         
-        # Initialize compatible array
-        # compatible[y, x, pattern, direction] = number of compatible patterns
-        self.compatible = self._init_compatible()
+        return adjacency_bool
     
-    def _init_compatible(self) -> np.ndarray:
-        """Initialize the compatible array"""
-        compatible = np.zeros((self.wave_height, self.wave_width, self.patterns_size, 4), dtype=np.int32)
-        
-        for y in range(self.wave_height):
-            for x in range(self.wave_width):
-                for pattern in range(self.patterns_size):
-                    for direction in range(4):
-                        if pattern < len(self.propagator_state) and direction < len(self.propagator_state[pattern]):
-                            compatible[y, x, pattern, direction] = len(
-                                self.propagator_state[pattern][get_opposite_direction(direction)]
-                            )
-        
-        return compatible
-    
-    def add_to_propagator(self, y: int, x: int, pattern: int) -> None:
+    def add_to_propagator(self, y: int, x: int) -> None:
         """Add a (y,x,pattern) to the propagation queue"""
-        self.compatible[y, x, pattern, :] = 0
-        self.propagating.append((y, x, pattern))
+        if (y, x) not in self.propagating:
+            self.propagating.append((y, x))
     
-    def propagate(self, wave: Wave) -> None:
+    def propagate(self, wave: Wave) -> bool:
         """Propagate constraints through the wave"""
         while self.propagating:
-            y1, x1, pattern = self.propagating.pop()
+            y1, x1 = self.propagating.pop()
+
+            if wave.num_patterns_array[y1, x1] == 0:
+                # If no patterns are possible, skip
+                continue
+
+            current_possibilities = np.where(wave.data[y1, x1])[0]
+
             
             # Propagate in all four directions
             for direction in range(4):
-                # Skip if this pattern doesn't have this direction defined
-                if pattern >= len(self.propagator_state) or direction >= len(self.propagator_state[pattern]):
-                    continue
-                
                 dx = DIRECTIONS_X[direction]
                 dy = DIRECTIONS_Y[direction]
                 
@@ -217,19 +218,43 @@ class Propagator:
                     if x2 < 0 or x2 >= self.wave_width or y2 < 0 or y2 >= self.wave_height:
                         continue
                 
-                # Get compatible patterns in this direction
-                compatible_patterns = self.propagator_state[pattern][direction]
-                
-                # Update compatible counts for affected patterns
-                for compatible_pattern in compatible_patterns:
-                    # Decrease the compatibility count
-                    self.compatible[y2, x2, compatible_pattern, direction] -= 1
-                    
-                    # If no compatible patterns remain in this direction, remove pattern from wave
-                    if self.compatible[y2, x2, compatible_pattern, direction] == 0:
-                        self.add_to_propagator(y2, x2, compatible_pattern)
-                        wave.set(y2, x2, compatible_pattern, False)
+                # Get neighboring cell's possible patterns
+                neighbor_possibilities = np.where(wave.data[y2, x2])[0]
 
+                if len(neighbor_possibilities) == 0:
+                    continue
+
+                # Track neighbor patterns to remove
+                to_remove = []
+              
+                for neighbor_pattern in neighbor_possibilities:
+                    # Check if the neighbor pattern is compatible with any current possibilities
+                    is_compatible = False
+
+                    for current_pattern in current_possibilities:
+                        # Check if current pattern allows neighbor pattern in this direction
+                        if (0 <= current_pattern < self.adjacency_bool.shape[0] and 
+                            0 <= direction < self.adjacency_bool.shape[1] and 
+                            0 <= neighbor_pattern < self.adjacency_bool.shape[2]):
+                            if self.adjacency_bool[current_pattern, direction, neighbor_pattern]:
+                                is_compatible = True
+                                break
+                    
+                    if not is_compatible:
+                        to_remove.append(neighbor_pattern)
+
+                if to_remove:
+                    for pattern in to_remove:
+                        wave.set(y2, x2, pattern, False)
+                    
+                    # Check if neighbor still has possibilities
+                    if wave.num_patterns_array[y2, x2] == 0:
+                        wave.is_impossible = True
+                        return False # Contradiction found
+                    
+                    self.add_to_propagator(y2, x2)
+            
+        return True
 
 class WFC:
     """
@@ -435,28 +460,27 @@ class WFC:
         else:
             # Fallback to uniform distribution if sum is zero
             possible_weights = np.ones_like(possible_weights) / len(possible_weights)
+
+        # Choose pattern
+        chosen_idx = self.rng.choice(len(possible_patterns), p=possible_weights)
+        chosen_pattern = possible_patterns[chosen_idx]
+
+        # Collapse to chosen pattern
+        for p in range(self.num_patterns):
+            if p != chosen_pattern and self.wave.get(y, x, p):
+                self.wave.set(y, x, p, False)
+
+        # Add to propagator qeueue
+        self.propagator.add_to_propagator(y, x)
+
+        # Propagate constraints
+        prop_success = self.propagator.propagate(self.wave)
+
+        if not prop_success:
+            return False, True # terminate=False, truncate=True (contradiction found)
         
-        try:
-            # Choose pattern
-            chosen_idx = self.rng.choice(len(possible_patterns), p=possible_weights)
-            chosen_pattern = possible_patterns[chosen_idx]
+        return False, False  # continue
             
-            # Collapse to chosen pattern
-            for p in range(self.num_patterns):
-                if p != chosen_pattern and self.wave.get(y, x, p):
-                    self.propagator.add_to_propagator(y, x, p)
-                    self.wave.set(y, x, p, False)
-            
-            # Propagate constraints
-            self.propagator.propagate(self.wave)
-            
-            return False, False  # continue
-        except Exception as e:
-            print(f"Error in collapse_step: {e}")
-            print(f"possible_weights: {possible_weights}, sum: {np.sum(possible_weights)}")
-            self.wave.is_impossible = True
-            return False, True  # terminate=False, truncate=True
-    
     def propagate(self) -> None:
         """Propagate constraints in the wave"""
         self.propagator.propagate(self.wave)
