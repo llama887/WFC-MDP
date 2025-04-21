@@ -346,7 +346,7 @@ if __name__ == "__main__":
         case "binary":
             task = Task.BINARY
         case "river":
-            task = Task.River
+            task = Task.RIVER
         case "biome2":
             task = Task.BIOME2
         case _:

@@ -24,7 +24,7 @@ from biome_adjacency_rules import load_tile_images, create_adjacency_matrix
 
 class Task(Enum):
     # TODO: replace place holder biomes with real biome specifications
-    River = auto()
+    RIVER = auto()
     BIOME2 = auto()
     BINARY = auto()
 
@@ -266,7 +266,7 @@ def compute_reward(
                 path_reward = 100.0 / (abs(TARGET_PATH_LENGTH - current_path) + 1)
             return region_reward + path_reward
 
-        case Task.River | Task.BIOME2:
+        case Task.RIVER | Task.BIOME2:
             return reward(grid, tile_symbols, tile_to_index, terminated, truncated)
 
         case _:
@@ -677,7 +677,7 @@ if __name__ == "__main__":
         tile_images=tile_images,
         render_mode="human",
         # task=Task.BINARY,
-        task=Task.River,
+        task=Task.RIVER,
         deterministic=False,
     )
 
