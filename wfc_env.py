@@ -442,7 +442,7 @@ class WFCWrapper(gym.Env):
             terminated = False  # Cannot be both terminated and truncated
 
         # Calculate reward using the updated grid and initial longest path
-        reward = (
+        reward_val = (
             compute_reward(
                 self.grid,
                 self.task,
@@ -456,7 +456,6 @@ class WFCWrapper(gym.Env):
             if not truncated
             else -1000
         )
-        reward_val = reward
 
         # Get the next observation
         observation = self.get_observation()
@@ -473,9 +472,7 @@ class WFCWrapper(gym.Env):
 
         if self.render_mode == "human":
             self.render()
-        # return observation, reward_val, terminated, truncated, info
-        # return observation, reward_val, terminated, truncated, info
-        return observation, reward, terminated, truncated, info
+        return observation, reward_val, terminated, truncated, info
 
     def reset(self, seed=None, options=None):
         """Resets the environment to the initial state."""
