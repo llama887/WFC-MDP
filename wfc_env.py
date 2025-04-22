@@ -1,12 +1,13 @@
 import random
 from enum import Enum, auto
+from typing import Any
 
 import gymnasium as gym  # Use Gymnasium
 import numpy as np
 import pygame
 from gymnasium import spaces
 
-from tasks.binary_task import calc_longest_path, calc_num_regions, grid_to_binary_map
+from tasks.binary_task import MAX_BINARY_REWARD, binary_reward
 
 # Import functions from biome_wfc instead of fast_wfc
 from wfc import (  # We might not need render_wfc_grid if we keep console rendering
@@ -26,9 +27,9 @@ class Task(Enum):
 
 
 def grid_to_array(
-    grid: list[list[set[str]]],  # Grid is now list of lists of sets
-    tile_symbols: list[str],  # Renamed for consistency
-    tile_to_index: dict[str, int],  # Need mapping
+    grid: list[list[set[str]]],
+    tile_symbols: list[str],
+    tile_to_index: dict[str, int],
     map_length: int,
     map_width: int,
 ) -> np.ndarray:
@@ -61,30 +62,25 @@ def grid_to_array(
     return arr.flatten()
 
 
-def compute_reward(grid: list[list[set[str]]], task: Task) -> float:
-    """Computes the reward based task
-
-    Binary Task: reward is based on regions connectivity and how far we are from the target path length.
-    Regions: +100 reward if there's a single connected empty region; else -100.
-    Path: Scales linearly up to +100 when the longest path increases by at least 20 tiles.
-    """
+def compute_reward(
+    grid: list[list[set[str]]], task: Task, task_specification: dict[str, Any]
+) -> tuple[float, dict[str, Any]]:
+    """Computes the reward based task and returns info related to the task"""
     match task:
         case Task.BINARY:
-            TARGET_PATH_LENGTH = 50
-            binary_map = grid_to_binary_map(grid)
-            regions = calc_num_regions(binary_map)
-            current_path = calc_longest_path(binary_map)
-
-            region_reward = 100.0 if regions == 1 else -100.0
-
-            if current_path >= TARGET_PATH_LENGTH:
-                path_reward = 100.0
-            else:
-                path_reward = current_path - TARGET_PATH_LENGTH
-            return region_reward + path_reward
+            reward, number_of_regions, current_path_length, longest_path = (
+                binary_reward(grid, task_specification["target_path_length"])
+            )
+            info = {
+                "number_of_regions": number_of_regions,
+                "current_path_length": current_path_length,
+                "longest_path": longest_path,
+                "achieved_max_reward": reward == MAX_BINARY_REWARD,
+            }
+            return reward, info
         case _:
             # TODO: incorporate biome rewards
-            return 0
+            return 0, {}
 
 
 # # Target subarray to count
@@ -117,6 +113,7 @@ class WFCWrapper(gym.Env):
         num_tiles: int,
         tile_to_index: dict[str, int],
         task: Task,
+        task_specifications: dict[str, Any],
         deterministic: bool,
     ):
         super().__init__()
@@ -127,6 +124,7 @@ class WFCWrapper(gym.Env):
         self.map_width: int = map_width
         self.tile_to_index = tile_to_index
         self.deterministic = deterministic
+        self.task_specifications: dict[str, Any] = task_specifications
 
         # Initial grid state using the function from biome_wfc
         # self.grid will hold the current state (list of lists of sets)
@@ -134,7 +132,7 @@ class WFCWrapper(gym.Env):
 
         # Action space: Agent outputs preferences (logits) for each tile type.
         self.action_space: spaces.Box = spaces.Box(
-            low=-1, high=1, shape=(self.num_tiles,), dtype=np.float32
+            low=0, high=1, shape=(self.num_tiles,), dtype=np.float32
         )
 
         # Observation space: Flattened map + normalized coordinates of the next cell to collapse
@@ -182,6 +180,7 @@ class WFCWrapper(gym.Env):
 
     def step(self, action: np.ndarray):
         """Performs one step of the WFC process based on the agent's action."""
+        info = {}
         self.current_step += 1
 
         # Ensure action is float32 numpy array
@@ -216,17 +215,19 @@ class WFCWrapper(gym.Env):
             terminated = False  # Cannot be both terminated and truncated
 
         # Calculate reward using the updated grid and initial longest path
-        reward = (
-            compute_reward(self.grid, self.task)
-            if terminated
-            else (-1000 if truncated else 0)
-        )
+        if terminated:
+            reward, info = compute_reward(
+                self.grid, self.task, self.task_specifications
+            )
+        elif truncated:
+            reward = -1000
+        else:
+            reward = 0
 
         # if reward != 0:
         #     print(reward)
         # Get the next observation
         observation = self.get_observation()
-        info = {}  # Provide additional info if needed (e.g., current step count)
         info["steps"] = self.current_step
         if terminated:
             info["terminated_reason"] = "completed"
@@ -324,6 +325,7 @@ if __name__ == "__main__":
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
         task=Task.BINARY,
+        task_specifications={"target_path_length": 50},
         deterministic=False,
     )
 
@@ -358,5 +360,4 @@ if __name__ == "__main__":
             obs, info = env.reset()
 
     pygame.quit()
-    exit(0)
     exit(0)
