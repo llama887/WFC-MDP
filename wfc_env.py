@@ -6,15 +6,16 @@ import numpy as np
 import pygame
 from gymnasium import spaces
 
+from tasks.binary_task import calc_longest_path, calc_num_regions, grid_to_binary_map
+
 # Import functions from biome_wfc instead of fast_wfc
-from biome_wfc import (  # We might not need render_wfc_grid if we keep console rendering
+from wfc import (  # We might not need render_wfc_grid if we keep console rendering
     biome_wfc_step,
     find_lowest_entropy_cell,
     initialize_wfc_grid,
     load_tile_images,
     render_wfc_grid,
 )
-from tasks.binary_task import calc_longest_path, calc_num_regions, grid_to_binary_map
 
 
 class Task(Enum):
@@ -357,4 +358,5 @@ if __name__ == "__main__":
             obs, info = env.reset()
 
     pygame.quit()
+    exit(0)
     exit(0)
