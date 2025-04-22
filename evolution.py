@@ -329,7 +329,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--task",
         type=str,
-        default="binary",
+        default="river",
         help="Task being evaluated",
     )
     args = parser.parse_args()
@@ -362,7 +362,6 @@ if __name__ == "__main__":
         task=task,
         deterministic=True,
     )
-    tile_images = load_tile_images()  # Load images needed for rendering later
 
     hyperparams = {}
     best_agent = None
@@ -471,9 +470,14 @@ if __name__ == "__main__":
     if best_agent:
         print("\nInitializing Pygame for rendering the best map...")
         pygame.init()
+        tile_images = load_tile_images()  # Load images needed for rendering later
         render_best_agent(env, best_agent, tile_images)
     else:
         print("\nNo best agent was found during the process.")
+
+    # Clean up for pickling
+    if hasattr(best_agent.env, "tile_images"):
+        best_agent.env.tile_images = None
 
     # save the best agent in a .pkl file
     with open(f"best_evolved_{args.task}_agent.pkl", "wb") as f:

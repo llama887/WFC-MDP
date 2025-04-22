@@ -663,7 +663,6 @@ if __name__ == "__main__":
 
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     tile_images = load_tile_images()  # Load tile images
-    tile_images = load_tile_images()  # Load tile images
     num_tiles = len(tile_symbols)
 
     # Create the WFC environment instance with graphical rendering
