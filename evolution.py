@@ -276,7 +276,9 @@ def objective(
     end_time = time.time()
 
     # Return the best reward increase rate
-    return best_agent.reward / (end_time - start_time) if best_agent else float("-inf")
+    return (
+        (best_agent.reward / (end_time - start_time)) if best_agent else float("-inf")
+    )
 
 
 def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images):
