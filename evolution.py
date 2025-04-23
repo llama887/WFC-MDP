@@ -7,6 +7,7 @@ import random
 import time
 from multiprocessing import Pool, cpu_count
 
+import matplotlib.pyplot as plt
 import numpy as np
 import optuna
 import pygame
@@ -157,29 +158,38 @@ def evolve(
     action_noise_standard_deviation: float = 0.1,
     survival_rate: float = 0.2,
     patience: int = 10,
-):
+) -> tuple[list[PopulationMember], PopulationMember, int, list[float], list[float]]:
     patience_counter = 0
     best_agent: PopulationMember | None = None
     population = [PopulationMember(env) for _ in range(population_size)]
+    best_agent_rewards = []
+    median_agent_rewards = []
     for generation in tqdm(range(generations), desc="Generations"):
         # Evaluate the entire population in parallel
         with Pool(min(cpu_count(), population_size)) as pool:
             population = pool.map(run_member, population)
         population.sort(key=lambda x: x.reward, reverse=True)
-        best = population[0]
-        if best_agent is None or best.reward > best_agent.reward:
-            best_agent = copy.deepcopy(best)
-            # early stopping if max is achieved
-            print("info", best_agent.info, "reward", best_agent.reward)
-            if best_agent.info.get("achieved_max_reward", False):
-                return population, best_agent, generation
+        best_agent_in_population = population[0]
+        best_agent_rewards.append(best_agent_in_population.reward)
+        median_reward = population[len(population) // 2].reward
+        median_agent_rewards.append(median_reward)
+        if best_agent is None or best_agent_in_population.reward > best_agent.reward:
+            best_agent = copy.deepcopy(best_agent_in_population)
             patience_counter = 0
         else:
             patience_counter += 1
-            if patience_counter == patience:
-                print("Training terminated due to stagnating reward")
-                return population, best_agent, generation
 
+        if (
+            best_agent.info.get("achieved_max_reward", False)
+            or patience_counter == patience
+        ):
+            return (
+                population,
+                best_agent,
+                generation,
+                best_agent_rewards,
+                median_agent_rewards,
+            )
         # Determine survivors and reproduce
         n_survivors = max(2, int(population_size * survival_rate))
         survivors = population[:n_survivors]
@@ -220,7 +230,7 @@ def evolve(
         # For now, returning None as best_agent
         pass
 
-    return population, best_agent, generations
+    return population, best_agent, generations, best_agent_rewards, median_agent_rewards
 
 
 # --- Optuna Objective Function ---
@@ -244,7 +254,7 @@ def objective(
     survival_rate = trial.suggest_float("survival_rate", 0.1, 0.8)
 
     # Run evolution with suggested hyperparameters
-    _, best_agent, _ = evolve(
+    _, best_agent, _, _, _ = evolve(
         env=base_env,
         generations=generations_per_trial,  # Use fewer generations for faster trials
         population_size=population_size,
@@ -374,25 +384,6 @@ if __name__ == "__main__":
             print(
                 f"Running evolution for {args.generations} generations with loaded hyperparameters..."
             )
-            start_time = time.time()
-            _, best_agent, generations = evolve(
-                env=env,
-                generations=args.generations,
-                population_size=hyperparams["population_size"],
-                number_of_actions_mutated_mean=hyperparams[
-                    "number_of_actions_mutated_mean"
-                ],
-                number_of_actions_mutated_standard_deviation=hyperparams[
-                    "number_of_actions_mutated_standard_deviation"
-                ],
-                action_noise_standard_deviation=hyperparams[
-                    "action_noise_standard_deviation"
-                ],
-                survival_rate=hyperparams["survival_rate"],
-            )
-            end_time = time.time()
-            print(f"Evolution finished in {end_time - start_time:.2f} seconds.")
-            print(f"Evolved for a total of {generations} generations")
 
         except FileNotFoundError:
             print(
@@ -402,6 +393,36 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Error loading or using hyperparameters: {e}")
             exit(1)
+
+        start_time = time.time()
+        _, best_agent, generations, best_agent_rewards, median_agent_rewards = evolve(
+            env=env,
+            generations=args.generations,
+            population_size=hyperparams["population_size"],
+            number_of_actions_mutated_mean=hyperparams[
+                "number_of_actions_mutated_mean"
+            ],
+            number_of_actions_mutated_standard_deviation=hyperparams[
+                "number_of_actions_mutated_standard_deviation"
+            ],
+            action_noise_standard_deviation=hyperparams[
+                "action_noise_standard_deviation"
+            ],
+            survival_rate=hyperparams["survival_rate"],
+        )
+        end_time = time.time()
+        print(f"Evolution finished in {end_time - start_time:.2f} seconds.")
+        print(f"Evolved for a total of {generations} generations")
+        assert len(best_agent_rewards) == len(median_agent_rewards)
+        x_axis = np.arange(1, len(median_agent_rewards) + 1)
+        plt.plot(x_axis, best_agent_rewards, label="Best Agent Per Generation")
+        plt.plot(x_axis, median_agent_rewards, label="Median Agent Per Generation")
+        plt.legend()
+        plt.title("Agent Performance Over Generations")
+        plt.xlabel("Generations")
+        plt.ylabel("Reward")
+        plt.savefig("agent_performance_over_generations.png")
+        plt.close()
 
     elif not args.best_agent_pickle:
         # --- Run Optuna Hyperparameter Optimization ---

@@ -1,6 +1,6 @@
 from .utils import calc_longest_path, calc_num_regions, grid_to_binary_map
 
-MAX_BINARY_REWARD = 200
+MAX_BINARY_REWARD = 0
 
 
 def binary_reward(
@@ -13,12 +13,12 @@ def binary_reward(
     number_of_regions = calc_num_regions(binary_map)
     current_path_length, longest_path = calc_longest_path(binary_map)
 
-    region_reward = 100.0 if number_of_regions == 1 else -100.0
-
-    if current_path_length >= target_path_length:
-        path_reward = 100.0
-    else:
-        path_reward = current_path_length - target_path_length
+    region_reward = 1 - number_of_regions
+    path_reward = (
+        0
+        if current_path_length >= target_path_length
+        else current_path_length - target_path_length
+    )
     return (
         region_reward + path_reward,
         number_of_regions,
