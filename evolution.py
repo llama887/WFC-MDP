@@ -5,6 +5,7 @@ import os
 import pickle
 import random
 import time
+from enum import Enum, auto
 from multiprocessing import Pool, cpu_count
 
 import matplotlib.pyplot as plt
@@ -21,6 +22,11 @@ from wfc import (  # We might not need render_wfc_grid if we keep console render
     render_wfc_grid,
 )
 from wfc_env import Task, WFCWrapper
+
+
+class CrossOverMethod(Enum):
+    UNIFORM = 0
+    ONE_POINT = 1
 
 
 class PopulationMember:
@@ -88,27 +94,26 @@ class PopulationMember:
     def crossover(
         parent1: "PopulationMember",
         parent2: "PopulationMember",
-        method: str = "one_point",
+        method: CrossOverMethod = CrossOverMethod.ONE_POINT,
     ) -> tuple["PopulationMember", "PopulationMember"]:
         seq1 = parent1.action_sequence
         seq2 = parent2.action_sequence
         length = len(seq1)
-
-        if method == "one_point":
-            # pick a crossover point (not at the extremes)
-            point = np.random.randint(1, length)
-            # child1 takes seq1[:point] + seq2[point:]
-            child_seq1 = np.concatenate([seq1[:point], seq2[point:]])
-            # child2 takes seq2[:point] + seq1[point:]
-            child_seq2 = np.concatenate([seq2[:point], seq1[point:]])
-
-        elif method == "uniform":
-            # for each index, flip a coin to choose parent1 or parent2
-            mask = np.random.rand(length) < 0.5
-            child_seq1 = np.where(mask, seq1, seq2)
-            child_seq2 = np.where(mask, seq2, seq1)
-        else:
-            raise ValueError(f"Unknown crossover method: {method!r}")
+        match method:
+            case CrossOverMethod.ONE_POINT
+                # pick a crossover point (not at the extremes)
+                point = np.random.randint(1, length)
+                # child1 takes seq1[:point] + seq2[point:]
+                child_seq1 = np.concatenate([seq1[:point], seq2[point:]])
+                # child2 takes seq2[:point] + seq1[point:]
+                child_seq2 = np.concatenate([seq2[:point], seq1[point:]])
+            case CrossOverMethod.UNIFORM:
+                # for each index, flip a coin to choose parent1 or parent2
+                mask = np.random.rand(length) < 0.5
+                child_seq1 = np.where(mask, seq1, seq2)
+                child_seq2 = np.where(mask, seq2, seq1)
+            case _:
+                raise ValueError(f"Unknown crossover method: {method!r}")
 
         # build child objects with fresh deep‐copied envs
         child1 = PopulationMember(parent1.env)
@@ -136,14 +141,15 @@ def reproduce_pair(
         int,  # mean
         float,  # stddev
         float,  # action_noise
+        CrossOverMethod, # method
     ],
 ) -> tuple["PopulationMember", "PopulationMember"]:
     """
     Given (p1, p2, mean, stddev, noise), perform crossover + mutate
     and return two children.
     """
-    p1, p2, mean, stddev, noise = args
-    c1, c2 = PopulationMember.crossover(p1, p2, method="one_point")
+    p1, p2, mean, stddev, noise, method = args
+    c1, c2 = PopulationMember.crossover(p1, p2, method=method)
     c1.mutate(mean, stddev, noise)
     c2.mutate(mean, stddev, noise)
     return c1, c2
@@ -157,6 +163,7 @@ def evolve(
     number_of_actions_mutated_standard_deviation: float = 10,
     action_noise_standard_deviation: float = 0.1,
     survival_rate: float = 0.2,
+    cross_over_method: CrossOverMethod = CrossOverMethod.ONE_POINT,
     patience: int = 10,
 ) -> tuple[list[PopulationMember], PopulationMember, int, list[float], list[float]]:
     patience_counter = 0
@@ -205,6 +212,7 @@ def evolve(
                 number_of_actions_mutated_mean,
                 number_of_actions_mutated_standard_deviation,
                 action_noise_standard_deviation,
+                cross_over_method
             )
             for _ in range(pairs_needed)
         ]
@@ -226,8 +234,6 @@ def evolve(
     elif best_agent is None:
         # Handle edge case where population is empty and no best_agent was ever found
         print("Warning: Evolution resulted in an empty population and no best agent.")
-        # Optionally return a dummy agent or raise an error
-        # For now, returning None as best_agent
         pass
 
     return population, best_agent, generations, best_agent_rewards, median_agent_rewards
@@ -241,18 +247,18 @@ def objective(
 ) -> float:
     """Objective function for Optuna hyperparameter optimization."""
     # Suggest hyperparameters
-    population_size = trial.suggest_int("population_size", 5, 50)
+    population_size = trial.suggest_int("population_size", 5, 48)
     number_of_actions_mutated_mean = trial.suggest_int(
-        "number_of_actions_mutated_mean", 1, 50
+        "number_of_actions_mutated_mean", 1, 100
     )
     number_of_actions_mutated_standard_deviation = trial.suggest_float(
-        "number_of_actions_mutated_standard_deviation", 1.0, 20.0
+        "number_of_actions_mutated_standard_deviation", 1.0, 50.0
     )
     action_noise_standard_deviation = trial.suggest_float(
         "action_noise_standard_deviation", 0.01, 0.5, log=True
     )
-    survival_rate = trial.suggest_float("survival_rate", 0.1, 0.8)
-
+    survival_rate = trial.suggest_float("survival_rate", 0.1, 0.9)
+    cross_over_method = trial.suggest_categorical("cross_over_method", [0, 1])
     # Run evolution with suggested hyperparameters
     _, best_agent, _, _, _ = evolve(
         env=base_env,
@@ -262,6 +268,7 @@ def objective(
         number_of_actions_mutated_standard_deviation=number_of_actions_mutated_standard_deviation,
         action_noise_standard_deviation=action_noise_standard_deviation,
         survival_rate=survival_rate,
+        cross_over_method=CrossOverMethod(cross_over_method)
     )
 
     # Return the reward of the best agent found in this trial
@@ -409,6 +416,7 @@ if __name__ == "__main__":
                 "action_noise_standard_deviation"
             ],
             survival_rate=hyperparams["survival_rate"],
+            cross_over_method=CrossOverMethod(hyperparams["cross_over_method"])
         )
         end_time = time.time()
         print(f"Evolution finished in {end_time - start_time:.2f} seconds.")
