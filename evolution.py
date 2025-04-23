@@ -5,7 +5,7 @@ import os
 import pickle
 import random
 import time
-from enum import Enum, auto
+from enum import Enum
 from multiprocessing import Pool, cpu_count
 
 import matplotlib.pyplot as plt
@@ -100,7 +100,7 @@ class PopulationMember:
         seq2 = parent2.action_sequence
         length = len(seq1)
         match method:
-            case CrossOverMethod.ONE_POINT
+            case CrossOverMethod.ONE_POINT:
                 # pick a crossover point (not at the extremes)
                 point = np.random.randint(1, length)
                 # child1 takes seq1[:point] + seq2[point:]
@@ -141,7 +141,7 @@ def reproduce_pair(
         int,  # mean
         float,  # stddev
         float,  # action_noise
-        CrossOverMethod, # method
+        CrossOverMethod,  # method
     ],
 ) -> tuple["PopulationMember", "PopulationMember"]:
     """
@@ -212,7 +212,7 @@ def evolve(
                 number_of_actions_mutated_mean,
                 number_of_actions_mutated_standard_deviation,
                 action_noise_standard_deviation,
-                cross_over_method
+                cross_over_method,
             )
             for _ in range(pairs_needed)
         ]
@@ -259,7 +259,9 @@ def objective(
     )
     survival_rate = trial.suggest_float("survival_rate", 0.1, 0.9)
     cross_over_method = trial.suggest_categorical("cross_over_method", [0, 1])
+    patience = trial.suggest_int("patience", 5, 20)
     # Run evolution with suggested hyperparameters
+    start_time = time.time()
     _, best_agent, _, _, _ = evolve(
         env=base_env,
         generations=generations_per_trial,  # Use fewer generations for faster trials
@@ -268,11 +270,13 @@ def objective(
         number_of_actions_mutated_standard_deviation=number_of_actions_mutated_standard_deviation,
         action_noise_standard_deviation=action_noise_standard_deviation,
         survival_rate=survival_rate,
-        cross_over_method=CrossOverMethod(cross_over_method)
+        cross_over_method=CrossOverMethod(cross_over_method),
+        patience=patience,
     )
+    end_time = time.time()
 
-    # Return the reward of the best agent found in this trial
-    return best_agent.reward if best_agent else float("-inf")
+    # Return the best reward increase rate
+    return best_agent.reward / (end_time - start_time) if best_agent else float("-inf")
 
 
 def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images):
@@ -416,7 +420,8 @@ if __name__ == "__main__":
                 "action_noise_standard_deviation"
             ],
             survival_rate=hyperparams["survival_rate"],
-            cross_over_method=CrossOverMethod(hyperparams["cross_over_method"])
+            cross_over_method=CrossOverMethod(hyperparams["cross_over_method"]),
+            patience=hyperparams["patience"],
         )
         end_time = time.time()
         print(f"Evolution finished in {end_time - start_time:.2f} seconds.")
@@ -467,28 +472,6 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Error saving hyperparameters: {e}")
 
-        # Optional: Run evolution one more time with the best found hyperparameters
-        print(
-            f"\nRunning final evolution for {args.generations} generations with best hyperparameters..."
-        )
-        start_time = time.time()
-        _, best_agent, _ = evolve(
-            env=env,
-            generations=args.generations,
-            population_size=hyperparams["population_size"],
-            number_of_actions_mutated_mean=hyperparams[
-                "number_of_actions_mutated_mean"
-            ],
-            number_of_actions_mutated_standard_deviation=hyperparams[
-                "number_of_actions_mutated_standard_deviation"
-            ],
-            action_noise_standard_deviation=hyperparams[
-                "action_noise_standard_deviation"
-            ],
-            survival_rate=hyperparams["survival_rate"],
-        )
-        end_time = time.time()
-        print(f"Final evolution finished in {end_time - start_time:.2f} seconds.")
     elif args.best_agent_pickle:
         with open(args.best_agent_pickle, "rb") as f:
             best_agent = pickle.load(f)
