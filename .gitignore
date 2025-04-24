@@ -182,3 +182,5 @@ pcgrl.txt
 
 *.pkl
 *.png
+*.s
+output

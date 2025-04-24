@@ -108,10 +108,12 @@ class PopulationMember:
                 # child2 takes seq2[:point] + seq1[point:]
                 child_seq2 = np.concatenate([seq2[:point], seq1[point:]])
             case CrossOverMethod.UNIFORM:
-                # for each index, flip a coin to choose parent1 or parent2
-                mask = np.random.rand(length) < 0.5
+                # mask[i,0] says “choose parent1’s action-vector at time i” 
+                mask = (np.random.rand(length, 1) < 0.5)
+
                 child_seq1 = np.where(mask, seq1, seq2)
                 child_seq2 = np.where(mask, seq2, seq1)
+
             case _:
                 raise ValueError(f"Unknown crossover method: {method!r}")
 
@@ -449,7 +451,6 @@ if __name__ == "__main__":
         study.optimize(
             lambda trial: objective(trial, env, args.generations_per_trial),
             n_trials=args.optuna_trials,
-            n_jobs=2,  # Use multiple cores for trials if available
         )
         end_time = time.time()
         print(f"Optuna optimization finished in {end_time - start_time:.2f} seconds.")
