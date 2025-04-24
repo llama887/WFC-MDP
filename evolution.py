@@ -247,7 +247,7 @@ def objective(
 ) -> float:
     """Objective function for Optuna hyperparameter optimization."""
     # Suggest hyperparameters
-    population_size = trial.suggest_int("population_size", 5, 48)
+    population_size = trial.suggest_int("population_size", 5, 100)
     number_of_actions_mutated_mean = trial.suggest_int(
         "number_of_actions_mutated_mean", 1, 100
     )
@@ -275,7 +275,7 @@ def objective(
     )
     end_time = time.time()
 
-    # Return the best reward increase rate
+    # Return the best reward rate
     return (
         (best_agent.reward / (end_time - start_time)) if best_agent else float("-inf")
     )
@@ -362,7 +362,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Define environment parameters (using the same tile set as in our training setup)
+    # Define environment parameters
     MAP_LENGTH = 15
     MAP_WIDTH = 20
 
