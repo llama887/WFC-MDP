@@ -108,8 +108,8 @@ class PopulationMember:
                 # child2 takes seq2[:point] + seq1[point:]
                 child_seq2 = np.concatenate([seq2[:point], seq1[point:]])
             case CrossOverMethod.UNIFORM:
-                # mask[i,0] says “choose parent1’s action-vector at time i” 
-                mask = (np.random.rand(length, 1) < 0.5)
+                # mask[i,0] says “choose parent1’s action-vector at time i”
+                mask = np.random.rand(length, 1) < 0.5
 
                 child_seq1 = np.where(mask, seq1, seq2)
                 child_seq2 = np.where(mask, seq2, seq1)
@@ -244,10 +244,9 @@ def evolve(
 # --- Optuna Objective Function ---
 
 
-def objective(
-    trial: optuna.Trial, base_env: WFCWrapper, generations_per_trial: int
-) -> float:
+def objective(trial: optuna.Trial, task: Task, generations_per_trial: int) -> float:
     """Objective function for Optuna hyperparameter optimization."""
+
     # Suggest hyperparameters
     population_size = trial.suggest_int("population_size", 5, 100)
     number_of_actions_mutated_mean = trial.suggest_int(
@@ -262,25 +261,54 @@ def objective(
     survival_rate = trial.suggest_float("survival_rate", 0.1, 0.9)
     cross_over_method = trial.suggest_categorical("cross_over_method", [0, 1])
     patience = trial.suggest_int("patience", 5, 20)
-    # Run evolution with suggested hyperparameters
+    # Constuct Env
+    MAP_LENGTH = 15
+    MAP_WIDTH = 20
+
+    total_reward = 0
+    adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
+    num_tiles = len(tile_symbols)
+
+    NUMBER_OF_SAMPLES = 5
     start_time = time.time()
-    _, best_agent, _, _, _ = evolve(
-        env=base_env,
-        generations=generations_per_trial,  # Use fewer generations for faster trials
-        population_size=population_size,
-        number_of_actions_mutated_mean=number_of_actions_mutated_mean,
-        number_of_actions_mutated_standard_deviation=number_of_actions_mutated_standard_deviation,
-        action_noise_standard_deviation=action_noise_standard_deviation,
-        survival_rate=survival_rate,
-        cross_over_method=CrossOverMethod(cross_over_method),
-        patience=patience,
-    )
+    for i in range(NUMBER_OF_SAMPLES):
+        match task:
+            case Task.BINARY:
+                # Create the WFC environment instance
+                base_env = WFCWrapper(
+                    map_length=MAP_LENGTH,
+                    map_width=MAP_WIDTH,
+                    tile_symbols=tile_symbols,
+                    adjacency_bool=adjacency_bool,
+                    num_tiles=num_tiles,
+                    tile_to_index=tile_to_index,
+                    task=Task.BINARY,
+                    task_specifications={
+                        "target_path_length": random.randint(10, 100)
+                    },  # so hyperparameters generalize over path length
+                    deterministic=True,
+                )
+            case _:
+                raise ValueError(f"{task} is not a defined task")
+
+        # Run evolution with suggested hyperparameters
+        _, best_agent, _, _, _ = evolve(
+            env=base_env,
+            generations=generations_per_trial,  # Use fewer generations for faster trials
+            population_size=population_size,
+            number_of_actions_mutated_mean=number_of_actions_mutated_mean,
+            number_of_actions_mutated_standard_deviation=number_of_actions_mutated_standard_deviation,
+            action_noise_standard_deviation=action_noise_standard_deviation,
+            survival_rate=survival_rate,
+            cross_over_method=CrossOverMethod(cross_over_method),
+            patience=patience,
+        )
+        print(f"Best reward at sample {i + 1}/{NUMBER_OF_SAMPLES}: {best_agent.reward}")
+        total_reward += best_agent.reward
     end_time = time.time()
 
-    # Return the best reward rate
-    return (
-        (best_agent.reward / (end_time - start_time)) if best_agent else float("-inf")
-    )
+    # Return the best reward but with account for how long it took
+    return total_reward - (0.00001) * (end_time - start_time)
 
 
 def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images):
@@ -449,7 +477,7 @@ if __name__ == "__main__":
         study = optuna.create_study(direction="maximize")
         start_time = time.time()
         study.optimize(
-            lambda trial: objective(trial, env, args.generations_per_trial),
+            lambda trial: objective(trial, Task.BINARY, args.generations_per_trial),
             n_trials=args.optuna_trials,
         )
         end_time = time.time()
