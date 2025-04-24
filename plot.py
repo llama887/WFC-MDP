@@ -1,3 +1,4 @@
+import argparse
 import os
 import time
 
@@ -7,6 +8,7 @@ import numpy as np
 from biome_adjacency_rules import create_adjacency_matrix
 from evolution import evolve
 from wfc_env import Task, WFCWrapper
+import yaml
 
 FIGURES_DIRECTORY = "figures"
 os.makedirs(FIGURES_DIRECTORY, exist_ok=True)
@@ -150,3 +152,40 @@ def binary_convergence_over_path_lengths(
     fig.tight_layout()
     plt.savefig(f"{FIGURES_DIRECTORY}/convergence_over_path.png")
     plt.close()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Plotting WFC Results"
+    )
+    parser.add_argument(
+        "--load-hyperparameters",
+        type=str,
+        default=None,
+        help="Path to a YAML file containing hyperparameters to load.",
+    )
+    
+    args = parser.parse_args()
+    
+    if args.load_hyperparameters:
+        # --- Load Hyperparameters and Run Evolution ---
+        print(f"Loading hyperparameters from: {args.load_hyperparameters}")
+        try:
+            with open(args.load_hyperparameters, "r") as f:
+                hyperparams = yaml.safe_load(f)
+            print("Successfully loaded hyperparameters:", hyperparams)
+
+            print(
+                f"Running evolution for {args.generations} generations with loaded hyperparameters..."
+            )
+
+        except FileNotFoundError:
+            print(
+                f"Error: Hyperparameter file not found at {args.load_hyperparameters}"
+            )
+            exit(1)
+        except Exception as e:
+            print(f"Error loading or using hyperparameters: {e}")
+            exit(1)
+    
+    binary_convergence_over_path_lengths(5, hyperparams)

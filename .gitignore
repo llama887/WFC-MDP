@@ -184,3 +184,5 @@ pcgrl.txt
 *.png
 *.s
 output
+*.err
+*.out

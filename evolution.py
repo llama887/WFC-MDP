@@ -260,7 +260,7 @@ def objective(trial: optuna.Trial, task: Task, generations_per_trial: int) -> fl
     )
     survival_rate = trial.suggest_float("survival_rate", 0.1, 0.9)
     cross_over_method = trial.suggest_categorical("cross_over_method", [0, 1])
-    patience = trial.suggest_int("patience", 5, 20)
+    patience = trial.suggest_int("patience", 10, 20)
     # Constuct Env
     MAP_LENGTH = 15
     MAP_WIDTH = 20
@@ -274,6 +274,7 @@ def objective(trial: optuna.Trial, task: Task, generations_per_trial: int) -> fl
     for i in range(NUMBER_OF_SAMPLES):
         match task:
             case Task.BINARY:
+                target_path_length=random.randint(10, 100)
                 # Create the WFC environment instance
                 base_env = WFCWrapper(
                     map_length=MAP_LENGTH,
@@ -284,10 +285,11 @@ def objective(trial: optuna.Trial, task: Task, generations_per_trial: int) -> fl
                     tile_to_index=tile_to_index,
                     task=Task.BINARY,
                     task_specifications={
-                        "target_path_length": random.randint(10, 100)
+                        "target_path_length": target_path_length
                     },  # so hyperparameters generalize over path length
                     deterministic=True,
                 )
+                print(f"Target Path Length: {target_path_length}")
             case _:
                 raise ValueError(f"{task} is not a defined task")
 
