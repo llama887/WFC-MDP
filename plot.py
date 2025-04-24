@@ -96,7 +96,7 @@ def binary_convergence_over_path_lengths(
             plt.title(f"Performance (path={path_length}, run={sample_idx})")
             plt.xlabel("Generation")
             plt.ylabel("Reward")
-            plt.savefig(f"binary{path_length}_performance_{sample_idx}.png")
+            plt.savefig(f"{FIGURES_DIRECTORY}/binary{path_length}_performance_{sample_idx}.png")
             plt.close()
 
             # Record generations‐to‐converge or leave as NaN if it never converged
@@ -175,9 +175,6 @@ if __name__ == "__main__":
                 hyperparams = yaml.safe_load(f)
             print("Successfully loaded hyperparameters:", hyperparams)
 
-            print(
-                f"Running evolution for {args.generations} generations with loaded hyperparameters..."
-            )
 
         except FileNotFoundError:
             print(
