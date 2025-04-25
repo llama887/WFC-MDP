@@ -248,17 +248,17 @@ def objective(trial: optuna.Trial, task: Task, generations_per_trial: int) -> fl
     """Objective function for Optuna hyperparameter optimization."""
 
     # Suggest hyperparameters
-    population_size = trial.suggest_int("population_size", 5, 100)
+    population_size = trial.suggest_int("population_size", 30, 100)
     number_of_actions_mutated_mean = trial.suggest_int(
         "number_of_actions_mutated_mean", 1, 100
     )
     number_of_actions_mutated_standard_deviation = trial.suggest_float(
-        "number_of_actions_mutated_standard_deviation", 1.0, 50.0
+        "number_of_actions_mutated_standard_deviation", 1.0, 100.0
     )
     action_noise_standard_deviation = trial.suggest_float(
-        "action_noise_standard_deviation", 0.01, 0.5, log=True
+        "action_noise_standard_deviation", 0.01, 0.8, log=True
     )
-    survival_rate = trial.suggest_float("survival_rate", 0.1, 0.9)
+    survival_rate = trial.suggest_float("survival_rate", 0.01, 0.99)
     cross_over_method = trial.suggest_categorical("cross_over_method", [0, 1])
     patience = trial.suggest_int("patience", 10, 20)
     # Constuct Env
@@ -269,12 +269,12 @@ def objective(trial: optuna.Trial, task: Task, generations_per_trial: int) -> fl
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     num_tiles = len(tile_symbols)
 
-    NUMBER_OF_SAMPLES = 5
+    NUMBER_OF_SAMPLES = 10
     start_time = time.time()
     for i in range(NUMBER_OF_SAMPLES):
         match task:
             case Task.BINARY:
-                target_path_length=random.randint(10, 100)
+                target_path_length=random.randint(50, 70) # only focus on the harder problems
                 # Create the WFC environment instance
                 base_env = WFCWrapper(
                     map_length=MAP_LENGTH,
@@ -310,7 +310,8 @@ def objective(trial: optuna.Trial, task: Task, generations_per_trial: int) -> fl
     end_time = time.time()
 
     # Return the best reward but with account for how long it took
-    return total_reward - (0.00001) * (end_time - start_time)
+    print(f"Total Reward: {total_reward} | Time: {end_time - start_time}")
+    return total_reward - (0.001) * (end_time - start_time)
 
 
 def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images):
@@ -365,7 +366,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--optuna-trials",
         type=int,
-        default=20,  # Number of trials for Optuna optimization
+        default=50,  # Number of trials for Optuna optimization
         help="Number of trials to run for Optuna hyperparameter search.",
     )
     parser.add_argument(
