@@ -1,6 +1,0 @@
-Starting job: hyperparams (59707096)
-pygame 2.6.1 (SDL 2.28.4, Python 3.11.2)
-Hello from the pygame community. https://www.pygame.org/contribute.html
-Loading hyperparameters from: hyperparameters/binary_hyperparameters.yaml
-Successfully loaded hyperparameters: {'action_noise_standard_deviation': 0.23355780355369765, 'cross_over_method': 1, 'number_of_actions_mutated_mean': 23, 'number_of_actions_mutated_standard_deviation': 33.14527632728297, 'patience': 12, 'population_size': 46, 'survival_rate': 0.24383636816094253}
-Error loading or using hyperparameters: 'Namespace' object has no attribute 'generations'
