@@ -1,6 +1,6 @@
 import random
 from enum import Enum, auto
-from typing import Any
+from typing import Any, Callable
 
 import gymnasium as gym  # Use Gymnasium
 import numpy as np
@@ -81,14 +81,7 @@ def compute_reward(
         case _:
             # TODO: incorporate biome rewards
             return 0, {}
-
-
-# # Target subarray to count
-# target = np.array([0, 1, 0])
-
-
-# # Count occurrences of the target subarray along the last dimension
-# matches = np.all(array == target, axis=-1)
+        
 class WFCWrapper(gym.Env):
     """
     Gymnasium Environment for Wave Function Collapse controlled by an RL agent.
@@ -97,9 +90,7 @@ class WFCWrapper(gym.Env):
                  Grid cells: Value is index/(num_tiles-1) if collapsed, -1.0 if undecided.
     Action: A vector of preferences (logits) for each tile type for the selected cell.
     Reward: Sparse reward given only at the end of the episode.
-            + Scaled reward (0 to 100) based on proximity to target tile count for successful termination.
-            - 1000 for truncation (contradiction or max steps).
-            0 otherwise.
+
     Termination: Grid is fully collapsed (all cells have exactly one possibility).
     Truncation: A contradiction occurs during propagation OR max steps reached.
     """
@@ -115,6 +106,7 @@ class WFCWrapper(gym.Env):
         task: Task,
         task_specifications: dict[str, Any],
         deterministic: bool,
+        qd_funciton: Callable[[list[list[set[str]]]], float] | None = None,
     ):
         super().__init__()
         self.all_tiles = tile_symbols
@@ -124,7 +116,9 @@ class WFCWrapper(gym.Env):
         self.map_width: int = map_width
         self.tile_to_index = tile_to_index
         self.deterministic = deterministic
+        self.task = task
         self.task_specifications: dict[str, Any] = task_specifications
+        self.qd_function = qd_funciton
 
         # Initial grid state using the function from biome_wfc
         # self.grid will hold the current state (list of lists of sets)
@@ -139,7 +133,7 @@ class WFCWrapper(gym.Env):
         # Map values range from -1 (undecided) to 1 (max index / max index).
         # Coordinates range from 0 to 1.
         self.observation_space: spaces.Box = spaces.Box(
-            low=-1.0,  # Lower bound changed due to -1 for undecided cells
+            low=-1.0,  # Lower bound -1 for undecided cells
             high=1.0,
             shape=(self.map_length * self.map_width + 2,),
             dtype=np.float32,
@@ -147,7 +141,6 @@ class WFCWrapper(gym.Env):
         self.current_step = 0
         # Set a maximum number of steps to prevent infinite loops if termination fails
         self.max_steps = self.map_length * self.map_width + 10  # Allow some buffer
-        self.task = task
 
     def get_observation(self) -> np.ndarray:
         """Constructs the observation array (needs to be float32)."""
@@ -219,6 +212,9 @@ class WFCWrapper(gym.Env):
             reward, info = compute_reward(
                 self.grid, self.task, self.task_specifications
             )
+            if self.qd_function is not None:
+                qd_score = self.qd_function(self.grid)
+                info["qd_score"] = qd_score
         elif truncated:
             reward = -1000
         else:
