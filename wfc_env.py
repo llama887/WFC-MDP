@@ -106,7 +106,7 @@ class WFCWrapper(gym.Env):
         task: Task,
         task_specifications: dict[str, Any],
         deterministic: bool,
-        qd_funciton: Callable[[list[list[set[str]]]], float] | None = None,
+        qd_function: Callable[[list[list[set[str]]]], float] | None = None,
     ):
         super().__init__()
         self.all_tiles = tile_symbols
@@ -118,7 +118,7 @@ class WFCWrapper(gym.Env):
         self.deterministic = deterministic
         self.task = task
         self.task_specifications: dict[str, Any] = task_specifications
-        self.qd_function = qd_funciton
+        self.qd_function = qd_function
 
         # Initial grid state using the function from biome_wfc
         # self.grid will hold the current state (list of lists of sets)

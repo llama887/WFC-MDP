@@ -14,7 +14,9 @@ import optuna
 import pygame
 import yaml
 from scipy.stats import truncnorm
+from scipy.cluster.hierarchy import linkage, fcluster
 from tqdm import tqdm
+from tasks.binary_task import binary_percent_water
 
 from biome_adjacency_rules import create_adjacency_matrix
 from wfc import (  # We might not need render_wfc_grid if we keep console rendering
@@ -167,84 +169,124 @@ def evolve(
     survival_rate: float = 0.2,
     cross_over_method: CrossOverMethod = CrossOverMethod.ONE_POINT,
     patience: int = 10,
-) -> tuple[list[PopulationMember], PopulationMember, int, list[float], list[float]]:
+    qd: bool = False,                      
+) -> tuple[
+    list[PopulationMember], 
+    PopulationMember, 
+    int, 
+    list[float], 
+    list[float]
+]:
+
     patience_counter = 0
     best_agent: PopulationMember | None = None
     population = [PopulationMember(env) for _ in range(population_size)]
-    best_agent_rewards = []
-    median_agent_rewards = []
-    for generation in tqdm(range(generations), desc="Generations"):
-        # Evaluate the entire population in parallel
+    best_agent_rewards: list[float] = []
+    median_agent_rewards: list[float] = []
+
+    for gen in tqdm(range(generations)):
+        # --- Evaluate population in parallel ---
         with Pool(min(cpu_count(), population_size)) as pool:
             population = pool.map(run_member, population)
-        population.sort(key=lambda x: x.reward, reverse=True)
-        best_agent_in_population = population[0]
-        best_agent_rewards.append(best_agent_in_population.reward)
-        median_reward = population[len(population) // 2].reward
-        median_agent_rewards.append(median_reward)
-        if best_agent is None or best_agent_in_population.reward > best_agent.reward:
-            best_agent = copy.deepcopy(best_agent_in_population)
-            patience_counter = 0
+
+        # --- Track best & median rewards ---
+        population.sort(key=lambda m: m.reward, reverse=True)
+        best = population[0]
+        best_agent_rewards.append(best.reward)
+        median_agent_rewards.append(population[len(population)//2].reward)
+
+        # --- Early stopping check ---
+        if best_agent is None or best.reward > best_agent.reward:
+            best_agent, patience_counter = copy.deepcopy(best), 0
         else:
             patience_counter += 1
 
-        if (
-            best_agent.info.get("achieved_max_reward", False)
-            or patience_counter == patience
-        ):
-            return (
-                population,
-                best_agent,
-                generation,
-                best_agent_rewards,
-                median_agent_rewards,
-            )
-        # Determine survivors and reproduce
-        n_survivors = max(2, int(population_size * survival_rate))
-        survivors = population[:n_survivors]
-        offspring: list[PopulationMember] = []
-        number_of_offspring_needed = population_size - n_survivors
+        if best.info.get("achieved_max_reward", False) or patience_counter >= patience:
+            return population, best_agent, gen, best_agent_rewards, median_agent_rewards
 
-        pairs_needed = math.ceil(number_of_offspring_needed / 2)
+        # --- Selection & Pair‐arg construction ---
+        if not qd:
+            # standard: top‐N survivors, uniform pairing
+            n_survivors = max(2, int(population_size * survival_rate))
+            survivors = population[:n_survivors]
 
-        # Generate exactly the number of pairs required.
-        pairs_args = [
-            (
-                *random.sample(survivors, 2),
-                number_of_actions_mutated_mean,
-                number_of_actions_mutated_standard_deviation,
-                action_noise_standard_deviation,
-                cross_over_method,
-            )
-            for _ in range(pairs_needed)
-        ]
+            n_offspring = population_size - n_survivors
+            n_pairs     = math.ceil(n_offspring / 2)
+            pairs_args = [
+                (
+                    *random.sample(survivors, 2),
+                    number_of_actions_mutated_mean,
+                    number_of_actions_mutated_standard_deviation,
+                    action_noise_standard_deviation,
+                    cross_over_method,
+                )
+                for _ in range(n_pairs)
+            ]
 
-        with Pool(cpu_count()) as pool:
-            reproduction_results = pool.map(reproduce_pair, pairs_args)
+        else:
+            # QD mode: cluster on qd_score
+            scores = np.array([m.info.get("qd_score", m.reward) for m in population])
+            Z = linkage(scores.reshape(-1,1), method="ward")
+            threshold = np.median(Z[:,2])
+            labels = fcluster(Z, t=threshold, criterion="distance")
 
-        # Flatten and trim the offspring list
-        offspring = [child for pair in reproduction_results for child in pair][
-            :number_of_offspring_needed
-        ]
+            # pick survivors per cluster
+            survivors_by_cluster: dict[int, list[PopulationMember]] = {}
+            for cl in np.unique(labels):
+                members = [population[i] for i,l in enumerate(labels) if l==cl]
+                members.sort(key=lambda m: m.info.get("qd_score", m.reward), reverse=True)
+                for m in members:
+                   print(m.info.get("qd_score", m.reward))
+                n_cl = max(1, int(len(members) * survival_rate))
+                survivors_by_cluster[cl] = members[:n_cl]
+
+            # flatten survivors
+            survivors = [m for group in survivors_by_cluster.values() for m in group]
+            if len(survivors) < 2:
+                survivors = population[:2]
+
+            # build pairing args within clusters
+            pairs_args = []
+            for cl, cl_members in survivors_by_cluster.items():
+                total_cl = sum(1 for l in labels if l==cl)
+                n_off    = total_cl - len(cl_members)
+                n_pairs  = math.ceil(n_off / 2)
+                for _ in range(n_pairs):
+                    if len(cl_members) >= 2:
+                        p1, p2 = random.sample(cl_members, 2)
+                    else:
+                        p1 = p2 = cl_members[0]
+                    pairs_args.append((
+                        p1, p2,
+                        number_of_actions_mutated_mean,
+                        number_of_actions_mutated_standard_deviation,
+                        action_noise_standard_deviation,
+                        cross_over_method,
+                    ))
+
+        # --- Reproduction in Parallel ---
+        with Pool(min(cpu_count(), len(pairs_args))) as pool:
+            results = pool.map(reproduce_pair, pairs_args)
+
+        # flatten and trim offspring
+        offspring = [child for pair in results for child in pair]
+        needed   = population_size - len(survivors)
+        offspring = offspring[:needed]
+
+        # --- Next generation ---
         population = survivors + offspring
-    # Ensure the best agent is returned even if the population is empty or has issues
-    if population:
-        population.sort(key=lambda x: x.reward, reverse=True)
-        current_best = population[0]
-        if best_agent is None or current_best.reward > best_agent.reward:
-            best_agent = copy.deepcopy(current_best)
-    elif best_agent is None:
-        # Handle edge case where population is empty and no best_agent was ever found
-        print("Warning: Evolution resulted in an empty population and no best agent.")
-        pass
+
+    # --- End of loop: ensure best_agent is up to date ---
+    population.sort(key=lambda m: m.reward, reverse=True)
+    if best_agent is None or population[0].reward > best_agent.reward:
+        best_agent = copy.deepcopy(population[0])
 
     return population, best_agent, generations, best_agent_rewards, median_agent_rewards
-
 
 # --- Optuna Objective Function ---
 
 
-def objective(trial: optuna.Trial, task: Task, generations_per_trial: int) -> float:
+def objective(trial: optuna.Trial, task: Task, generations_per_trial: int, qd:bool=False) -> float:
     """Objective function for Optuna hyperparameter optimization."""
 
     # Suggest hyperparameters
@@ -288,6 +330,7 @@ def objective(trial: optuna.Trial, task: Task, generations_per_trial: int) -> fl
                         "target_path_length": target_path_length
                     },  # so hyperparameters generalize over path length
                     deterministic=True,
+                    qd_function=binary_percent_water if qd else None,
                 )
                 print(f"Target Path Length: {target_path_length}")
             case _:
@@ -304,6 +347,7 @@ def objective(trial: optuna.Trial, task: Task, generations_per_trial: int) -> fl
             survival_rate=survival_rate,
             cross_over_method=CrossOverMethod(cross_over_method),
             patience=patience,
+            qd=qd,
         )
         print(f"Best reward at sample {i + 1}/{NUMBER_OF_SAMPLES}: {best_agent.reward}")
         total_reward += best_agent.reward
@@ -392,6 +436,12 @@ if __name__ == "__main__":
         type=str,
         help="Filename for the saved hyperparameters YAML.",
     )
+    parser.add_argument(
+        "--qd",
+        action="store_true",
+        default=False,
+        help="Use QD mode for evolution.",
+    )
 
     args = parser.parse_args()
 
@@ -411,8 +461,9 @@ if __name__ == "__main__":
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
         task=Task.BINARY,
-        task_specifications={"target_path_length": 50},
+        task_specifications={"target_path_length": 70},
         deterministic=True,
+        qd_function=binary_percent_water if args.qd else None,
     )
     tile_images = load_tile_images()  # Load images needed for rendering later
 
@@ -457,6 +508,7 @@ if __name__ == "__main__":
             survival_rate=hyperparams["survival_rate"],
             cross_over_method=CrossOverMethod(hyperparams["cross_over_method"]),
             patience=hyperparams["patience"],
+            qd=args.qd,
         )
         end_time = time.time()
         print(f"Evolution finished in {end_time - start_time:.2f} seconds.")
@@ -480,7 +532,7 @@ if __name__ == "__main__":
         study = optuna.create_study(direction="maximize")
         start_time = time.time()
         study.optimize(
-            lambda trial: objective(trial, Task.BINARY, args.generations_per_trial),
+            lambda trial: objective(trial, Task.BINARY, args.generations_per_trial, args.qd),
             n_trials=args.optuna_trials,
         )
         end_time = time.time()
@@ -518,8 +570,10 @@ if __name__ == "__main__":
     else:
         print("\nNo best agent was found during the process.")
 
+    AGENT_DIR = "agents"
+    os.makedirs(AGENT_DIR, exist_ok=True)
     # save the best agent in a .pkl file
-    with open("agents/best_evolved_binary_agent.pkl", "wb") as f:
+    with open(f"{AGENT_DIR}/best_evolved_binary_agent.pkl", "wb") as f:
         pickle.dump(best_agent, f)
 
     print("Script finished.")
