@@ -158,131 +158,151 @@ def reproduce_pair(
     c2.mutate(mean, stddev, noise)
     return c1, c2
 
+def _evolve_generation(
+    population: list[PopulationMember],
+    number_of_actions_mutated_mean: int,
+    number_of_actions_mutated_standard_deviation: float,
+    action_noise_standard_deviation: float,
+    survival_rate: float,
+    cross_over_method: CrossOverMethod,
+) -> list[PopulationMember]:
+    """
+    Evaluate → select survivors → reproduce offspring
+    Returns next-gen population of the same size.
+    """
+    # 1) Evaluate
+    with Pool(min(cpu_count(), len(population))) as pool:
+        population = pool.map(run_member, population)
+
+    # 2) Select
+    population.sort(key=lambda m: m.reward, reverse=True)
+    n_survivors = max(2, int(len(population) * survival_rate))
+    survivors = population[:n_survivors]
+
+    # 3) Reproduce
+    n_offspring = len(population) - n_survivors
+    n_pairs    = math.ceil(n_offspring / 2)
+    pairs_args = [
+        (
+            *random.sample(survivors, 2),
+            number_of_actions_mutated_mean,
+            number_of_actions_mutated_standard_deviation,
+            action_noise_standard_deviation,
+            cross_over_method,
+        )
+        for _ in range(n_pairs)
+    ]
+    with Pool(min(cpu_count(), len(pairs_args))) as pool:
+        child_pairs = pool.map(reproduce_pair, pairs_args)
+
+    offspring = [c for pair in child_pairs for c in pair][:n_offspring]
+    return survivors + offspring
+
 
 def evolve(
     env: WFCWrapper,
     generations: int = 100,
-    population_size: int = 5,
+    population_size: int = 50,
     number_of_actions_mutated_mean: int = 10,
-    number_of_actions_mutated_standard_deviation: float = 10,
+    number_of_actions_mutated_standard_deviation: float = 10.0,
     action_noise_standard_deviation: float = 0.1,
     survival_rate: float = 0.2,
     cross_over_method: CrossOverMethod = CrossOverMethod.ONE_POINT,
     patience: int = 10,
-    qd: bool = False,                      
-) -> tuple[
-    list[PopulationMember], 
-    PopulationMember, 
-    int, 
-    list[float], 
-    list[float]
-]:
-
-    patience_counter = 0
-    best_agent: PopulationMember | None = None
+    qd: bool = False,
+) -> tuple[list[PopulationMember], PopulationMember, int, list[float], list[float]]:
+    """
+    Standard EA if qd=False; QD selection + global reproduction if qd=True.
+    """
+    # --- Initialization ---
     population = [PopulationMember(env) for _ in range(population_size)]
+    best_agent: PopulationMember | None = None
     best_agent_rewards: list[float] = []
     median_agent_rewards: list[float] = []
+    patience_counter = 0
 
-    for gen in tqdm(range(generations)):
-        # --- Evaluate population in parallel ---
-        with Pool(min(cpu_count(), population_size)) as pool:
+    for gen in tqdm(range(generations), desc="Generations"):
+        # 1) Evaluate entire pop
+        with Pool(min(cpu_count(), len(population))) as pool:
             population = pool.map(run_member, population)
 
-        # --- Track best & median rewards ---
-        population.sort(key=lambda m: m.reward, reverse=True)
-        best = population[0]
-        best_agent_rewards.append(best.reward)
-        median_agent_rewards.append(population[len(population)//2].reward)
+        # 2) Gather scores & stats
+        #    - fitness-based reward for standard EA
+        #    - qd_score fallback-to-reward for QD clustering
+        fitnesses = np.array([m.reward for m in population])
+        best_idx = int(np.argmax(fitnesses))
+        median_val = float(np.median(fitnesses))
 
-        # --- Early stopping check ---
-        if best_agent is None or best.reward > best_agent.reward:
-            best_agent, patience_counter = copy.deepcopy(best), 0
+        best_agent_rewards.append(population[best_idx].reward)
+        median_agent_rewards.append(median_val)
+
+        # Track global best & early stopping
+        if best_agent is None or population[best_idx].reward > best_agent.reward:
+            best_agent = copy.deepcopy(population[best_idx])
+            patience_counter = 0
         else:
             patience_counter += 1
 
-        if best.info.get("achieved_max_reward", False) or patience_counter >= patience:
+        if population[best_idx].info.get("achieved_max_reward", False) or patience_counter >= patience:
             return population, best_agent, gen, best_agent_rewards, median_agent_rewards
 
-        # --- Selection & Pair‐arg construction ---
+        # 3) Selection
         if not qd:
-            # standard: top‐N survivors, uniform pairing
-            n_survivors = max(2, int(population_size * survival_rate))
-            survivors = population[:n_survivors]
-
-            n_offspring = population_size - n_survivors
-            n_pairs     = math.ceil(n_offspring / 2)
-            pairs_args = [
-                (
-                    *random.sample(survivors, 2),
-                    number_of_actions_mutated_mean,
-                    number_of_actions_mutated_standard_deviation,
-                    action_noise_standard_deviation,
-                    cross_over_method,
-                )
-                for _ in range(n_pairs)
-            ]
-
+            # Standard: top‐N by fitness
+            sorted_pop = sorted(population, key=lambda m: m.reward, reverse=True)
+            number_of_surviving_members = max(2, int(population_size * survival_rate))
+            survivors = sorted_pop[:number_of_surviving_members]
         else:
-            # QD mode: cluster on qd_score
+            # QD: cluster on qd_score
             scores = np.array([m.info.get("qd_score", m.reward) for m in population])
-            Z = linkage(scores.reshape(-1,1), method="ward")
-            threshold = np.median(Z[:,2])
-            labels = fcluster(Z, t=threshold, criterion="distance")
+            # need finite values here -- fallback to reward above guarantees that
+            Z = linkage(scores.reshape(-1, 1), method="ward")
+            cutoff = np.median(Z[:, 2])
+            labels = fcluster(Z, t=cutoff, criterion="distance")
 
-            # pick survivors per cluster
-            survivors_by_cluster: dict[int, list[PopulationMember]] = {}
-            for cl in np.unique(labels):
-                members = [population[i] for i,l in enumerate(labels) if l==cl]
+            # pick survivors within each cluster
+            survivors = []
+            for cluster in np.unique(labels):
+                members = [population[i] for i, lbl in enumerate(labels) if lbl == cluster]
                 members.sort(key=lambda m: m.info.get("qd_score", m.reward), reverse=True)
-                for m in members:
-                   print(m.info.get("qd_score", m.reward))
-                n_cl = max(1, int(len(members) * survival_rate))
-                survivors_by_cluster[cl] = members[:n_cl]
+                number_of_cluster_survivors = max(1, int(len(members) * survival_rate))
+                survivors.extend(members[:number_of_cluster_survivors])
 
-            # flatten survivors
-            survivors = [m for group in survivors_by_cluster.values() for m in group]
+            # ensure at least two survivors overall
             if len(survivors) < 2:
-                survivors = population[:2]
+                # fallback to best two by fitness
+                pop_by_fit = sorted(population, key=lambda m: m.reward, reverse=True)
+                survivors = pop_by_fit[:2]
 
-            # build pairing args within clusters
-            pairs_args = []
-            for cl, cl_members in survivors_by_cluster.items():
-                total_cl = sum(1 for l in labels if l==cl)
-                n_off    = total_cl - len(cl_members)
-                n_pairs  = math.ceil(n_off / 2)
-                for _ in range(n_pairs):
-                    if len(cl_members) >= 2:
-                        p1, p2 = random.sample(cl_members, 2)
-                    else:
-                        p1 = p2 = cl_members[0]
-                    pairs_args.append((
-                        p1, p2,
-                        number_of_actions_mutated_mean,
-                        number_of_actions_mutated_standard_deviation,
-                        action_noise_standard_deviation,
-                        cross_over_method,
-                    ))
+        # 4) Reproduction (global)
+        number_of_surviving_members = len(survivors)
+        n_offspring = population_size - number_of_surviving_members
+        n_pairs     = math.ceil(n_offspring / 2)
+        pairs_args = []
+        for _ in range(n_pairs):
+            if len(survivors) >= 2:
+                p1, p2 = random.sample(survivors, 2)
+            else:
+                p1 = p2 = survivors[0]
+            pairs_args.append((
+                p1, p2,
+                number_of_actions_mutated_mean,
+                number_of_actions_mutated_standard_deviation,
+                action_noise_standard_deviation,
+                cross_over_method
+            ))
 
-        # --- Reproduction in Parallel ---
         with Pool(min(cpu_count(), len(pairs_args))) as pool:
             results = pool.map(reproduce_pair, pairs_args)
 
-        # flatten and trim offspring
-        offspring = [child for pair in results for child in pair]
-        needed   = population_size - len(survivors)
-        offspring = offspring[:needed]
+        # flatten and trim
+        offspring = [child for pair in results for child in pair][:n_offspring]
 
-        # --- Next generation ---
+        # 5) Form next gen
         population = survivors + offspring
 
-    # --- End of loop: ensure best_agent is up to date ---
-    population.sort(key=lambda m: m.reward, reverse=True)
-    if best_agent is None or population[0].reward > best_agent.reward:
-        best_agent = copy.deepcopy(population[0])
-
+    # end for
     return population, best_agent, generations, best_agent_rewards, median_agent_rewards
-
 # --- Optuna Objective Function ---
 
 
@@ -461,7 +481,7 @@ if __name__ == "__main__":
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
         task=Task.BINARY,
-        task_specifications={"target_path_length": 70},
+        task_specifications={"target_path_length": 50},
         deterministic=True,
         qd_function=binary_percent_water if args.qd else None,
     )
