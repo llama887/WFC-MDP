@@ -1,14 +1,10 @@
 import random
 from enum import Enum, auto
 
-import gymnasium as gym  # Use Gymnasium
 import numpy as np
+import gymnasium as gym  # Use Gymnasium
 import pygame
 from gymnasium import spaces
-import pygame
-import os
-from typing import Dict, Optional
-import pygame
 import os
 from typing import Dict, Optional
 
@@ -490,11 +486,6 @@ class WFCWrapper(gym.Env):
             self.render()
             
         return observation, {}
-        
-        if self.render_mode == "human" and self.tile_images is not None:
-            self.render()
-            
-        return observation, {}
 
     def render(self):
         """Renders the current grid state to the console."""
@@ -564,74 +555,7 @@ class WFCWrapper(gym.Env):
                             row_str += f"{len(cell_set)} "
                     print(row_str.strip())
                 print("-" * (self.map_width * 2))
-        if self.render_mode is None:
-            return
-        
-        if self.render_mode == "human":
-            if self.tile_images is not None:
-                # Graphical rendering with tile images
-                self.screen.fill((0, 0, 0))  # Clear screen
-                font = pygame.font.SysFont(None, 20)
-                
-                for y in range(self.map_length):
-                    for x in range(self.map_width):
-                        cell_set = self.grid[y][x]
-                        num_options = len(cell_set)
-                        
-                        if num_options == 1:
-                            # Draw the collapsed tile
-                            tile_name = next(iter(cell_set))
-                            if tile_name in self.tile_images:
-                                self.screen.blit(
-                                    self.tile_images[tile_name],
-                                    (x * self.tile_size, y * self.tile_size)
-                                )
-                        elif num_options == 0:
-                            # Draw contradiction (red)
-                            pygame.draw.rect(
-                                self.screen,
-                                (255, 0, 0),
-                                (x * self.tile_size, y * self.tile_size, 
-                                 self.tile_size, self.tile_size)
-                            )
-                        else:
-                            # Draw superposition (gray with number of options)
-                            shade = min(255, 50 + 205 * (1 - len(cell_set)/self.num_tiles))
-                            pygame.draw.rect(
-                                self.screen,
-                                (shade, shade, shade),
-                                (x * self.tile_size, y * self.tile_size, 
-                                 self.tile_size, self.tile_size)
-                            )
-                            # Display number of remaining options
-                            text = font.render(str(num_options), True, (255, 255, 255))
-                            self.screen.blit(
-                                text,
-                                (x * self.tile_size + 5, y * self.tile_size + 5)
-                            )
-                
-                pygame.display.flip()
-            else:
-                # Fallback to console rendering
-                print(f"--- Step: {self.current_step} ---")
-                for y in range(self.map_length):
-                    row_str = ""
-                    for x in range(self.map_width):
-                        cell_set = self.grid[y][x]
-                        num_options = len(cell_set)
-                        if num_options == 1:
-                            tile_name = next(iter(cell_set))
-                            row_str += tile_name + " "
-                        elif num_options == self.num_tiles:
-                            row_str += "? "
-                        elif num_options == 0:
-                            row_str += "! "
-                        else:
-                            row_str += f"{len(cell_set)} "
-                    print(row_str.strip())
-                print("-" * (self.map_width * 2))
         else:
-            pass
             pass
 
     def close(self):
