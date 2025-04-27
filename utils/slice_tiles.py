@@ -1,9 +1,10 @@
-from PIL import Image
 import os
 
-image_path = "Biome Tileset Pack B/grassland/32x32/vectoraith_tileset_terrain_grassland_32x32.png" 
+from PIL import Image
+
+image_path = "../Biome Tileset Pack B/grassland/32x32/vectoraith_tileset_terrain_grassland_32x32.png"
 tile_size = 32
-output_dir = "tiles_32x32_B"  
+output_dir = "../tiles_32x32_B"
 
 tileset = Image.open(image_path)
 img_width, img_height = tileset.size
@@ -26,4 +27,5 @@ for row in range(rows):
         filename = f"tile_{row}_{col}.png"
         tile.save(os.path.join(output_dir, filename))
 
+print(f"{rows * cols} tiles saved to '{output_dir}/'")
 print(f"{rows * cols} tiles saved to '{output_dir}/'")

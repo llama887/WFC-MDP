@@ -1,5 +1,6 @@
 import random
 from enum import Enum, auto
+from typing import Any
 
 import numpy as np
 import gymnasium as gym  # Use Gymnasium
@@ -26,9 +27,9 @@ class Task(Enum):
 
 
 def grid_to_array(
-    grid: list[list[set[str]]],  # Grid is now list of lists of sets
-    tile_symbols: list[str],  # Renamed for consistency
-    tile_to_index: dict[str, int],  # Need mapping
+    grid: list[list[set[str]]],
+    tile_symbols: list[str],
+    tile_to_index: dict[str, int],
     map_length: int,
     map_width: int,
 ) -> np.ndarray:
@@ -295,6 +296,7 @@ class WFCWrapper(gym.Env):
         num_tiles: int,
         tile_to_index: dict[str, int],
         task: Task,
+        task_specifications: dict[str, Any],
         deterministic: bool,
         tile_images: Optional[Dict[str, pygame.Surface]] = None,
         tile_size: int = 32,
@@ -328,7 +330,7 @@ class WFCWrapper(gym.Env):
         # Action space: Agent outputs preferences (logits) for each tile type.
         # Needs to be float32 for SB3.
         self.action_space: spaces.Box = spaces.Box(
-            low=-1, high=1, shape=(self.num_tiles,), dtype=np.float32
+            low=0, high=1, shape=(self.num_tiles,), dtype=np.float32
         )
 
         # Observation space: Flattened map + normalized coordinates of the next cell to collapse
@@ -406,6 +408,7 @@ class WFCWrapper(gym.Env):
 
     def step(self, action: np.ndarray):
         """Performs one step of the WFC process based on the agent's action."""
+        info = {}
         self.current_step += 1
 
         # Ensure action is float32 numpy array

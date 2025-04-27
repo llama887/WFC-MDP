@@ -15,7 +15,10 @@ from scipy.stats import truncnorm
 from tqdm import tqdm
 
 from biome_adjacency_rules import create_adjacency_matrix
-from biome_wfc import load_tile_images
+from wfc import (  # We might not need render_wfc_grid if we keep console rendering
+    load_tile_images,
+    render_wfc_grid,
+)
 from wfc_env import Task, WFCWrapper
 
 tile_images = load_tile_images()
@@ -31,6 +34,7 @@ class PopulationMember:
                 for _ in range(env.map_length * env.map_width)
             ]
         )
+        self.info = {}
 
     def mutate(
         self,
@@ -74,14 +78,14 @@ class PopulationMember:
     def run_action_sequence(self):
         self.reward = 0
         for idx, action in enumerate(self.action_sequence):
+            _, reward, terminate, truncate, info = self.env.step(action)
             _, reward, terminate, truncate, _ = self.env.step(action)
             if not np.isfinite(reward):
                 print(f"Invalid reward encountered: {reward}")
                 self.reward = float("-inf")
                 break
             self.reward += reward
-            if terminate or truncate:
-                break
+            self.info = info
             if terminate or truncate:
                 break
 
@@ -158,7 +162,9 @@ def evolve(
     number_of_actions_mutated_standard_deviation: float = 10,
     action_noise_standard_deviation: float = 0.1,
     survival_rate: float = 0.2,
+    patience: int = 10,
 ):
+    patience_counter = 0
     best_agent: PopulationMember | None = None
     population = [PopulationMember(env) for _ in range(population_size)]
     for generation in tqdm(range(generations), desc="Generations"):
@@ -169,6 +175,16 @@ def evolve(
         best = population[0]
         if best_agent is None or best.reward > best_agent.reward:
             best_agent = copy.deepcopy(best)
+            # early stopping if max is achieved
+            print("info", best_agent.info, "reward", best_agent.reward)
+            if best_agent.info.get("achieved_max_reward", False):
+                return population, best_agent, generation
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            if patience_counter == patience:
+                print("Training terminated due to stagnating reward")
+                return population, best_agent, generation
 
         # Determine survivors and reproduce
         n_survivors = max(2, int(population_size * survival_rate))
@@ -210,7 +226,7 @@ def evolve(
         # For now, returning None as best_agent
         pass
 
-    return population, best_agent
+    return population, best_agent, generations
 
 
 # --- Optuna Objective Function ---
@@ -234,7 +250,7 @@ def objective(
     survival_rate = trial.suggest_float("survival_rate", 0.1, 0.8)
 
     # Run evolution with suggested hyperparameters
-    _, best_agent = evolve(
+    _, best_agent, _ = evolve(
         env=base_env,
         generations=generations_per_trial,  # Use fewer generations for faster trials
         population_size=population_size,
@@ -399,7 +415,8 @@ if __name__ == "__main__":
         adjacency_bool=adjacency_bool,
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
-        task=task,
+        task=Task.BINARY,
+        task_specifications={"target_path_length": 50},
         deterministic=True,
     )
 
@@ -418,7 +435,7 @@ if __name__ == "__main__":
                 f"Running evolution for {args.generations} generations with loaded hyperparameters..."
             )
             start_time = time.time()
-            _, best_agent = evolve(
+            _, best_agent, generations = evolve(
                 env=env,
                 generations=args.generations,
                 population_size=hyperparams["population_size"],
@@ -435,6 +452,7 @@ if __name__ == "__main__":
             )
             end_time = time.time()
             print(f"Evolution finished in {end_time - start_time:.2f} seconds.")
+            print(f"Evolved for a total of {generations} generations")
 
         except FileNotFoundError:
             print(
@@ -485,7 +503,7 @@ if __name__ == "__main__":
             f"\nRunning final evolution for {args.generations} generations with best hyperparameters..."
         )
         start_time = time.time()
-        _, best_agent = evolve(
+        _, best_agent, _ = evolve(
             env=env,
             generations=args.generations,
             population_size=hyperparams["population_size"],
@@ -520,7 +538,7 @@ if __name__ == "__main__":
         best_agent.env.tile_images = None
 
     # save the best agent in a .pkl file
-    with open(f"best_evolved_{args.task}_agent.pkl", "wb") as f:
+    with open("agents/best_evolved_binary_agent.pkl", "wb") as f:
         pickle.dump(best_agent, f)
 
     print("Script finished.")
