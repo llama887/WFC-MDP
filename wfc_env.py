@@ -10,7 +10,7 @@ import os
 from typing import Dict, Optional
 
 # Import functions from biome_wfc instead of fast_wfc
-from biome_wfc import (  # We might not need render_wfc_grid if we keep console rendering
+from wfc import (  # We might not need render_wfc_grid if we keep console rendering
     biome_wfc_step, 
     find_lowest_entropy_cell, 
     initialize_wfc_grid

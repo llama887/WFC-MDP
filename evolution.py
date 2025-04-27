@@ -15,10 +15,7 @@ from scipy.stats import truncnorm
 from tqdm import tqdm
 
 from biome_adjacency_rules import create_adjacency_matrix
-from wfc import (  # We might not need render_wfc_grid if we keep console rendering
-    load_tile_images,
-    render_wfc_grid,
-)
+from wfc import load_tile_images
 from wfc_env import Task, WFCWrapper
 
 tile_images = load_tile_images()
@@ -415,7 +412,7 @@ if __name__ == "__main__":
         adjacency_bool=adjacency_bool,
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
-        task=Task.BINARY,
+        task=Task.RIVER,
         task_specifications={"target_path_length": 50},
         deterministic=True,
     )
