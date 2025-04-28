@@ -381,7 +381,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--task",
         type=str,
-        default="river",
+        default="water",
         help="Task being evaluated",
     )
     args = parser.parse_args()
@@ -398,8 +398,8 @@ if __name__ == "__main__":
     match args.task:
         case "binary":
             task = Task.BINARY
-        case "river":
-            task = Task.RIVER
+        case "water":
+            task = Task.WATER
         case "biome2":
             task = Task.BIOME2
         case _:
@@ -412,7 +412,7 @@ if __name__ == "__main__":
         adjacency_bool=adjacency_bool,
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
-        task=Task.RIVER,
+        task=Task.WATER,
         task_specifications={"target_path_length": 50},
         deterministic=True,
     )
@@ -535,7 +535,7 @@ if __name__ == "__main__":
         best_agent.env.tile_images = None
 
     # save the best agent in a .pkl file
-    with open("agents/best_evolved_binary_agent.pkl", "wb") as f:
+    with open("best_evolved_binary_agent.pkl", "wb") as f:
         pickle.dump(best_agent, f)
 
     print("Script finished.")

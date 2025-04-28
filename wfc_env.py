@@ -21,7 +21,7 @@ from biome_adjacency_rules import load_tile_images, create_adjacency_matrix
 
 class Task(Enum):
     # TODO: replace place holder biomes with real biome specifications
-    RIVER = auto()
+    WATER = auto()
     BIOME2 = auto()
     BINARY = auto()
 
@@ -60,180 +60,91 @@ def grid_to_array(
     return arr.flatten()
 
 def get_dominant_biome(grid: list[list[set[str]]]) -> str:
-    """Determines the dominant biome type from the grid with weighted tile counts."""
-    biome_weights = {
-        "river": 0,
-        "pond": 0,
-        "grassland": 0,
-        "mountain": 0
+    """Enhanced biome detection with specific thresholds for ponds and rivers."""
+    water_tiles = {
+        "water", "water_tl", "water_tr", "water_t", "water_l", "water_r",
+        "water_bl", "water_b", "water_br", "shore_tl", "shore_tr", 
+        "shore_bl", "shore_br", "shore_lr", "shore_rl"
     }
+    
+    # Count water cells and shore patterns
+    water_cells = 0
+    shore_cells = 0
+    for row in grid:
+        for cell in row:
+            if len(cell) == 1:
+                tile = next(iter(cell)).lower()
+                if tile in water_tiles:
+                    water_cells += 1
+                    if "shore" in tile:
+                        shore_cells += 1
+    
+    total_cells = len(grid) * len(grid[0])
+    if total_cells == 0:
+        return "unknown"
+    
+    water_ratio = water_cells / total_cells
+    shore_ratio = shore_cells / water_cells if water_cells > 0 else 0
+    
+    # River detection - requires continuous flow and appropriate water ratio
+    has_flow = check_continuous_flow(grid, water_tiles, 'horizontal') or \
+               check_continuous_flow(grid, water_tiles, 'vertical')
+    
+    if has_flow and 0.2 <= water_ratio <= 0.4:
+        return "river"
+    elif water_ratio >= 0.45 and shore_ratio <= 0.2:
+        return "pond"
+    return "unknown"
 
-    # Define special tiles that strongly indicate certain biomes
-    special_tiles = {
-        "river": ["shore_tl", "shore_tr", "shore_bl", "shore_br", "shore_lr", "shore_rl", "water_tl", "water_tr", "water_t", "water_l", "water_r", "water_bl", "water_b", "water_br"],
-        "pond": ["water", "water_tl", "water_tr", "water_t", "water_l", "water_r", "water_bl", "water_b", "water_br", "shore_tl", "shore_tr", "shore_bl", "shore_br"],
-        "grassland": ["grass", "tall_grass", "flower"],
-        "mountain": ["grass", "tall_grass", "flower", "grass_hill_tl", "grass_hill_t", "grass_hill_tr", "grass_hill_bl", "grass_hill_b", "grass_hill_br", "grass_hill_l", "grass_hill_r"]
-    }
+def check_continuous_flow(grid: list[list[set[str]]], water_tiles: set[str], direction: str) -> bool:
+    """Check if there's a continuous water path across the map in specified direction."""
+    if direction == 'horizontal':
+        # Check from left to right
+        for y in range(len(grid)):
+            if has_water_path(grid, (0, y), (len(grid[0])-1, y), water_tiles):
+                return True
+    else:
+        # Check from top to bottom
+        for x in range(len(grid[0])):
+            if has_water_path(grid, (x, 0), (x, len(grid)-1), water_tiles):
+                return True
+    return False
+
+def has_water_path(grid: list[list[set[str]]], start: tuple, end: tuple, water_tiles: set[str]) -> bool:
+    """Check if there's a continuous water path between two points."""
+    from collections import deque
     
-    # Define base weights for each biome
-    base_weights = {
-        "river": 1.0,
-        "pond": 1.0,
-        "grassland": 1.0,
-        "mountain": 1.0
-    }
+    # Convert grid to binary water map
+    water_map = np.zeros((len(grid), len(grid[0])), dtype=bool)
+    for y in range(len(grid)):
+        for x in range(len(grid[0])):
+            if len(grid[y][x]) == 1 and next(iter(grid[y][x])).lower() in water_tiles:
+                water_map[y, x] = True
     
-    # Define multipliers for special tiles
-    special_multiplier = 2.0
+    if not water_map[start[1], start[0]] or not water_map[end[1], end[0]]:
+        return False
     
-    for row in grid:
-        for cell in row:
-            if len(cell) == 1:
-                tile_name = next(iter(cell)).lower()
-                
-                # Check for special tiles first
-                found_special = False
-                for biome, tiles in special_tiles.items():
-                    if any(special_tile in tile_name for special_tile in tiles):
-                        biome_weights[biome] += base_weights[biome] * special_multiplier
-                        found_special = True
-                        break
-                
-                # If not a special tile, do generic biome detection
-                # if not found_special:
-                #     if "forest" in tile_name:
-                #         biome_weights["forest"] += base_weights["forest"]
-                #     elif "desert" in tile_name:
-                #         biome_weights["desert"] += base_weights["desert"]
-                #     elif "snow" in tile_name:
-                #         biome_weights["snow"] += base_weights["snow"]
-                #     elif "swamp" in tile_name:
-                #         biome_weights["swamp"] += base_weights["swamp"]
-                #     elif "plains" in tile_name:
-                #         biome_weights["plains"] += base_weights["plains"]
+    visited = set()
+    queue = deque([start])
+    visited.add(start)
     
-    # Add additional rules based on tile combinations
-    total_cells = len(grid) * len(grid[0])
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # 4-way connectivity
     
-    # If no biomes detected (shouldn't happen with collapsed grid), return unknown
-    if all(v == 0 for v in biome_weights.values()):
-        return "unknown"
+    while queue:
+        current = queue.popleft()
+        if current == end:
+            return True
+            
+        for dx, dy in directions:
+            x, y = current[0] + dx, current[1] + dy
+            if (0 <= x < len(grid[0]) and 0 <= y < len(grid) and 
+                water_map[y, x] and (x, y) not in visited):
+                visited.add((x, y))
+                queue.append((x, y))
     
-    # Get the biome with highest weight
-    dominant_biome = max(biome_weights.items(), key=lambda x: x[1])[0]
-    return dominant_biome
-def get_dominant_biome(grid: list[list[set[str]]]) -> str:
-    """Determines the dominant biome type from the grid with weighted tile counts."""
-    biome_weights = {
-        "river": 0,
-        "pond": 0,
-        "grassland": 0,
-        "mountain": 0
-    }
-    
-    # Define special tiles that strongly indicate certain biomes
-    special_tiles = {
-        "river": ["shore_tl", "shore_tr", "shore_bl", "shore_br", "shore_lr", "shore_rl", "water_tl", "water_tr", "water_t", "water_l", "water_r", "water_bl", "water_b", "water_br"],
-        "pond": ["water", "water_tl", "water_tr", "water_t", "water_l", "water_r", "water_bl", "water_b", "water_br", "shore_tl", "shore_tr", "shore_bl", "shore_br"],
-        "grassland": ["grass", "tall_grass", "flower"],
-        "mountain": ["grass", "tall_grass", "flower", "grass_hill_tl", "grass_hill_t", "grass_hill_tr", "grass_hill_bl", "grass_hill_b", "grass_hill_br", "grass_hill_l", "grass_hill_r"]
-    }
-    
-    # Define base weights for each biome
-    base_weights = {
-        "river": 1.0,
-        "pond": 1.0,
-        "grassland": 1.0,
-        "mountain": 1.0
-    }
-    
-    # Define multipliers for special tiles
-    special_multiplier = 2.0
-    
-    for row in grid:
-        for cell in row:
-            if len(cell) == 1:
-                tile_name = next(iter(cell)).lower()
-                
-                # Check for special tiles first
-                found_special = False
-                for biome, tiles in special_tiles.items():
-                    if any(special_tile in tile_name for special_tile in tiles):
-                        biome_weights[biome] += base_weights[biome] * special_multiplier
-                        found_special = True
-                        break
-                
-                # If not a special tile, do generic biome detection
-                # if not found_special:
-                #     if "forest" in tile_name:
-                #         biome_weights["forest"] += base_weights["forest"]
-                #     elif "desert" in tile_name:
-                #         biome_weights["desert"] += base_weights["desert"]
-                #     elif "snow" in tile_name:
-                #         biome_weights["snow"] += base_weights["snow"]
-                #     elif "swamp" in tile_name:
-                #         biome_weights["swamp"] += base_weights["swamp"]
-                #     elif "plains" in tile_name:
-                #         biome_weights["plains"] += base_weights["plains"]
-    
-    # Add additional rules based on tile combinations
-    total_cells = len(grid) * len(grid[0])
-    
-    # If no biomes detected (shouldn't happen with collapsed grid), return unknown
-    if all(v == 0 for v in biome_weights.values()):
-        return "unknown"
-    
-    # Get the biome with highest weight
-    dominant_biome = max(biome_weights.items(), key=lambda x: x[1])[0]
-    return dominant_biome
+    return False
 
 # wfc_next_collapse_position is replaced by find_lowest_entropy_cell from biome_wfc
-
-def reward(
-    grid: list[list[set[str]]],
-    tile_symbols: list[str],
-    tile_to_index: dict[str, int],
-    terminated: bool,
-    truncated: bool,
-    ) -> float:
-    """Calculate reward based on tiles and completion status."""
-
-    if truncated:
-        return -1000.0
-    if not terminated:
-        return 0.0
-
-    total_tiles = len(grid) * len(grid[0])
-    river_count = 0
-    water_count = 0
-
-    for row in grid:
-        for cell in row:
-            if len(cell) == 1:
-                tile_name = next(iter(cell)).lower()
-                if "shore" in tile_name or "water_" in tile_name:
-                    river_count += 1
-                elif "water" in tile_name:
-                    water_count += 1
-
-    river_percent = (river_count / total_tiles) * 100
-    water_percent = (water_count / total_tiles) * 100
-    target_river = 30
-    target_pond = 50
-
-    river_score = max(0, 100 - abs(river_percent - target_river))
-    pond_score = max(0, 100 - abs(water_percent - target_pond))
-    combined_score = (river_score * 1.2 + pond_score * 0.8) / 2
-
-    if river_percent > 0 and water_percent > 0:
-        if abs(river_percent - target_river) > 10 or abs(water_percent - target_pond) > 10:
-            combined_score *= 0.5
-
-    # print(f"[BiomeReward] river={river_percent:.1f}%, water={water_percent:.1f}%, score={combined_score:.1f}")
-    return float(combined_score)
-
-
 def compute_reward(
     grid: list[list[set[str]]],
     task: Task,
@@ -248,6 +159,11 @@ def compute_reward(
     Regions: +100 reward if there's a single connected empty region; else -100.
     Path: Scales linearly up to +100 when the longest path increases by at least 20 tiles.
     """
+    if truncated:
+        return -1000.0 
+    if not terminated:
+        return 0.0
+
     match task:
         case Task.BINARY:
             TARGET_PATH_LENGTH = 50
@@ -263,12 +179,86 @@ def compute_reward(
                 path_reward = current_path - TARGET_PATH_LENGTH
             return region_reward + path_reward
 
-        case Task.RIVER | Task.BIOME2:
-            return reward(grid, tile_symbols, tile_to_index, terminated, truncated)
-
+        case Task.WATER | Task.BIOME2:
+            water_tiles = {
+                "water", "water_tl", "water_tr", "water_t", "water_l", "water_r",
+                "water_bl", "water_b", "water_br", "shore_tl", "shore_tr", 
+                "shore_bl", "shore_br", "shore_lr", "shore_rl"
+            }
+            
+            water_map = np.zeros((len(grid), len(grid[0])), dtype=bool)
+            water_cells = 0
+            shore_cells = 0
+            pure_water_cells = 0
+            
+            for y in range(len(grid)):
+                for x in range(len(grid[0])):
+                    if len(grid[y][x]) == 1:
+                        tile = next(iter(grid[y][x])).lower()
+                        if tile in water_tiles:
+                            water_map[y, x] = True
+                            water_cells += 1
+                            if tile == "water":
+                                pure_water_cells += 1
+                            if "shore" in tile:
+                                shore_cells += 1
+            
+            total_cells = len(grid) * len(grid[0])
+            if total_cells == 0:
+                return 0.0
+            
+            water_ratio = water_cells / total_cells
+            pure_water_ratio = pure_water_cells / total_cells
+            shore_ratio = shore_cells / water_cells if water_cells > 0 else 0
+            
+            # Check biome type
+            biome = get_dominant_biome(grid)
+            
+            if biome == "river":
+                # River scoring
+                has_flow = check_continuous_flow(grid, water_tiles, 'horizontal') or \
+                          check_continuous_flow(grid, water_tiles, 'vertical')
+                flow_score = 1.0 if has_flow else 0.0
+                coverage_score = max(0.0, 1.0 - abs(water_ratio - 0.3) * 3.33)
+                regions = calc_num_regions(water_map.astype(np.int8))
+                connected_score = 1.0 / (regions ** 0.5)
+                combined = (0.4 * flow_score + 0.3 * coverage_score + 0.3 * connected_score)
+                return float(combined * 100 * 1.5)  # Bonus for rivers
+            
+            elif biome == "pond":
+                # Pond scoring - prioritize high water concentration
+                coverage_score = max(0.0, 1.0 - abs(pure_water_ratio - 0.5) * 2.0)  # Target 50% pure water
+                shore_penalty = max(0.0, 1.0 - shore_ratio * 5.0)  # Penalize shore tiles
+                combined = (0.7 * coverage_score + 0.3 * shore_penalty)
+                return float(combined * 100 * 1.2)  # Smaller bonus for ponds
+            
+            # Default scoring for other cases
+            coverage_score = max(0.0, 1.0 - abs(water_ratio - 0.35) * 2.86)
+            return float(coverage_score * 100)
         case _:
             # TODO: incorporate biome rewards
             return 0
+        
+def find_edge_water_cells(grid: list[list[set[str]]], water_tiles: set[str], edge: str) -> list[tuple]:
+    """Find water cells along a specific edge of the grid."""
+    edge_cells = []
+    if edge == 'left':
+        for y in range(len(grid)):
+            if len(grid[y][0]) == 1 and next(iter(grid[y][0])).lower() in water_tiles:
+                edge_cells.append((0, y))
+    elif edge == 'right':
+        for y in range(len(grid)):
+            if len(grid[y][-1]) == 1 and next(iter(grid[y][-1])).lower() in water_tiles:
+                edge_cells.append((len(grid[0])-1, y))
+    elif edge == 'top':
+        for x in range(len(grid[0])):
+            if len(grid[0][x]) == 1 and next(iter(grid[0][x])).lower() in water_tiles:
+                edge_cells.append((x, 0))
+    elif edge == 'bottom':
+        for x in range(len(grid[0])):
+            if len(grid[-1][x]) == 1 and next(iter(grid[-1][x])).lower() in water_tiles:
+                edge_cells.append((x, len(grid)-1))
+    return edge_cells
 
 class WFCWrapper(gym.Env):
     """
@@ -296,11 +286,11 @@ class WFCWrapper(gym.Env):
         num_tiles: int,
         tile_to_index: dict[str, int],
         task: Task,
-        task_specifications: dict[str, Any],
         deterministic: bool,
         tile_images: Optional[Dict[str, pygame.Surface]] = None,
         tile_size: int = 32,
         render_mode: Optional[str] = None,
+        task_specifications: Optional[Dict[str, Any]] = None,
     ):
         super().__init__()  # Call parent constructor
         self.all_tiles = tile_symbols
@@ -324,7 +314,6 @@ class WFCWrapper(gym.Env):
 
         self.grid = initialize_wfc_grid(self.map_width, self.map_length, self.all_tiles)
         
-        
         # Keep a way to reset easily if needed, maybe store initial args?
         # Or just call initialize_wfc_grid again in reset.
         # Action space: Agent outputs preferences (logits) for each tile type.
@@ -342,7 +331,6 @@ class WFCWrapper(gym.Env):
             shape=(self.map_length * self.map_width + 2,),
             dtype=np.float32,
         )
-        
 
         self.current_step = 0
         self.max_steps = self.map_length * self.map_width + 10
@@ -601,7 +589,7 @@ if __name__ == "__main__":
         tile_images=tile_images,
         render_mode="human",
         # task=Task.BINARY,
-        task=Task.RIVER,
+        task=Task.WATER,
         deterministic=False,
     )
 
@@ -613,17 +601,7 @@ if __name__ == "__main__":
         # Sample a random action
         action = env.action_space.sample()
         obs, reward_val, terminated, truncated, info = env.step(action)
-
-        # Render with current step count and reward
-        # current_reward = render_wfc_grid(
-        #     env.grid,
-        #     tile_images,
-        #     save_filename=reward if terminated or truncated else None,
-        #     screen=screen,
-        # )
         env.render()
-
-        # # pygame.time.delay(1)  # Delay for visualization
 
         # Process pygame events
         for event in pygame.event.get():
