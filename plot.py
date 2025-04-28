@@ -93,14 +93,16 @@ def binary_convergence_over_path_lengths(
             print(f"Evolution finished in {elapsed:.2f} seconds.")
 
             # Save performance curves per‐run
+            qd_prefix = "qd_" if qd else ""
+            qd_label = ", QD" if qd else ""
             x_axis = np.arange(1, len(median_agent_rewards) + 1)
             plt.plot(x_axis, best_agent_rewards, label="Best Agent")
             plt.plot(x_axis, median_agent_rewards, label="Median Agent")
             plt.legend()
-            plt.title(f"Performance (path={path_length}, run={sample_idx})")
+            plt.title(f"Performance (path={path_length}, run={sample_idx}{qd_label})")
             plt.xlabel("Generation")
             plt.ylabel("Reward")
-            plt.savefig(f"{FIGURES_DIRECTORY}/binary{path_length}_performance_{sample_idx}.png")
+            plt.savefig(f"{FIGURES_DIRECTORY}/{qd_prefix}binary{path_length}_performance_{sample_idx}.png")
             plt.close()
 
             # Record generations‐to‐converge or leave as NaN if it never converged
@@ -197,4 +199,4 @@ if __name__ == "__main__":
             print(f"Error loading or using hyperparameters: {e}")
             exit(1)
     
-    binary_convergence_over_path_lengths(5, hyperparams)
+    binary_convergence_over_path_lengths(5, hyperparams, arg.qd)
