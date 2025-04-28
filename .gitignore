@@ -181,3 +181,9 @@ wfc_reward_img
 pcgrl.txt
 
 *.pkl
+*.png
+*.s
+output
+*.err
+*.out
+sbatch

@@ -5,8 +5,10 @@ import os
 import pickle
 import random
 import time
+from enum import Enum
 from multiprocessing import Pool, cpu_count
 
+import matplotlib.pyplot as plt
 import numpy as np
 import optuna
 import pygame
@@ -19,6 +21,11 @@ from wfc import load_tile_images
 from wfc_env import Task, WFCWrapper
 
 tile_images = load_tile_images()
+
+class CrossOverMethod(Enum):
+    UNIFORM = 0
+    ONE_POINT = 1
+
 
 class PopulationMember:
     def __init__(self, env: WFCWrapper):
@@ -90,27 +97,28 @@ class PopulationMember:
     def crossover(
         parent1: "PopulationMember",
         parent2: "PopulationMember",
-        method: str = "one_point",
+        method: CrossOverMethod = CrossOverMethod.ONE_POINT,
     ) -> tuple["PopulationMember", "PopulationMember"]:
         seq1 = parent1.action_sequence
         seq2 = parent2.action_sequence
         length = len(seq1)
+        match method:
+            case CrossOverMethod.ONE_POINT:
+                # pick a crossover point (not at the extremes)
+                point = np.random.randint(1, length)
+                # child1 takes seq1[:point] + seq2[point:]
+                child_seq1 = np.concatenate([seq1[:point], seq2[point:]])
+                # child2 takes seq2[:point] + seq1[point:]
+                child_seq2 = np.concatenate([seq2[:point], seq1[point:]])
+            case CrossOverMethod.UNIFORM:
+                # mask[i,0] says “choose parent1’s action-vector at time i”
+                mask = np.random.rand(length, 1) < 0.5
 
-        if method == "one_point":
-            # pick a crossover point (not at the extremes)
-            point = np.random.randint(1, length)
-            # child1 takes seq1[:point] + seq2[point:]
-            child_seq1 = np.concatenate([seq1[:point], seq2[point:]])
-            # child2 takes seq2[:point] + seq1[point:]
-            child_seq2 = np.concatenate([seq2[:point], seq1[point:]])
+                child_seq1 = np.where(mask, seq1, seq2)
+                child_seq2 = np.where(mask, seq2, seq1)
 
-        elif method == "uniform":
-            # for each index, flip a coin to choose parent1 or parent2
-            mask = np.random.rand(length) < 0.5
-            child_seq1 = np.where(mask, seq1, seq2)
-            child_seq2 = np.where(mask, seq2, seq1)
-        else:
-            raise ValueError(f"Unknown crossover method: {method!r}")
+            case _:
+                raise ValueError(f"Unknown crossover method: {method!r}")
 
         # build child objects with fresh deep‐copied envs
         child1 = PopulationMember(parent1.env)
@@ -138,14 +146,15 @@ def reproduce_pair(
         int,  # mean
         float,  # stddev
         float,  # action_noise
+        CrossOverMethod,  # method
     ],
 ) -> tuple["PopulationMember", "PopulationMember"]:
     """
     Given (p1, p2, mean, stddev, noise), perform crossover + mutate
     and return two children.
     """
-    p1, p2, mean, stddev, noise = args
-    c1, c2 = PopulationMember.crossover(p1, p2, method="one_point")
+    p1, p2, mean, stddev, noise, method = args
+    c1, c2 = PopulationMember.crossover(p1, p2, method=method)
     c1.mutate(mean, stddev, noise)
     c2.mutate(mean, stddev, noise)
     return c1, c2
@@ -159,30 +168,40 @@ def evolve(
     number_of_actions_mutated_standard_deviation: float = 10,
     action_noise_standard_deviation: float = 0.1,
     survival_rate: float = 0.2,
+    cross_over_method: CrossOverMethod = CrossOverMethod.ONE_POINT,
     patience: int = 10,
-):
+) -> tuple[list[PopulationMember], PopulationMember, int, list[float], list[float]]:
     patience_counter = 0
     best_agent: PopulationMember | None = None
     population = [PopulationMember(env) for _ in range(population_size)]
+    best_agent_rewards = []
+    median_agent_rewards = []
     for generation in tqdm(range(generations), desc="Generations"):
         # Evaluate the entire population in parallel
         with Pool(min(cpu_count(), population_size)) as pool:
             population = pool.map(run_member, population)
         population.sort(key=lambda x: x.reward, reverse=True)
-        best = population[0]
-        if best_agent is None or best.reward > best_agent.reward:
-            best_agent = copy.deepcopy(best)
-            # early stopping if max is achieved
-            print("info", best_agent.info, "reward", best_agent.reward)
-            if best_agent.info.get("achieved_max_reward", False):
-                return population, best_agent, generation
+        best_agent_in_population = population[0]
+        best_agent_rewards.append(best_agent_in_population.reward)
+        median_reward = population[len(population) // 2].reward
+        median_agent_rewards.append(median_reward)
+        if best_agent is None or best_agent_in_population.reward > best_agent.reward:
+            best_agent = copy.deepcopy(best_agent_in_population)
             patience_counter = 0
         else:
             patience_counter += 1
-            if patience_counter == patience:
-                print("Training terminated due to stagnating reward")
-                return population, best_agent, generation
 
+        if (
+            best_agent.info.get("achieved_max_reward", False)
+            or patience_counter == patience
+        ):
+            return (
+                population,
+                best_agent,
+                generation,
+                best_agent_rewards,
+                median_agent_rewards,
+            )
         # Determine survivors and reproduce
         n_survivors = max(2, int(population_size * survival_rate))
         survivors = population[:n_survivors]
@@ -198,6 +217,7 @@ def evolve(
                 number_of_actions_mutated_mean,
                 number_of_actions_mutated_standard_deviation,
                 action_noise_standard_deviation,
+                cross_over_method,
             )
             for _ in range(pairs_needed)
         ]
@@ -219,46 +239,82 @@ def evolve(
     elif best_agent is None:
         # Handle edge case where population is empty and no best_agent was ever found
         print("Warning: Evolution resulted in an empty population and no best agent.")
-        # Optionally return a dummy agent or raise an error
-        # For now, returning None as best_agent
         pass
 
-    return population, best_agent, generations
+    return population, best_agent, generations, best_agent_rewards, median_agent_rewards
 
 
 # --- Optuna Objective Function ---
 
 
-def objective(
-    trial: optuna.Trial, base_env: WFCWrapper, generations_per_trial: int
-) -> float:
+def objective(trial: optuna.Trial, task: Task, generations_per_trial: int) -> float:
     """Objective function for Optuna hyperparameter optimization."""
+
     # Suggest hyperparameters
-    population_size = trial.suggest_int("population_size", 5, 50)
+    population_size = trial.suggest_int("population_size", 30, 100)
     number_of_actions_mutated_mean = trial.suggest_int(
-        "number_of_actions_mutated_mean", 1, 50
+        "number_of_actions_mutated_mean", 1, 100
     )
     number_of_actions_mutated_standard_deviation = trial.suggest_float(
-        "number_of_actions_mutated_standard_deviation", 1.0, 20.0
+        "number_of_actions_mutated_standard_deviation", 1.0, 100.0
     )
     action_noise_standard_deviation = trial.suggest_float(
-        "action_noise_standard_deviation", 0.01, 0.5, log=True
+        "action_noise_standard_deviation", 0.01, 0.8, log=True
     )
-    survival_rate = trial.suggest_float("survival_rate", 0.1, 0.8)
+    survival_rate = trial.suggest_float("survival_rate", 0.01, 0.99)
+    cross_over_method = trial.suggest_categorical("cross_over_method", [0, 1])
+    patience = trial.suggest_int("patience", 10, 20)
+    # Constuct Env
+    MAP_LENGTH = 15
+    MAP_WIDTH = 20
 
-    # Run evolution with suggested hyperparameters
-    _, best_agent, _ = evolve(
-        env=base_env,
-        generations=generations_per_trial,  # Use fewer generations for faster trials
-        population_size=population_size,
-        number_of_actions_mutated_mean=number_of_actions_mutated_mean,
-        number_of_actions_mutated_standard_deviation=number_of_actions_mutated_standard_deviation,
-        action_noise_standard_deviation=action_noise_standard_deviation,
-        survival_rate=survival_rate,
-    )
+    total_reward = 0
+    adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
+    num_tiles = len(tile_symbols)
 
-    # Return the reward of the best agent found in this trial
-    return best_agent.reward if best_agent else float("-inf")
+    NUMBER_OF_SAMPLES = 10
+    start_time = time.time()
+    for i in range(NUMBER_OF_SAMPLES):
+        match task:
+            case Task.BINARY:
+                target_path_length=random.randint(50, 70) # only focus on the harder problems
+                # Create the WFC environment instance
+                base_env = WFCWrapper(
+                    map_length=MAP_LENGTH,
+                    map_width=MAP_WIDTH,
+                    tile_symbols=tile_symbols,
+                    adjacency_bool=adjacency_bool,
+                    num_tiles=num_tiles,
+                    tile_to_index=tile_to_index,
+                    task=Task.BINARY,
+                    task_specifications={
+                        "target_path_length": target_path_length
+                    },  # so hyperparameters generalize over path length
+                    deterministic=True,
+                )
+                print(f"Target Path Length: {target_path_length}")
+            case _:
+                raise ValueError(f"{task} is not a defined task")
+
+        # Run evolution with suggested hyperparameters
+        _, best_agent, _, _, _ = evolve(
+            env=base_env,
+            generations=generations_per_trial,  # Use fewer generations for faster trials
+            population_size=population_size,
+            number_of_actions_mutated_mean=number_of_actions_mutated_mean,
+            number_of_actions_mutated_standard_deviation=number_of_actions_mutated_standard_deviation,
+            action_noise_standard_deviation=action_noise_standard_deviation,
+            survival_rate=survival_rate,
+            cross_over_method=CrossOverMethod(cross_over_method),
+            patience=patience,
+        )
+        print(f"Best reward at sample {i + 1}/{NUMBER_OF_SAMPLES}: {best_agent.reward}")
+        total_reward += best_agent.reward
+    end_time = time.time()
+
+    # Return the best reward but with account for how long it took
+    print(f"Total Reward: {total_reward} | Time: {end_time - start_time}")
+    return total_reward - (0.001) * (end_time - start_time)
 
 
 def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images):
@@ -352,7 +408,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--optuna-trials",
         type=int,
-        default=20,  # Number of trials for Optuna optimization
+        default=50,  # Number of trials for Optuna optimization
         help="Number of trials to run for Optuna hyperparameter search.",
     )
     parser.add_argument(
@@ -386,7 +442,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # Define environment parameters (using the same tile set as in our training setup)
+    # Define environment parameters
     MAP_LENGTH = 15
     MAP_WIDTH = 20
 
@@ -431,25 +487,6 @@ if __name__ == "__main__":
             print(
                 f"Running evolution for {args.generations} generations with loaded hyperparameters..."
             )
-            start_time = time.time()
-            _, best_agent, generations = evolve(
-                env=env,
-                generations=args.generations,
-                population_size=hyperparams["population_size"],
-                number_of_actions_mutated_mean=hyperparams[
-                    "number_of_actions_mutated_mean"
-                ],
-                number_of_actions_mutated_standard_deviation=hyperparams[
-                    "number_of_actions_mutated_standard_deviation"
-                ],
-                action_noise_standard_deviation=hyperparams[
-                    "action_noise_standard_deviation"
-                ],
-                survival_rate=hyperparams["survival_rate"],
-            )
-            end_time = time.time()
-            print(f"Evolution finished in {end_time - start_time:.2f} seconds.")
-            print(f"Evolved for a total of {generations} generations")
 
         except FileNotFoundError:
             print(
@@ -460,6 +497,38 @@ if __name__ == "__main__":
             print(f"Error loading or using hyperparameters: {e}")
             exit(1)
 
+        start_time = time.time()
+        _, best_agent, generations, best_agent_rewards, median_agent_rewards = evolve(
+            env=env,
+            generations=args.generations,
+            population_size=hyperparams["population_size"],
+            number_of_actions_mutated_mean=hyperparams[
+                "number_of_actions_mutated_mean"
+            ],
+            number_of_actions_mutated_standard_deviation=hyperparams[
+                "number_of_actions_mutated_standard_deviation"
+            ],
+            action_noise_standard_deviation=hyperparams[
+                "action_noise_standard_deviation"
+            ],
+            survival_rate=hyperparams["survival_rate"],
+            cross_over_method=CrossOverMethod(hyperparams["cross_over_method"]),
+            patience=hyperparams["patience"],
+        )
+        end_time = time.time()
+        print(f"Evolution finished in {end_time - start_time:.2f} seconds.")
+        print(f"Evolved for a total of {generations} generations")
+        assert len(best_agent_rewards) == len(median_agent_rewards)
+        x_axis = np.arange(1, len(median_agent_rewards) + 1)
+        plt.plot(x_axis, best_agent_rewards, label="Best Agent Per Generation")
+        plt.plot(x_axis, median_agent_rewards, label="Median Agent Per Generation")
+        plt.legend()
+        plt.title("Agent Performance Over Generations")
+        plt.xlabel("Generations")
+        plt.ylabel("Reward")
+        plt.savefig("agent_performance_over_generations.png")
+        plt.close()
+
     elif not args.best_agent_pickle:
         # --- Run Optuna Hyperparameter Optimization ---
         print(
@@ -468,9 +537,8 @@ if __name__ == "__main__":
         study = optuna.create_study(direction="maximize")
         start_time = time.time()
         study.optimize(
-            lambda trial: objective(trial, env, args.generations_per_trial),
+            lambda trial: objective(trial, Task.BINARY, args.generations_per_trial),
             n_trials=args.optuna_trials,
-            n_jobs=2,  # Use multiple cores for trials if available
         )
         end_time = time.time()
         print(f"Optuna optimization finished in {end_time - start_time:.2f} seconds.")
@@ -495,28 +563,6 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Error saving hyperparameters: {e}")
 
-        # Optional: Run evolution one more time with the best found hyperparameters
-        print(
-            f"\nRunning final evolution for {args.generations} generations with best hyperparameters..."
-        )
-        start_time = time.time()
-        _, best_agent, _ = evolve(
-            env=env,
-            generations=args.generations,
-            population_size=hyperparams["population_size"],
-            number_of_actions_mutated_mean=hyperparams[
-                "number_of_actions_mutated_mean"
-            ],
-            number_of_actions_mutated_standard_deviation=hyperparams[
-                "number_of_actions_mutated_standard_deviation"
-            ],
-            action_noise_standard_deviation=hyperparams[
-                "action_noise_standard_deviation"
-            ],
-            survival_rate=hyperparams["survival_rate"],
-        )
-        end_time = time.time()
-        print(f"Final evolution finished in {end_time - start_time:.2f} seconds.")
     elif args.best_agent_pickle:
         with open(args.best_agent_pickle, "rb") as f:
             best_agent = pickle.load(f)
