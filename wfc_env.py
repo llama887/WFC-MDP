@@ -24,6 +24,7 @@ class Task(Enum):
     WATER = auto()
     BIOME2 = auto()
     BINARY = auto()
+    LAND = auto()
 
 
 def grid_to_array(

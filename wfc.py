@@ -332,7 +332,7 @@ def render_wfc_grid(grid, tile_images, save_filename=None, screen=None):
             if len(grid[y][x]) == 1:
                 tile_name = next(iter(grid[y][x]))
                 screen.blit(tile_images[tile_name], (x * TILE_SIZE, y * TILE_SIZE))
-                
+
                 # Classify tiles based on their names
                 if "shore" in tile_name.lower() or "water_" in tile_name.lower():
                     river_count += 1
@@ -345,11 +345,11 @@ def render_wfc_grid(grid, tile_images, save_filename=None, screen=None):
                     (255, 255, 255),
                     (x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE),
                 )
-    
+
     # Calculate percentages
     river_percentage = (river_count / total_tiles) * 100 if total_tiles > 0 else 0
     pond_percentage = (pond_count / total_tiles) * 100 if total_tiles > 0 else 0
-    
+
     # Determine which feature is dominant
     if river_count > pond_count:
         dominant_feature = "river"
@@ -359,7 +359,7 @@ def render_wfc_grid(grid, tile_images, save_filename=None, screen=None):
         dominant_feature = "pond"
         dominant_count = pond_count
         dominant_percentage = pond_percentage
-    
+
     pygame.display.flip()
 
 
@@ -368,7 +368,7 @@ def render_wfc_grid(grid, tile_images, save_filename=None, screen=None):
         # Generate filename with feature info
         feature_str = f"{dominant_feature}_{dominant_count}_{dominant_percentage:.1f}%"
         filename = f"wfc_reward_img/{feature_str}.png"
-        
+
         # Save the current screen surface
         pygame.image.save(screen, filename)
         print(f"Saved WFC output to: {filename}")

@@ -400,6 +400,8 @@ if __name__ == "__main__":
             task = Task.BINARY
         case "water":
             task = Task.WATER
+        case "LAND":
+            task = Task.LAND
         case "biome2":
             task = Task.BIOME2
         case _:
