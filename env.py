@@ -15,10 +15,10 @@ class WFCEnv(gym.Env):
     """
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, input_data, height, width, seed=None, render_mode=None, tile_size=32):
+    def __init__(self, input_data, height, width, seed=None, render_mode=None, tile_size=32, reward_type="sparse"):
         """
         Initialize the WFC environment.
-        
+
         Args:
             input_data: Path to JSON file or dictionary containing tile data
             height: Height of the output grid
@@ -31,6 +31,7 @@ class WFCEnv(gym.Env):
         self.render_mode = render_mode
         self.tile_size = tile_size
         self.json_path = input_data if isinstance(input_data, str) else None
+        self.reward_type = reward_type
 
         # Renderer
         self.renderer = None
@@ -85,6 +86,17 @@ class WFCEnv(gym.Env):
 
         return obs, info
 
+    def get_reward(self, reward_type: str) -> float:
+        if reward_type == "sparse":
+            if self.done and self.success:
+                return 1.0
+            elif self.done and not self.success:
+                return -1.0
+            else:
+                return 0.0
+        else:
+            raise ValueError(f"Unknown reward type: {reward_type}")
+
     def get_obs(self):
         """
         Get current observation from WFC state.
@@ -108,9 +120,11 @@ class WFCEnv(gym.Env):
 
         # Apply action to collapse next cell
         terminated, truncated = self.wfc.collapse_step(action)
-        
-        reward = 1.0 if terminated else 0.0 # Success
-        reward = -1.0 if truncated else reward # Contradiction
+
+        self.done = terminated or truncated
+        self.success = terminated
+
+        reward = self.get_reward(self.reward_type)
 
         # Get observation
         obs = self.get_obs()
@@ -123,7 +137,7 @@ class WFCEnv(gym.Env):
             self.render()
 
         return obs, reward, terminated, truncated, info
-    
+
     def get_expert_action(self):
         """
         Get expert action for the next cell to collapse.
