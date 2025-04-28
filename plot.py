@@ -9,13 +9,14 @@ from biome_adjacency_rules import create_adjacency_matrix
 from evolution import evolve
 from wfc_env import Task, WFCWrapper
 import yaml
+from typing import Any
 
 FIGURES_DIRECTORY = "figures"
 os.makedirs(FIGURES_DIRECTORY, exist_ok=True)
 
 
 def binary_convergence_over_path_lengths(
-    sample_size: int, evolution_hyperparameters: dict
+    sample_size: int, evolution_hyperparameters: dict[str, Any], qd: bool
 ) -> None:
     """
     Line plot of how many generations it takes for agents to reach the max
@@ -28,6 +29,8 @@ def binary_convergence_over_path_lengths(
         Number of evolution runs at each path length.
     evolution_hyperparameters : dict
         Hyperparameters passed through to `evolve(...)`.
+    qd : bool
+        Determines if to evolve with QD mode. Passed directly into evolve
     """
     # Constants
     MIN_PATH_LENGTH = 10
@@ -83,6 +86,7 @@ def binary_convergence_over_path_lengths(
                         "action_noise_standard_deviation"
                     ],
                     survival_rate=evolution_hyperparameters["survival_rate"],
+                    qd=qd,
                 )
             )
             elapsed = time.time() - start_time
@@ -144,13 +148,15 @@ def binary_convergence_over_path_lengths(
     ax2.set_ylabel("Fraction of Runs Converged")
 
     # Title and combined legend
-    ax1.set_title("Convergence Behavior vs. Desired Path Length")
+    qd_label = " (QD)" if qd else ""
+    ax1.set_title(f"Convergence Behavior vs. Desired Path Length{qd_label}")
     h1, l1 = ax1.get_legend_handles_labels()
     h2, l2 = ax2.get_legend_handles_labels()
     ax1.legend(h1 + h2, l1 + l2, loc="upper left")
 
+    qd_prefix = "qd_" if qd else ""
     fig.tight_layout()
-    plt.savefig(f"{FIGURES_DIRECTORY}/convergence_over_path.png")
+    plt.savefig(f"{FIGURES_DIRECTORY}/{qd_prefix}convergence_over_path.png")
     plt.close()
 
 
@@ -163,6 +169,12 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="Path to a YAML file containing hyperparameters to load.",
+    )
+    parser.add_argument(
+        "--qd",
+        action="store_true",
+        default=False,
+        help="Use QD mode for evolution.",
     )
     
     args = parser.parse_args()
