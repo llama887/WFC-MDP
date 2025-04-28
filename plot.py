@@ -1,15 +1,15 @@
 import argparse
 import os
 import time
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
+import yaml
 
 from biome_adjacency_rules import create_adjacency_matrix
 from evolution import evolve
 from wfc_env import Task, WFCWrapper
-import yaml
-from typing import Any
 
 FIGURES_DIRECTORY = "figures"
 os.makedirs(FIGURES_DIRECTORY, exist_ok=True)
@@ -102,7 +102,9 @@ def binary_convergence_over_path_lengths(
             plt.title(f"Performance (path={path_length}, run={sample_idx}{qd_label})")
             plt.xlabel("Generation")
             plt.ylabel("Reward")
-            plt.savefig(f"{FIGURES_DIRECTORY}/{qd_prefix}binary{path_length}_performance_{sample_idx}.png")
+            plt.savefig(
+                f"{FIGURES_DIRECTORY}/{qd_prefix}binary{path_length}_performance_{sample_idx}.png"
+            )
             plt.close()
 
             # Record generations‐to‐converge or leave as NaN if it never converged
@@ -163,9 +165,7 @@ def binary_convergence_over_path_lengths(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Plotting WFC Results"
-    )
+    parser = argparse.ArgumentParser(description="Plotting WFC Results")
     parser.add_argument(
         "--load-hyperparameters",
         type=str,
@@ -178,9 +178,9 @@ if __name__ == "__main__":
         default=False,
         help="Use QD mode for evolution.",
     )
-    
+
     args = parser.parse_args()
-    
+
     if args.load_hyperparameters:
         # --- Load Hyperparameters and Run Evolution ---
         print(f"Loading hyperparameters from: {args.load_hyperparameters}")
@@ -188,7 +188,6 @@ if __name__ == "__main__":
             with open(args.load_hyperparameters, "r") as f:
                 hyperparams = yaml.safe_load(f)
             print("Successfully loaded hyperparameters:", hyperparams)
-
 
         except FileNotFoundError:
             print(
@@ -198,5 +197,5 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Error loading or using hyperparameters: {e}")
             exit(1)
-    
-    binary_convergence_over_path_lengths(5, hyperparams, arg.qd)
+
+    binary_convergence_over_path_lengths(5, hyperparams, args.qd)
