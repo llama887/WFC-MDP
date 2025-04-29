@@ -13,12 +13,12 @@ import numpy as np
 import optuna
 import pygame
 import yaml
+from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.stats import truncnorm
-from scipy.cluster.hierarchy import linkage, fcluster
 from tqdm import tqdm
-from tasks.binary_task import binary_percent_water
 
 from biome_adjacency_rules import create_adjacency_matrix
+from tasks.binary_task import binary_percent_water
 from wfc import (  # We might not need render_wfc_grid if we keep console rendering
     load_tile_images,
     render_wfc_grid,
@@ -158,6 +158,7 @@ def reproduce_pair(
     c2.mutate(mean, stddev, noise)
     return c1, c2
 
+
 def _evolve_generation(
     population: list[PopulationMember],
     number_of_actions_mutated_mean: int,
@@ -181,7 +182,7 @@ def _evolve_generation(
 
     # 3) Reproduce
     n_offspring = len(population) - n_survivors
-    n_pairs    = math.ceil(n_offspring / 2)
+    n_pairs = math.ceil(n_offspring / 2)
     pairs_args = [
         (
             *random.sample(survivors, 2),
@@ -221,14 +222,14 @@ def evolve(
     median_agent_rewards: list[float] = []
     patience_counter = 0
 
-    for gen in tqdm(range(generations), desc="Generations"):
+    for gen in tqdm(range(1, generations + 1), desc="Generations"):
         # 1) Evaluate entire pop
         with Pool(min(cpu_count(), len(population))) as pool:
             population = pool.map(run_member, population)
 
         # 2) Gather scores & stats
         #    - fitness-based reward for standard EA
-        #    - qd_score fallback-to-reward for QD clustering
+        #    - qd_score for QD clustering
         fitnesses = np.array([m.reward for m in population])
         best_idx = int(np.argmax(fitnesses))
         median_val = float(np.median(fitnesses))
@@ -243,7 +244,10 @@ def evolve(
         else:
             patience_counter += 1
 
-        if population[best_idx].info.get("achieved_max_reward", False) or patience_counter >= patience:
+        if (
+            population[best_idx].info.get("achieved_max_reward", False)
+            or patience_counter >= patience
+        ):
             return population, best_agent, gen, best_agent_rewards, median_agent_rewards
 
         # 3) Selection
@@ -254,8 +258,7 @@ def evolve(
             survivors = sorted_pop[:number_of_surviving_members]
         else:
             # QD: cluster on qd_score
-            scores = np.array([m.info.get("qd_score", m.reward) for m in population])
-            # need finite values here -- fallback to reward above guarantees that
+            scores = np.array([m.info["qd_score"] for m in population])
             Z = linkage(scores.reshape(-1, 1), method="ward")
             cutoff = np.median(Z[:, 2])
             labels = fcluster(Z, t=cutoff, criterion="distance")
@@ -263,8 +266,12 @@ def evolve(
             # pick survivors within each cluster
             survivors = []
             for cluster in np.unique(labels):
-                members = [population[i] for i, lbl in enumerate(labels) if lbl == cluster]
-                members.sort(key=lambda m: m.info.get("qd_score", m.reward), reverse=True)
+                members = [
+                    population[i] for i, lbl in enumerate(labels) if lbl == cluster
+                ]
+                members.sort(
+                    key=lambda m: m.info.get("qd_score", m.reward), reverse=True
+                )
                 number_of_cluster_survivors = max(1, int(len(members) * survival_rate))
                 survivors.extend(members[:number_of_cluster_survivors])
 
@@ -277,20 +284,23 @@ def evolve(
         # 4) Reproduction (global)
         number_of_surviving_members = len(survivors)
         n_offspring = population_size - number_of_surviving_members
-        n_pairs     = math.ceil(n_offspring / 2)
+        n_pairs = math.ceil(n_offspring / 2)
         pairs_args = []
         for _ in range(n_pairs):
             if len(survivors) >= 2:
                 p1, p2 = random.sample(survivors, 2)
             else:
                 p1 = p2 = survivors[0]
-            pairs_args.append((
-                p1, p2,
-                number_of_actions_mutated_mean,
-                number_of_actions_mutated_standard_deviation,
-                action_noise_standard_deviation,
-                cross_over_method
-            ))
+            pairs_args.append(
+                (
+                    p1,
+                    p2,
+                    number_of_actions_mutated_mean,
+                    number_of_actions_mutated_standard_deviation,
+                    action_noise_standard_deviation,
+                    cross_over_method,
+                )
+            )
 
         with Pool(min(cpu_count(), len(pairs_args))) as pool:
             results = pool.map(reproduce_pair, pairs_args)
@@ -303,10 +313,14 @@ def evolve(
 
     # end for
     return population, best_agent, generations, best_agent_rewards, median_agent_rewards
+
+
 # --- Optuna Objective Function ---
 
 
-def objective(trial: optuna.Trial, task: Task, generations_per_trial: int, qd:bool=False) -> float:
+def objective(
+    trial: optuna.Trial, task: Task, generations_per_trial: int, qd: bool = False
+) -> float:
     """Objective function for Optuna hyperparameter optimization."""
 
     # Suggest hyperparameters
@@ -336,7 +350,9 @@ def objective(trial: optuna.Trial, task: Task, generations_per_trial: int, qd:bo
     for i in range(NUMBER_OF_SAMPLES):
         match task:
             case Task.BINARY:
-                target_path_length=random.randint(50, 70) # only focus on the harder problems
+                target_path_length = random.randint(
+                    50, 70
+                )  # only focus on the harder problems
                 # Create the WFC environment instance
                 base_env = WFCWrapper(
                     map_length=MAP_LENGTH,
@@ -552,7 +568,9 @@ if __name__ == "__main__":
         study = optuna.create_study(direction="maximize")
         start_time = time.time()
         study.optimize(
-            lambda trial: objective(trial, Task.BINARY, args.generations_per_trial, args.qd),
+            lambda trial: objective(
+                trial, Task.BINARY, args.generations_per_trial, args.qd
+            ),
             n_trials=args.optuna_trials,
         )
         end_time = time.time()
