@@ -3,7 +3,11 @@ import os
 import time
 from typing import Any
 
+import matplotlib
+matplotlib.use('Agg')  
+
 import matplotlib.pyplot as plt
+
 import numpy as np
 import yaml
 
@@ -111,17 +115,20 @@ def binary_convergence_over_path_lengths(
             if best_agent.info.get("achieved_max_reward", False):
                 generations_to_converge[idx, sample_idx] = generations
 
-    # --- Compute statistics ignoring NaNs ---
-    # Mean generations to converge per path length
+
+    # Mean generations to converge per path length (preliminary)
     mean_generations = np.nanmean(generations_to_converge, axis=1)
-    # Count how many runs actually converged
     number_converged = np.sum(~np.isnan(generations_to_converge), axis=1)
-    # Standard error of the mean (SEM)
-    standard_errors = np.nanstd(generations_to_converge, axis=1, ddof=1) / np.sqrt(
-        number_converged
-    )
-    # Fraction of runs that converged
+    standard_errors = np.nanstd(generations_to_converge, axis=1, ddof=1) / np.sqrt(number_converged)
     convergence_fraction = number_converged / sample_size
+
+    # Mask out path lengths where no runs converged
+    valid = number_converged > 0
+    mean_generations = mean_generations[valid]
+    standard_errors = standard_errors[valid]
+    convergence_fraction = convergence_fraction[valid]
+    path_lengths = path_lengths[valid]
+    
 
     # --- Plot mean ± SEM and convergence fraction with twin axes ---
     fig, ax1 = plt.subplots(figsize=(8, 5))
