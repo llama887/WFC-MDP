@@ -204,5 +204,7 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Error loading or using hyperparameters: {e}")
             exit(1)
-
-    binary_convergence_over_path_lengths(5, hyperparams, args.qd)
+    start_time = time.time()
+    binary_convergence_over_path_lengths(20, hyperparams, args.qd)
+    elapsed = time.time() - start_time
+    print(f"Plotting finished in {elapsed:.2f} seconds.")
