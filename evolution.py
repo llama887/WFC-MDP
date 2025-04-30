@@ -18,13 +18,16 @@ from scipy.stats import truncnorm
 from tqdm import tqdm
 
 from biome_adjacency_rules import create_adjacency_matrix
+
 from tasks.binary_task import binary_percent_water
 from wfc import (  # We might not need render_wfc_grid if we keep console rendering
     load_tile_images,
     render_wfc_grid,
 )
+
 from wfc_env import Task, WFCWrapper
 
+tile_images = load_tile_images()
 
 class CrossOverMethod(Enum):
     UNIFORM = 0
@@ -87,6 +90,11 @@ class PopulationMember:
         self.reward = 0
         for idx, action in enumerate(self.action_sequence):
             _, reward, terminate, truncate, info = self.env.step(action)
+            _, reward, terminate, truncate, _ = self.env.step(action)
+            if not np.isfinite(reward):
+                print(f"Invalid reward encountered: {reward}")
+                self.reward = float("-inf")
+                break
             self.reward += reward
             self.info = info
             if terminate or truncate:
@@ -399,31 +407,70 @@ def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images
     if not best_agent:
         print("No best agent found to render.")
         return
+    
     pygame.init()
-    SCREEN_WIDTH = env.map_width * 32  # Adjust screen size based on map
+    SCREEN_WIDTH = env.map_width * 32
     SCREEN_HEIGHT = env.map_length * 32
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("Best Evolved WFC Map")
-
+    env.tile_images = tile_images
+    
     env.reset()
     total_reward = 0
     print("Rendering best agent's action sequence...")
+    
     for action in tqdm(best_agent.action_sequence, desc="Rendering Steps"):
+        # Handle pygame events
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                return
+        
+        # Step through the environment with the action
         _, reward, terminate, truncate, _ = env.step(action)
         total_reward += reward
-        render_wfc_grid(env.grid, tile_images, screen=screen)
-        pygame.time.delay(5)  # Slightly faster rendering
+
+        screen.fill((0, 0, 0))
+    
+        # Render the current state
+        for y in range(env.map_length):
+            for x in range(env.map_width):
+                cell_set = env.grid[y][x]
+                if len(cell_set) == 1:  # Collapsed cell
+                    tile_name = next(iter(cell_set))
+                    if tile_name in env.tile_images:
+                        screen.blit(
+                            env.tile_images[tile_name],
+                            (x * 32, y * 32)
+                        )
+                elif len(cell_set) == 0:  # Contradiction
+                    pygame.draw.rect(
+                        screen,
+                        (255, 0, 0),
+                        (x * 32, y * 32, 32, 32)
+                    )
+                else:  # Superposition
+                    pygame.draw.rect(
+                        screen,
+                        (0, 0, 0),
+                        (x * 32, y * 32, 32, 32)
+                    )
+        pygame.display.flip()
+
         if terminate or truncate:
             break
 
     print(f"Final map reward for the best agent: {total_reward:.4f}")
-    print(
-        f"Best agent reward during evolution: {best_agent.reward:.4f}"
-    )  # Print the reward recorded during evolution
+    print(f"Best agent reward during evolution: {best_agent.reward:.4f}")
 
-    # Keep the window open for a bit
     print("Displaying final map for 5 seconds...")
-    pygame.time.delay(5000)
+    start_time = time.time()
+    while time.time() - start_time < 5:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                return
+        pygame.display.flip()    
     pygame.quit()
 
 
@@ -473,10 +520,18 @@ if __name__ == "__main__":
         help="Filename for the saved hyperparameters YAML.",
     )
     parser.add_argument(
+
         "--qd",
         action="store_true",
         default=False,
         help="Use QD mode for evolution.",
+    )
+
+    parser.add_argument(
+        "--task",
+        type=str,
+        default="water",
+        help="Task being evaluated",
     )
 
     args = parser.parse_args()
@@ -487,7 +542,20 @@ if __name__ == "__main__":
 
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     num_tiles = len(tile_symbols)
+    tile_images = load_tile_images()
 
+    task: Task
+    match args.task:
+        case "binary":
+            task = Task.BINARY
+        case "water":
+            task = Task.WATER
+        case "LAND":
+            task = Task.LAND
+        case "biome2":
+            task = Task.BIOME2
+        case _:
+            raise (ValueError(f"{args.task} is not a valid task"))
     # Create the WFC environment instance
     env = WFCWrapper(
         map_length=MAP_LENGTH,
@@ -496,12 +564,11 @@ if __name__ == "__main__":
         adjacency_bool=adjacency_bool,
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
-        task=Task.BINARY,
+        task=task,
         task_specifications={"target_path_length": 50},
         deterministic=True,
         qd_function=binary_percent_water if args.qd else None,
     )
-    tile_images = load_tile_images()  # Load images needed for rendering later
 
     hyperparams = {}
     best_agent = None
@@ -604,14 +671,20 @@ if __name__ == "__main__":
     if best_agent:
         print("\nInitializing Pygame for rendering the best map...")
         pygame.init()
+        # tile_images = load_tile_images()  # Load images needed for rendering later
         render_best_agent(env, best_agent, tile_images)
     else:
         print("\nNo best agent was found during the process.")
 
     AGENT_DIR = "agents"
     os.makedirs(AGENT_DIR, exist_ok=True)
+
+    # Clean up for pickling
+    if hasattr(best_agent.env, "tile_images"):
+        best_agent.env.tile_images = None
+
     # save the best agent in a .pkl file
-    with open(f"{AGENT_DIR}/best_evolved_binary_agent.pkl", "wb") as f:
+    with open("best_evolved_binary_agent.pkl", "wb") as f:
         pickle.dump(best_agent, f)
 
     print("Script finished.")

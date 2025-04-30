@@ -321,9 +321,10 @@ def render_wfc_grid(grid, tile_images, save_filename=None, screen=None):
         save_filename: Optional base filename to save with reward info
     """
     screen.fill((255, 255, 255))
-
-    # Count water tiles and total tiles
-    water_count = 0
+    
+    # Count river and pond tiles
+    river_count = 0
+    pond_count = 0
     total_tiles = len(grid) * len(grid[0])
 
     for y in range(len(grid)):
@@ -332,9 +333,11 @@ def render_wfc_grid(grid, tile_images, save_filename=None, screen=None):
                 tile_name = next(iter(grid[y][x]))
                 screen.blit(tile_images[tile_name], (x * TILE_SIZE, y * TILE_SIZE))
 
-                # Count water tiles
-                if "water" in tile_name.lower():
-                    water_count += 1
+                # Classify tiles based on their names
+                if "shore" in tile_name.lower() or "water_" in tile_name.lower():
+                    river_count += 1
+                elif "water" in tile_name.lower():
+                    pond_count += 1
             else:
                 # Draw undecided cells in white
                 pygame.draw.rect(
@@ -343,21 +346,34 @@ def render_wfc_grid(grid, tile_images, save_filename=None, screen=None):
                     (x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE),
                 )
 
-    # Calculate reward (percentage of water tiles)
-    water_percentage = (water_count / total_tiles) * 100 if total_tiles > 0 else 0
+    # Calculate percentages
+    river_percentage = (river_count / total_tiles) * 100 if total_tiles > 0 else 0
+    pond_percentage = (pond_count / total_tiles) * 100 if total_tiles > 0 else 0
+
+    # Determine which feature is dominant
+    if river_count > pond_count:
+        dominant_feature = "river"
+        dominant_count = river_count
+        dominant_percentage = river_percentage
+    else:
+        dominant_feature = "pond"
+        dominant_count = pond_count
+        dominant_percentage = pond_percentage
+
     pygame.display.flip()
+
 
     # Save to file if requested
     if save_filename:
-        # Generate filename with reward info
-        reward_str = f"water_{water_count}_{water_percentage:.1f}%"
-        filename = f"wfc_reward_img/{reward_str}.png"
+        # Generate filename with feature info
+        feature_str = f"{dominant_feature}_{dominant_count}_{dominant_percentage:.1f}%"
+        filename = f"wfc_reward_img/{feature_str}.png"
 
         # Save the current screen surface
         pygame.image.save(screen, filename)
         print(f"Saved WFC output to: {filename}")
-
-    return water_percentage
+    
+    return dominant_percentage
 
 
 # Main WFC Algorithm (Standalone execution example)
@@ -441,8 +457,9 @@ if __name__ == "__main__":
     )
 
     # After the WFC completes, render one final time and save with reward
-    water_score = render_wfc_grid(final_grid, tile_images, save_filename="wfc_output")
-
+    river_score = render_wfc_grid(final_grid, tile_images, save_filename="wfc_output")
+    pond_score = render_wfc_grid(final_grid, tile_images, save_filename="wfc_output")
+    
     # Keep the final state visible until quit
     running = True
     while running:
