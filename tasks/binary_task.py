@@ -1,4 +1,4 @@
-from .utils import calc_longest_path, calc_num_regions, grid_to_binary_map
+from .utils import calc_longest_path, calc_num_regions, grid_to_binary_map, percent_target_tiles_excluding_excluded_tiles
 
 MAX_BINARY_REWARD = 0
 
@@ -24,4 +24,14 @@ def binary_reward(
         number_of_regions,
         current_path_length,
         longest_path,
+    )
+
+def binary_percent_water(
+    grid: list[list[set[str]]]
+) -> float:
+    """Calculates the percentage of water tiles in the grid excluding the path tiles."""
+    return percent_target_tiles_excluding_excluded_tiles(
+        grid,
+        lambda tile_name: tile_name.startswith("water") or tile_name.startswith("shore"),
+        lambda tile_name: tile_name.startswith("sand") or tile_name.startswith("path"),
     )
