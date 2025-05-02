@@ -1,6 +1,6 @@
 import random
 from enum import Enum, auto
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 import gymnasium as gym  # Use Gymnasium
@@ -238,9 +238,7 @@ def compute_reward(
             return float(coverage_score * 100)
         case _:
             # TODO: incorporate biome rewards
-
-            return 0, {}
-
+            return 0
         
 def find_edge_water_cells(grid: list[list[set[str]]], water_tiles: set[str], edge: str) -> list[tuple]:
     """Find water cells along a specific edge of the grid."""
@@ -263,7 +261,6 @@ def find_edge_water_cells(grid: list[list[set[str]]], water_tiles: set[str], edg
                 edge_cells.append((x, len(grid)-1))
     return edge_cells
 
-
 class WFCWrapper(gym.Env):
     """
     Gymnasium Environment for Wave Function Collapse controlled by an RL agent.
@@ -273,7 +270,9 @@ class WFCWrapper(gym.Env):
                  Grid cells: Value is index/(num_tiles-1) if collapsed, -1.0 if undecided.
     Action: A vector of preferences (logits) for each tile type for the selected cell.
     Reward: Sparse reward given only at the end of the episode.
-
+            + Scaled reward (0 to 100) based on proximity to target tile count for successful termination.
+            - 1000 for truncation (contradiction or max steps).
+            0 otherwise.
     Termination: Grid is fully collapsed (all cells have exactly one possibility).
     Truncation: A contradiction occurs during propagation OR max steps reached.
     """
@@ -289,8 +288,6 @@ class WFCWrapper(gym.Env):
         tile_to_index: dict[str, int],
         task: Task,
         deterministic: bool,
-
-        qd_function: Callable[[list[list[set[str]]]], float] | None = None,
         tile_images: Optional[Dict[str, pygame.Surface]] = None,
         tile_size: int = 32,
         render_mode: Optional[str] = None,
@@ -308,9 +305,6 @@ class WFCWrapper(gym.Env):
         self.render_mode = render_mode
         self.dominant_biome = "unknown"  # Track dominant biome
         self.deterministic = deterministic
-        self.task = task
-        self.task_specifications: dict[str, Any] = task_specifications
-        self.qd_function = qd_function
 
         # Initialize pygame if we have tile images and human rendering
         if self.tile_images is not None and self.render_mode == "human":
@@ -333,18 +327,15 @@ class WFCWrapper(gym.Env):
         # Map values range from -1 (undecided) to 1 (max index / max index).
         # Coordinates range from 0 to 1. Needs to be float32 for SB3.
         self.observation_space: spaces.Box = spaces.Box(
-            low=-1.0,  # Lower bound -1 for undecided cells
+            low=-1.0,   # Lower bound changed due to -1 for undecided cells
             high=1.0,
             shape=(self.map_length * self.map_width + 2,),
             dtype=np.float32,
         )
 
         self.current_step = 0
-        
-        # Set a maximum number of steps to prevent infinite loops if termination fails
-        self.max_steps = self.map_length * self.map_width + 10  # Allow some buffer
-
-
+        self.max_steps = self.map_length * self.map_width + 10
+        self.task = task
 
     def get_observation(self) -> np.ndarray:
         """Constructs the observation array (needs to be float32)."""
@@ -449,14 +440,9 @@ class WFCWrapper(gym.Env):
                 terminated,
                 truncated
             )
-
-            if self.qd_function is not None:
-                qd_score = self.qd_function(self.grid)
-                info["qd_score"] = qd_score
-        elif truncated:
-            reward = -1000
-        else:
-            reward = 0
+            if terminated
+            else (-1000 if truncated else 0)
+        )
 
         # Get the next observation
         observation = self.get_observation()

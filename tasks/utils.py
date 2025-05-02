@@ -27,27 +27,6 @@ def grid_to_binary_map(
                 binary_map[y, x] = 1
     return binary_map
 
-def percent_target_tiles_excluding_excluded_tiles(grid: list[list[set[str]]], is_target_tiles: Callable[[str], bool], is_excluded_tiles: Callable[[str], bool] | None = None) -> float:
-    """Calculates the percentage of target tiles in the grid, excluding excluded tiles."""
-    if is_excluded_tiles is None:
-        is_excluded_tiles = lambda _: False
-
-    total_target_tiles = 0
-    total_excluded_tiles = 0
-    total_tiles = len(grid) * len(grid[0])
-    for row in grid:
-        for cell in row:
-            if len(cell) == 1:
-                tile_name = next(iter(cell))
-                if is_target_tiles(tile_name):
-                    total_target_tiles += 1
-                elif is_excluded_tiles(tile_name):
-                    total_excluded_tiles += 1
-
-    if total_target_tiles == 0:
-        return 0.0
-
-    return (total_target_tiles) / (total_tiles - total_excluded_tiles)
 
 def calc_num_regions(binary_map: np.ndarray) -> int:
     """Counts connected regions of empty cells (value 0) using flood-fill."""
