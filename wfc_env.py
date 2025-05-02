@@ -1,5 +1,4 @@
 import random
-from enum import Enum, auto
 from typing import Any, Callable
 
 import gymnasium as gym  # Use Gymnasium
@@ -7,23 +6,12 @@ import numpy as np
 import pygame
 from gymnasium import spaces
 
-from tasks.binary_task import MAX_BINARY_REWARD, binary_reward
-
 # Import functions from biome_wfc instead of fast_wfc
 from wfc import (  # We might not need render_wfc_grid if we keep console rendering
     biome_wfc_step,
     find_lowest_entropy_cell,
     initialize_wfc_grid,
-    load_tile_images,
-    render_wfc_grid,
 )
-
-
-class Task(Enum):
-    # TODO: replace place holder biomes with real biome specifications
-    BIOME1 = auto()
-    BIOME2 = auto()
-    BINARY = auto()
 
 
 def grid_to_array(
@@ -62,26 +50,6 @@ def grid_to_array(
     return arr.flatten()
 
 
-def compute_reward(
-    grid: list[list[set[str]]], task: Task, task_specification: dict[str, Any]
-) -> tuple[float, dict[str, Any]]:
-    """Computes the reward based task and returns info related to the task"""
-    match task:
-        case Task.BINARY:
-            reward, number_of_regions, current_path_length, longest_path = (
-                binary_reward(grid, task_specification["target_path_length"])
-            )
-            info = {
-                "number_of_regions": number_of_regions,
-                "current_path_length": current_path_length,
-                "longest_path": longest_path,
-                "achieved_max_reward": reward == MAX_BINARY_REWARD,
-            }
-            return reward, info
-        case _:
-            # TODO: incorporate biome rewards
-            return 0, {}
-        
 class WFCWrapper(gym.Env):
     """
     Gymnasium Environment for Wave Function Collapse controlled by an RL agent.
@@ -103,10 +71,12 @@ class WFCWrapper(gym.Env):
         adjacency_bool: np.ndarray,
         num_tiles: int,
         tile_to_index: dict[str, int],
-        task: Task,
-        task_specifications: dict[str, Any],
+        reward: Callable[[list[list[set[str]]]], tuple[float, dict[str, Any]]],
         deterministic: bool,
         qd_function: Callable[[list[list[set[str]]]], float] | None = None,
+        tile_images: dict[str, pygame.Surface] | None = None,
+        tile_size: int = 32,
+        render_mode: str | None = None,
     ):
         super().__init__()
         self.all_tiles = tile_symbols
@@ -116,9 +86,21 @@ class WFCWrapper(gym.Env):
         self.map_width: int = map_width
         self.tile_to_index = tile_to_index
         self.deterministic = deterministic
-        self.task = task
-        self.task_specifications: dict[str, Any] = task_specifications
+        self.reward = reward
         self.qd_function = qd_function
+        self.tile_size = tile_size
+        self.tile_images = tile_images
+        self.render_mode = render_mode
+
+        # Initialize pygame if we have tile images and human rendering
+        if self.tile_images is not None and self.render_mode == "human":
+            pygame.init()
+            self.screen = pygame.display.set_mode(
+                (self.map_width * self.tile_size, self.map_length * self.tile_size)
+            )
+            pygame.display.set_caption("WFC Environment")
+
+        self.grid = initialize_wfc_grid(self.map_width, self.map_length, self.all_tiles)
 
         # Initial grid state using the function from biome_wfc
         # self.grid will hold the current state (list of lists of sets)
@@ -209,9 +191,7 @@ class WFCWrapper(gym.Env):
 
         # Calculate reward using the updated grid and initial longest path
         if terminated:
-            reward, info = compute_reward(
-                self.grid, self.task, self.task_specifications
-            )
+            reward, info = self.reward(self.grid)
             if self.qd_function is not None:
                 qd_score = self.qd_function(self.grid)
                 info["qd_score"] = qd_score
@@ -251,109 +231,89 @@ class WFCWrapper(gym.Env):
         # print("Environment Reset") # Debug print
         return observation, info
 
-    def render(self, mode):
+    def render(self):
         """Renders the current grid state to the console."""
-        if mode == "human":
-            print(f"--- Step: {self.current_step} ---")
-            for y in range(self.map_length):
-                row_str = ""
-                for x in range(self.map_width):
-                    cell_set = self.grid[y][x]
-                    num_options = len(cell_set)
-                    if num_options == 1:
-                        # Collapsed cell
-                        tile_name = next(iter(cell_set))
-                        row_str += tile_name + " "
-                    elif num_options == self.num_tiles:
-                        # Not touched yet (all possibilities)
-                        row_str += "? "
-                    elif num_options == 0:
-                        # Contradiction
-                        row_str += "! "
-                    else:
-                        # Undecided cell (superposition)
-                        row_str += ". "
-                print(row_str.strip())
-            print("-" * (self.map_width * 2))
+        if self.render_mode is None:
+            return
+
+        if self.render_mode == "human":
+            if self.tile_images is not None:
+                # Graphical rendering with tile images
+                self.screen.fill((0, 0, 0))  # Clear screen
+                font = pygame.font.SysFont(None, 20)
+
+                for y in range(self.map_length):
+                    for x in range(self.map_width):
+                        cell_set = self.grid[y][x]
+                        num_options = len(cell_set)
+
+                        if num_options == 1:
+                            # Draw the collapsed tile
+                            tile_name = next(iter(cell_set))
+                            if tile_name in self.tile_images:
+                                self.screen.blit(
+                                    self.tile_images[tile_name],
+                                    (x * self.tile_size, y * self.tile_size),
+                                )
+                        elif num_options == 0:
+                            # Draw contradiction (red)
+                            pygame.draw.rect(
+                                self.screen,
+                                (255, 0, 0),
+                                (
+                                    x * self.tile_size,
+                                    y * self.tile_size,
+                                    self.tile_size,
+                                    self.tile_size,
+                                ),
+                            )
+                        else:
+                            # Draw superposition (gray with number of options)
+                            shade = min(
+                                255, 50 + 205 * (1 - len(cell_set) / self.num_tiles)
+                            )
+                            pygame.draw.rect(
+                                self.screen,
+                                (shade, shade, shade),
+                                (
+                                    x * self.tile_size,
+                                    y * self.tile_size,
+                                    self.tile_size,
+                                    self.tile_size,
+                                ),
+                            )
+                            # Display number of remaining options
+                            text = font.render(str(num_options), True, (255, 255, 255))
+                            self.screen.blit(
+                                text, (x * self.tile_size + 5, y * self.tile_size + 5)
+                            )
+
+                pygame.display.flip()
+            else:
+                # Fallback to console rendering
+                print(f"--- Step: {self.current_step} ---")
+                for y in range(self.map_length):
+                    row_str = ""
+                    for x in range(self.map_width):
+                        cell_set = self.grid[y][x]
+                        num_options = len(cell_set)
+                        if num_options == 1:
+                            tile_name = next(iter(cell_set))
+                            row_str += tile_name + " "
+                        elif num_options == self.num_tiles:
+                            row_str += "? "
+                        elif num_options == 0:
+                            row_str += "! "
+                        else:
+                            row_str += f"{len(cell_set)} "
+                    print(row_str.strip())
+                print("-" * (self.map_width * 2))
         else:
-            # Handle other modes or just pass as per gym interface
-            # return super().render(mode=mode) # Use this if inheriting from gym.Env directly
-            pass  # No other render modes implemented
+            pass
 
     def close(self):
         """Cleans up any resources used by the environment."""
-        # No specific resources to clean up in this case
-        pass
-
-
-if __name__ == "__main__":
-    # Initialize Pygame
-    pygame.init()
-    SCREEN_WIDTH = 640
-    SCREEN_HEIGHT = 480
-    TILE_SIZE = 32
-
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption("Evolving WFC")
-    import os
-
-    # Create output directory if it doesn't exist
-    os.makedirs("wfc_reward_img", exist_ok=True)
-
-    # Use biome_wfc rendering: load tile images (opens a pygame window)
-    tile_images = load_tile_images()
-
-    # Define environment parameters
-    MAP_LENGTH = 15
-    MAP_WIDTH = 20
-
-    from biome_adjacency_rules import create_adjacency_matrix
-
-    adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
-    num_tiles = len(tile_symbols)
-
-    # Create the WFC environment instance
-    env = WFCWrapper(
-        map_length=MAP_LENGTH,
-        map_width=MAP_WIDTH,
-        tile_symbols=tile_symbols,
-        adjacency_bool=adjacency_bool,
-        num_tiles=num_tiles,
-        tile_to_index=tile_to_index,
-        task=Task.BINARY,
-        task_specifications={"target_path_length": 50},
-        deterministic=False,
-    )
-
-    # Reset the environment
-    obs, info = env.reset()
-    running = True
-
-    while running:
-        # Sample a random action
-        action = env.action_space.sample()
-        obs, reward, terminated, truncated, info = env.step(action)
-
-        # Render with current step count and reward
-        current_reward = render_wfc_grid(
-            env.grid,
-            tile_images,
-            save_filename=reward if terminated or truncated else None,
-            screen=screen,
-        )
-
-        # # pygame.time.delay(1)  # Delay for visualization
-
-        # Process pygame events
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-
-        if terminated or truncated:
-            print(
-                f"WFC ({'completed' if terminated else 'failed'}) with reward: {current_reward:.1f}"
-            )
-            obs, info = env.reset()
-
-    pygame.quit()
-    exit(0)
+        if hasattr(self, "screen"):
+            pygame.quit()
+        if hasattr(self, "screen"):
+            pygame.quit()

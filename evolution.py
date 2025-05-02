@@ -6,6 +6,7 @@ import pickle
 import random
 import time
 from enum import Enum
+from functools import partial
 from multiprocessing import Pool, cpu_count
 
 import matplotlib.pyplot as plt
@@ -18,12 +19,12 @@ from scipy.stats import truncnorm
 from tqdm import tqdm
 
 from biome_adjacency_rules import create_adjacency_matrix
-from tasks.binary_task import binary_percent_water
+from tasks.binary_task import binary_percent_water, binary_reward
 from wfc import (  # We might not need render_wfc_grid if we keep console rendering
     load_tile_images,
     render_wfc_grid,
 )
-from wfc_env import Task, WFCWrapper
+from wfc_env import WFCWrapper
 
 
 class CrossOverMethod(Enum):
@@ -319,7 +320,7 @@ def evolve(
 
 
 def objective(
-    trial: optuna.Trial, task: Task, generations_per_trial: int, qd: bool = False
+    trial: optuna.Trial, task: str, generations_per_trial: int, qd: bool = False
 ) -> float:
     """Objective function for Optuna hyperparameter optimization."""
 
@@ -349,7 +350,7 @@ def objective(
     start_time = time.time()
     for i in range(NUMBER_OF_SAMPLES):
         match task:
-            case Task.BINARY:
+            case "binary":
                 target_path_length = random.randint(
                     50, 70
                 )  # only focus on the harder problems
@@ -361,10 +362,9 @@ def objective(
                     adjacency_bool=adjacency_bool,
                     num_tiles=num_tiles,
                     tile_to_index=tile_to_index,
-                    task=Task.BINARY,
-                    task_specifications={
-                        "target_path_length": target_path_length
-                    },  # so hyperparameters generalize over path length
+                    reward=partial(
+                        binary_reward, target_path_length=target_path_length
+                    ),
                     deterministic=True,
                     qd_function=binary_percent_water if qd else None,
                 )
@@ -496,8 +496,7 @@ if __name__ == "__main__":
         adjacency_bool=adjacency_bool,
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
-        task=Task.BINARY,
-        task_specifications={"target_path_length": 50},
+        reward=partial(binary_reward, target_path_length=30),
         deterministic=True,
         qd_function=binary_percent_water if args.qd else None,
     )
@@ -569,7 +568,7 @@ if __name__ == "__main__":
         start_time = time.time()
         study.optimize(
             lambda trial: objective(
-                trial, Task.BINARY, args.generations_per_trial, args.qd
+                trial, "binary", args.generations_per_trial, args.qd
             ),
             n_trials=args.optuna_trials,
         )
