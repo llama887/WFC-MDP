@@ -6,6 +6,7 @@ import pickle
 import random
 import time
 from enum import Enum
+from functools import partial
 from multiprocessing import Pool, cpu_count
 
 import matplotlib.pyplot as plt
@@ -17,8 +18,12 @@ from scipy.stats import truncnorm
 from tqdm import tqdm
 
 from biome_adjacency_rules import create_adjacency_matrix
-from wfc import load_tile_images
-from wfc_env import Task, WFCWrapper
+from tasks.binary_task import binary_percent_water, binary_reward
+from wfc import (  # We might not need render_wfc_grid if we keep console rendering
+    load_tile_images,
+    render_wfc_grid,
+)
+from wfc_env import WFCWrapper
 
 tile_images = load_tile_images()
 
@@ -160,6 +165,47 @@ def reproduce_pair(
     return c1, c2
 
 
+def _evolve_generation(
+    population: list[PopulationMember],
+    number_of_actions_mutated_mean: int,
+    number_of_actions_mutated_standard_deviation: float,
+    action_noise_standard_deviation: float,
+    survival_rate: float,
+    cross_over_method: CrossOverMethod,
+) -> list[PopulationMember]:
+    """
+    Evaluate → select survivors → reproduce offspring
+    Returns next-gen population of the same size.
+    """
+    # 1) Evaluate
+    with Pool(min(cpu_count() * 2, len(population))) as pool:
+        population = pool.map(run_member, population)
+
+    # 2) Select
+    population.sort(key=lambda m: m.reward, reverse=True)
+    n_survivors = max(2, int(len(population) * survival_rate))
+    survivors = population[:n_survivors]
+
+    # 3) Reproduce
+    n_offspring = len(population) - n_survivors
+    n_pairs = math.ceil(n_offspring / 2)
+    pairs_args = [
+        (
+            *random.sample(survivors, 2),
+            number_of_actions_mutated_mean,
+            number_of_actions_mutated_standard_deviation,
+            action_noise_standard_deviation,
+            cross_over_method,
+        )
+        for _ in range(n_pairs)
+    ]
+    with Pool(min(cpu_count() * 2, len(pairs_args))) as pool:
+        child_pairs = pool.map(reproduce_pair, pairs_args)
+
+    offspring = [c for pair in child_pairs for c in pair][:n_offspring]
+    return survivors + offspring
+
+
 def evolve(
     env: WFCWrapper,
     generations: int = 100,
@@ -174,11 +220,14 @@ def evolve(
     patience_counter = 0
     best_agent: PopulationMember | None = None
     population = [PopulationMember(env) for _ in range(population_size)]
-    best_agent_rewards = []
-    median_agent_rewards = []
-    for generation in tqdm(range(generations), desc="Generations"):
-        # Evaluate the entire population in parallel
-        with Pool(min(cpu_count(), population_size)) as pool:
+    best_agent: PopulationMember | None = None
+    best_agent_rewards: list[float] = []
+    median_agent_rewards: list[float] = []
+    patience_counter = 0
+
+    for gen in tqdm(range(1, generations + 1), desc="Generations"):
+        # 1) Evaluate entire pop
+        with Pool(min(cpu_count() * 2, len(population))) as pool:
             population = pool.map(run_member, population)
         population.sort(key=lambda x: x.reward, reverse=True)
         best_agent_in_population = population[0]
@@ -222,8 +271,8 @@ def evolve(
             for _ in range(pairs_needed)
         ]
 
-        with Pool(cpu_count()) as pool:
-            reproduction_results = pool.map(reproduce_pair, pairs_args)
+        with Pool(min(cpu_count() * 2, len(pairs_args))) as pool:
+            results = pool.map(reproduce_pair, pairs_args)
 
         # Flatten and trim the offspring list
         offspring = [child for pair in reproduction_results for child in pair][
@@ -247,7 +296,9 @@ def evolve(
 # --- Optuna Objective Function ---
 
 
-def objective(trial: optuna.Trial, task: Task, generations_per_trial: int) -> float:
+def objective(
+    trial: optuna.Trial, task: str, generations_per_trial: int, qd: bool = False
+) -> float:
     """Objective function for Optuna hyperparameter optimization."""
 
     # Suggest hyperparameters
@@ -276,8 +327,10 @@ def objective(trial: optuna.Trial, task: Task, generations_per_trial: int) -> fl
     start_time = time.time()
     for i in range(NUMBER_OF_SAMPLES):
         match task:
-            case Task.BINARY:
-                target_path_length=random.randint(50, 70) # only focus on the harder problems
+            case "binary":
+                target_path_length = random.randint(
+                    50, 70
+                )  # only focus on the harder problems
                 # Create the WFC environment instance
                 base_env = WFCWrapper(
                     map_length=MAP_LENGTH,
@@ -286,10 +339,9 @@ def objective(trial: optuna.Trial, task: Task, generations_per_trial: int) -> fl
                     adjacency_bool=adjacency_bool,
                     num_tiles=num_tiles,
                     tile_to_index=tile_to_index,
-                    task=Task.BINARY,
-                    task_specifications={
-                        "target_path_length": target_path_length
-                    },  # so hyperparameters generalize over path length
+                    reward=partial(
+                        binary_reward, target_path_length=target_path_length
+                    ),
                     deterministic=True,
                 )
                 print(f"Target Path Length: {target_path_length}")
@@ -448,20 +500,9 @@ if __name__ == "__main__":
 
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     num_tiles = len(tile_symbols)
-    tile_images = load_tile_images()
 
-    task: Task
-    match args.task:
-        case "binary":
-            task = Task.BINARY
-        case "water":
-            task = Task.WATER
-        case "LAND":
-            task = Task.LAND
-        case "biome2":
-            task = Task.BIOME2
-        case _:
-            raise (ValueError(f"{args.task} is not a valid task"))
+    from tasks.water_biome import water_biome_reward
+
     # Create the WFC environment instance
     env = WFCWrapper(
         map_length=MAP_LENGTH,
@@ -470,9 +511,9 @@ if __name__ == "__main__":
         adjacency_bool=adjacency_bool,
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
-        task=Task.WATER,
-        task_specifications={"target_path_length": 50},
+        reward=water_biome_reward,  # partial(binary_reward, target_path_length=30),
         deterministic=True,
+        # qd_function=binary_percent_water if args.qd else None,
     )
 
     hyperparams = {}
@@ -539,7 +580,9 @@ if __name__ == "__main__":
         study = optuna.create_study(direction="maximize")
         start_time = time.time()
         study.optimize(
-            lambda trial: objective(trial, Task.BINARY, args.generations_per_trial),
+            lambda trial: objective(
+                trial, "binary", args.generations_per_trial, args.qd
+            ),
             n_trials=args.optuna_trials,
         )
         end_time = time.time()
