@@ -126,20 +126,25 @@ def binary_convergence_over_path_lengths(
             if best_agent.info.get("achieved_max_reward", False):
                 generations_to_converge[idx, sample_idx] = generations
 
-    # Mean generations to converge per path length (preliminary)
-    mean_generations = np.nanmean(generations_to_converge, axis=1)
-    number_converged = np.sum(~np.isnan(generations_to_converge), axis=1)
-    standard_errors = np.nanstd(generations_to_converge, axis=1, ddof=1) / np.sqrt(
-        number_converged
-    )
-    convergence_fraction = number_converged / sample_size
+    # Count how many runs actually converged at each path length
+    number_converged      = np.sum(~np.isnan(generations_to_converge), axis=1)
+    convergence_fraction  = number_converged / sample_size
 
-    # Mask out path lengths where no runs converged
+    # Only keep path-lengths where at least one run converged
     valid = number_converged > 0
-    mean_generations = mean_generations[valid]
-    standard_errors = standard_errors[valid]
-    convergence_fraction = convergence_fraction[valid]
     path_lengths = path_lengths[valid]
+
+    # Extract just the valid rows
+    data_valid = generations_to_converge[valid]
+
+    # Compute mean generations (ignores NaNs by default)
+    mean_generations = np.nanmean(data_valid, axis=1)
+
+    # Compute standard error: use ddof=0 or guard ddof=1 for counts>1
+    counts = number_converged[valid]
+    # here we use ddof=0 to avoid the df<=0 issue
+    std_dev        = np.nanstd(data_valid, axis=1, ddof=0)
+    standard_errors = std_dev / np.sqrt(counts)
 
     # --- Plot mean ± SEM and convergence fraction with twin axes ---
     fig, ax1 = plt.subplots(figsize=(8, 5))
