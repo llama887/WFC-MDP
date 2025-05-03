@@ -15,7 +15,7 @@ import yaml
 
 from biome_adjacency_rules import create_adjacency_matrix
 from evolution import evolve
-from tasks.binary_task import binary_reward
+from tasks.binary_task import binary_reward, binary_percent_water
 from wfc_env import WFCWrapper
 
 FIGURES_DIRECTORY = "figures"
@@ -68,18 +68,33 @@ def binary_convergence_over_path_lengths(
             print(
                 f"Generating agents for path length {path_length} (run {sample_idx + 1}/{sample_size})"
             )
-            env = WFCWrapper(
-                map_length=MAP_LENGTH,
-                map_width=MAP_WIDTH,
-                tile_symbols=tile_symbols,
-                adjacency_bool=adjacency_bool,
-                num_tiles=num_tiles,
-                tile_to_index=tile_to_index,
-                reward=partial(
-                    binary_reward, target_path_length=path_length, hard=hard
-                ),
-                deterministic=True,
-            )
+            if not qd:
+                env = WFCWrapper(
+                    map_length=MAP_LENGTH,
+                    map_width=MAP_WIDTH,
+                    tile_symbols=tile_symbols,
+                    adjacency_bool=adjacency_bool,
+                    num_tiles=num_tiles,
+                    tile_to_index=tile_to_index,
+                    reward=partial(
+                        binary_reward, target_path_length=path_length, hard=hard
+                    ),
+                    deterministic=True,
+                )
+            else:
+                env = WFCWrapper(
+                    map_length=MAP_LENGTH,
+                    map_width=MAP_WIDTH,
+                    tile_symbols=tile_symbols,
+                    adjacency_bool=adjacency_bool,
+                    num_tiles=num_tiles,
+                    tile_to_index=tile_to_index,
+                    reward=partial(
+                        binary_reward, target_path_length=path_length, hard=hard
+                    ),
+                    deterministic=True,
+                    qd_function=binary_percent_water,
+                )
 
             start_time = time.time()
             _, best_agent, generations, best_agent_rewards, median_agent_rewards = (
