@@ -11,7 +11,7 @@ MAX_BINARY_REWARD = 0
 
 
 def binary_reward(
-    grid: list[list[set[str]]], target_path_length: int
+    grid: list[list[set[str]]], target_path_length: int, hard: bool = False
 ) -> tuple[float, dict[str, Any]]:
     binary_map = grid_to_binary_map(
         grid,
@@ -21,11 +21,16 @@ def binary_reward(
     current_path_length, longest_path = calc_longest_path(binary_map)
 
     region_reward = 1 - number_of_regions
-    path_reward = (
-        0
-        if current_path_length >= target_path_length
-        else current_path_length - target_path_length
-    )
+    if not hard:
+        path_reward = (
+            0
+            if current_path_length >= target_path_length
+            else current_path_length - target_path_length
+        )
+    else:
+        # hard reward requires getting the EXACT path length
+        path_reward = -abs(target_path_length - current_path_length)
+
     info = {
         "number_of_regions": number_of_regions,
         "path_length": current_path_length,

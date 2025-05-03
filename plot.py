@@ -4,23 +4,29 @@ import time
 from typing import Any
 
 import matplotlib
-matplotlib.use('Agg')  
+
+matplotlib.use("Agg")
+
+from functools import partial
 
 import matplotlib.pyplot as plt
-
 import numpy as np
 import yaml
 
 from biome_adjacency_rules import create_adjacency_matrix
 from evolution import evolve
-from wfc_env import Task, WFCWrapper
+from tasks.binary_task import binary_reward
+from wfc_env import WFCWrapper
 
 FIGURES_DIRECTORY = "figures"
 os.makedirs(FIGURES_DIRECTORY, exist_ok=True)
 
 
 def binary_convergence_over_path_lengths(
-    sample_size: int, evolution_hyperparameters: dict[str, Any], qd: bool
+    sample_size: int,
+    evolution_hyperparameters: dict[str, Any],
+    qd: bool,
+    hard: bool = False,
 ) -> None:
     """
     Line plot of how many generations it takes for agents to reach the max
@@ -69,8 +75,9 @@ def binary_convergence_over_path_lengths(
                 adjacency_bool=adjacency_bool,
                 num_tiles=num_tiles,
                 tile_to_index=tile_to_index,
-                task=Task.BINARY,
-                task_specifications={"target_path_length": int(path_length)},
+                reward=partial(
+                    binary_reward, target_path_length=path_length, hard=hard
+                ),
                 deterministic=True,
             )
 
@@ -99,15 +106,19 @@ def binary_convergence_over_path_lengths(
             # Save performance curves per‐run
             qd_prefix = "qd_" if qd else ""
             qd_label = ", QD" if qd else ""
+            hard_prefix = "hard_" if hard else ""
+            hard_label = ", hard" if hard else ""
             x_axis = np.arange(1, len(median_agent_rewards) + 1)
             plt.plot(x_axis, best_agent_rewards, label="Best Agent")
             plt.plot(x_axis, median_agent_rewards, label="Median Agent")
             plt.legend()
-            plt.title(f"Performance (path={path_length}, run={sample_idx}{qd_label})")
+            plt.title(
+                f"Performance (path={path_length}, run={sample_idx}{qd_label}{hard_label})"
+            )
             plt.xlabel("Generation")
             plt.ylabel("Reward")
             plt.savefig(
-                f"{FIGURES_DIRECTORY}/{qd_prefix}binary{path_length}_performance_{sample_idx}.png"
+                f"{FIGURES_DIRECTORY}/{qd_prefix}binary{path_length}_{hard_prefix}performance_{sample_idx}.png"
             )
             plt.close()
 
@@ -115,11 +126,12 @@ def binary_convergence_over_path_lengths(
             if best_agent.info.get("achieved_max_reward", False):
                 generations_to_converge[idx, sample_idx] = generations
 
-
     # Mean generations to converge per path length (preliminary)
     mean_generations = np.nanmean(generations_to_converge, axis=1)
     number_converged = np.sum(~np.isnan(generations_to_converge), axis=1)
-    standard_errors = np.nanstd(generations_to_converge, axis=1, ddof=1) / np.sqrt(number_converged)
+    standard_errors = np.nanstd(generations_to_converge, axis=1, ddof=1) / np.sqrt(
+        number_converged
+    )
     convergence_fraction = number_converged / sample_size
 
     # Mask out path lengths where no runs converged
@@ -128,7 +140,6 @@ def binary_convergence_over_path_lengths(
     standard_errors = standard_errors[valid]
     convergence_fraction = convergence_fraction[valid]
     path_lengths = path_lengths[valid]
-    
 
     # --- Plot mean ± SEM and convergence fraction with twin axes ---
     fig, ax1 = plt.subplots(figsize=(8, 5))
@@ -160,14 +171,18 @@ def binary_convergence_over_path_lengths(
 
     # Title and combined legend
     qd_label = " (QD)" if qd else ""
-    ax1.set_title(f"Convergence Behavior vs. Desired Path Length{qd_label}")
+    hard_label = " HARD" if hard else ""
+    ax1.set_title(f"Convergence Behavior vs. Desired Path Length{qd_label}{hard_label}")
     h1, l1 = ax1.get_legend_handles_labels()
     h2, l2 = ax2.get_legend_handles_labels()
     ax1.legend(h1 + h2, l1 + l2, loc="upper left")
 
     qd_prefix = "qd_" if qd else ""
+    hard_prefix = "hard_" if hard else ""
     fig.tight_layout()
-    plt.savefig(f"{FIGURES_DIRECTORY}/{qd_prefix}convergence_over_path.png")
+    plt.savefig(
+        f"{FIGURES_DIRECTORY}/{qd_prefix}{hard_prefix}convergence_over_path.png"
+    )
     plt.close()
 
 
@@ -207,4 +222,5 @@ if __name__ == "__main__":
     start_time = time.time()
     binary_convergence_over_path_lengths(20, hyperparams, args.qd)
     elapsed = time.time() - start_time
+    print(f"Plotting finished in {elapsed:.2f} seconds.")
     print(f"Plotting finished in {elapsed:.2f} seconds.")

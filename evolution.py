@@ -173,7 +173,7 @@ def _evolve_generation(
     Returns next-gen population of the same size.
     """
     # 1) Evaluate
-    with Pool(min(cpu_count(), len(population))) as pool:
+    with Pool(min(cpu_count() * 2, len(population))) as pool:
         population = pool.map(run_member, population)
 
     # 2) Select
@@ -194,7 +194,7 @@ def _evolve_generation(
         )
         for _ in range(n_pairs)
     ]
-    with Pool(min(cpu_count(), len(pairs_args))) as pool:
+    with Pool(min(cpu_count() * 2, len(pairs_args))) as pool:
         child_pairs = pool.map(reproduce_pair, pairs_args)
 
     offspring = [c for pair in child_pairs for c in pair][:n_offspring]
@@ -225,7 +225,7 @@ def evolve(
 
     for gen in tqdm(range(1, generations + 1), desc="Generations"):
         # 1) Evaluate entire pop
-        with Pool(min(cpu_count(), len(population))) as pool:
+        with Pool(min(cpu_count() * 2, len(population))) as pool:
             population = pool.map(run_member, population)
 
         # 2) Gather scores & stats
@@ -303,7 +303,7 @@ def evolve(
                 )
             )
 
-        with Pool(min(cpu_count(), len(pairs_args))) as pool:
+        with Pool(min(cpu_count() * 2, len(pairs_args))) as pool:
             results = pool.map(reproduce_pair, pairs_args)
 
         # flatten and trim
@@ -488,6 +488,8 @@ if __name__ == "__main__":
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     num_tiles = len(tile_symbols)
 
+    from tasks.water_biome import water_biome_reward
+
     # Create the WFC environment instance
     env = WFCWrapper(
         map_length=MAP_LENGTH,
@@ -496,9 +498,9 @@ if __name__ == "__main__":
         adjacency_bool=adjacency_bool,
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
-        reward=partial(binary_reward, target_path_length=30),
+        reward=water_biome_reward,  # partial(binary_reward, target_path_length=30),
         deterministic=True,
-        qd_function=binary_percent_water if args.qd else None,
+        # qd_function=binary_percent_water if args.qd else None,
     )
     tile_images = load_tile_images()  # Load images needed for rendering later
 
