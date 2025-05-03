@@ -21,6 +21,7 @@ from tqdm import tqdm
 from biome_adjacency_rules import create_adjacency_matrix
 from tasks.binary_task import binary_percent_water, binary_reward
 from tasks.water_biome import water_biome_reward
+from tasks.grass_biome import grass_biome_reward
 from wfc import (  # We might not need render_wfc_grid if we keep console rendering
     load_tile_images,
     render_wfc_grid,
