@@ -14,6 +14,32 @@ from wfc import (  # We might not need render_wfc_grid if we keep console render
 )
 
 
+class CombinedReward:
+    """
+    A picklable callable that sums multiple reward functions.
+    """
+
+    def __init__(self, funcs):
+        # funcs is a list of callables, e.g. partials or top‐level functions
+        self.funcs = funcs
+
+    def __call__(self, *args, **kwargs):
+        total_reward = 0.0
+        merged_info = {}
+        for fn in self.funcs:
+            out = fn(*args, **kwargs)
+            # Expect either a float or a tuple (reward, info)
+            if isinstance(out, tuple):
+                r, info = out
+                total_reward += r
+                # merge infos (later functions overwrite earlier keys)
+                merged_info.update(info)
+            else:
+                # fall back: single‐value reward
+                total_reward += out
+        return total_reward, merged_info
+
+
 def grid_to_array(
     grid: list[list[set[str]]],
     tile_symbols: list[str],
@@ -74,7 +100,7 @@ class WFCWrapper(gym.Env):
         num_tiles: int,
         tile_to_index: dict[str, int],
         reward: Callable[[list[list[set[str]]]], tuple[float, dict[str, Any]]],
-        deterministic: bool,
+        deterministic: bool = True,
         qd_function: Callable[[list[list[set[str]]]], float] | None = None,
         tile_images: dict[str, pygame.Surface] | None = None,
         tile_size: int = 32,
@@ -358,4 +384,5 @@ class WFCWrapper(gym.Env):
         if hasattr(self, "screen"):
             pygame.quit()
         if hasattr(self, "screen"):
+            pygame.quit()
             pygame.quit()
