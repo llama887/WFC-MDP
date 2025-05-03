@@ -223,4 +223,8 @@ if __name__ == "__main__":
     binary_convergence_over_path_lengths(20, hyperparams, args.qd)
     elapsed = time.time() - start_time
     print(f"Plotting finished in {elapsed:.2f} seconds.")
+
+    start_time = time.time()
+    binary_convergence_over_path_lengths(20, hyperparams, args.qd, True)
+    elapsed = time.time() - start_time
     print(f"Plotting finished in {elapsed:.2f} seconds.")
