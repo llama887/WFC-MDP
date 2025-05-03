@@ -20,11 +20,12 @@ from tqdm import tqdm
 
 from biome_adjacency_rules import create_adjacency_matrix
 from tasks.binary_task import binary_percent_water, binary_reward
+from tasks.water_biome import water_biome_reward
 from wfc import (  # We might not need render_wfc_grid if we keep console rendering
     load_tile_images,
     render_wfc_grid,
 )
-from wfc_env import WFCWrapper
+from wfc_env import CombinedReward, WFCWrapper
 
 
 class CrossOverMethod(Enum):
@@ -158,47 +159,6 @@ def reproduce_pair(
     c1.mutate(mean, stddev, noise)
     c2.mutate(mean, stddev, noise)
     return c1, c2
-
-
-def _evolve_generation(
-    population: list[PopulationMember],
-    number_of_actions_mutated_mean: int,
-    number_of_actions_mutated_standard_deviation: float,
-    action_noise_standard_deviation: float,
-    survival_rate: float,
-    cross_over_method: CrossOverMethod,
-) -> list[PopulationMember]:
-    """
-    Evaluate → select survivors → reproduce offspring
-    Returns next-gen population of the same size.
-    """
-    # 1) Evaluate
-    with Pool(min(cpu_count() * 2, len(population))) as pool:
-        population = pool.map(run_member, population)
-
-    # 2) Select
-    population.sort(key=lambda m: m.reward, reverse=True)
-    n_survivors = max(2, int(len(population) * survival_rate))
-    survivors = population[:n_survivors]
-
-    # 3) Reproduce
-    n_offspring = len(population) - n_survivors
-    n_pairs = math.ceil(n_offspring / 2)
-    pairs_args = [
-        (
-            *random.sample(survivors, 2),
-            number_of_actions_mutated_mean,
-            number_of_actions_mutated_standard_deviation,
-            action_noise_standard_deviation,
-            cross_over_method,
-        )
-        for _ in range(n_pairs)
-    ]
-    with Pool(min(cpu_count() * 2, len(pairs_args))) as pool:
-        child_pairs = pool.map(reproduce_pair, pairs_args)
-
-    offspring = [c for pair in child_pairs for c in pair][:n_offspring]
-    return survivors + offspring
 
 
 def evolve(
@@ -478,6 +438,13 @@ if __name__ == "__main__":
         default=False,
         help="Use QD mode for evolution.",
     )
+    parser.add_argument(
+        "--task",
+        action="append",
+        default=["binary_easy"],
+        choices=["binary_easy", "binary_hard", "water"],
+        help="The task being optimized. Used to pick reward. Pick from: binary_easy, binary_hard, river, pond ect.",
+    )
 
     args = parser.parse_args()
 
@@ -488,7 +455,11 @@ if __name__ == "__main__":
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     num_tiles = len(tile_symbols)
 
-    from tasks.water_biome import water_biome_reward
+    task_rewards = {
+        "binary_easy": partial(binary_reward, target_path_length=50),
+        "binary_hard": partial(binary_reward, target_path_length=50, hard=True),
+        "water": water_biome_reward,
+    }
 
     # Create the WFC environment instance
     env = WFCWrapper(
@@ -498,7 +469,9 @@ if __name__ == "__main__":
         adjacency_bool=adjacency_bool,
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
-        reward=water_biome_reward,  # partial(binary_reward, target_path_length=30),
+        reward=CombinedReward(
+            [task_rewards[task] for task in args.task]
+        ),  # partial(binary_reward, target_path_length=30),
         deterministic=True,
         # qd_function=binary_percent_water if args.qd else None,
     )
@@ -612,7 +585,10 @@ if __name__ == "__main__":
     AGENT_DIR = "agents"
     os.makedirs(AGENT_DIR, exist_ok=True)
     # save the best agent in a .pkl file
-    with open(f"{AGENT_DIR}/best_evolved_binary_agent.pkl", "wb") as f:
+    with open(
+        f"{AGENT_DIR}/best_evolved_{'_'.join([task for task in args.task])}_agent.pkl",
+        "wb",
+    ) as f:
         pickle.dump(best_agent, f)
 
     print("Script finished.")
