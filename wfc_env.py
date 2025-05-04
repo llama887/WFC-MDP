@@ -1,8 +1,8 @@
 import random
 from typing import Any, Callable
 
-import numpy as np
 import gymnasium as gym  # Use Gymnasium
+import numpy as np
 import pygame
 from gymnasium import spaces
 
@@ -66,8 +66,8 @@ def grid_to_array(
                     arr[y, x] = -1.0  # Should not happen if tile_to_index is correct
             elif num_options == 0:
                 # Contradiction cell
-                arr[y, x] = -1.0  # Use a different value for contradiction? Or stick to -1? Let's use -1.
-                arr[y, x] = -1.0  # Use a different value for contradiction? Or stick to -1? Let's use -1.
+                arr[y, x] = -2.0  # Use a different value for contradiction? Or stick to -1? Let's use -1.
+                arr[y, x] = -1.0
             else:
                 # Undecided cell
                 arr[y, x] = -1.0
@@ -77,19 +77,15 @@ def grid_to_array(
 class WFCWrapper(gym.Env):
     """
     Gymnasium Environment for Wave Function Collapse controlled by an RL agent.
-    Gymnasium Environment for Wave Function Collapse with graphical rendering.
-    Gymnasium Environment for Wave Function Collapse with graphical rendering.
+
     Observation: Flattened grid state + normalized coordinates of the next cell to collapse.
                  Grid cells: Value is index/(num_tiles-1) if collapsed, -1.0 if undecided.
     Action: A vector of preferences (logits) for each tile type for the selected cell.
     Reward: Sparse reward given only at the end of the episode.
-            + Scaled reward (0 to 100) based on proximity to target tile count for successful termination.
-            - 1000 for truncation (contradiction or max steps).
-            0 otherwise.
+
     Termination: Grid is fully collapsed (all cells have exactly one possibility).
     Truncation: A contradiction occurs during propagation OR max steps reached.
     """
-    metadata = {"render_modes": ["human"], "render_fps": 10}  # Add metadata, adjust FPS
 
     def __init__(
         self,
@@ -106,17 +102,13 @@ class WFCWrapper(gym.Env):
         tile_size: int = 32,
         render_mode: str | None = None,
     ):
-        super().__init__()  # Call parent constructor
+        super().__init__()
         self.all_tiles = tile_symbols
         self.adjacency = adjacency_bool
         self.num_tiles = num_tiles
         self.map_length: int = map_length
         self.map_width: int = map_width
-        self.tile_to_index = tile_to_index  # Store tile_to_index
-        self.tile_images = tile_images
-        self.tile_size = tile_size
-        self.render_mode = render_mode
-        self.dominant_biome = "unknown"  # Track dominant biome
+        self.tile_to_index = tile_to_index
         self.deterministic = deterministic
         self.reward = reward
         self.qd_function = qd_function
@@ -137,28 +129,24 @@ class WFCWrapper(gym.Env):
         # Initial grid state using the function from biome_wfc
         # self.grid will hold the current state (list of lists of sets)
         self.grid = initialize_wfc_grid(self.map_width, self.map_length, self.all_tiles)
-        
-        # Keep a way to reset easily if needed, maybe store initial args?
-        # Or just call initialize_wfc_grid again in reset.
+
         # Action space: Agent outputs preferences (logits) for each tile type.
-        # Needs to be float32 for SB3.
         self.action_space: spaces.Box = spaces.Box(
             low=0, high=1, shape=(self.num_tiles,), dtype=np.float32
         )
 
         # Observation space: Flattened map + normalized coordinates of the next cell to collapse
         # Map values range from -1 (undecided) to 1 (max index / max index).
-        # Coordinates range from 0 to 1. Needs to be float32 for SB3.
+        # Coordinates range from 0 to 1.
         self.observation_space: spaces.Box = spaces.Box(
-            low=-1.0,   # Lower bound changed due to -1 for undecided cells
+            low=-1.0,  # Lower bound -1 for undecided cells
             high=1.0,
             shape=(self.map_length * self.map_width + 2,),
             dtype=np.float32,
         )
-
         self.current_step = 0
-        self.max_steps = self.map_length * self.map_width + 10
-        self.task = task
+        # Set a maximum number of steps to prevent infinite loops if termination fails
+        self.max_steps = self.map_length * self.map_width + 10  # Allow some buffer
 
     def get_observation(self) -> np.ndarray:
         """Constructs the observation array (needs to be float32)."""
@@ -189,35 +177,6 @@ class WFCWrapper(gym.Env):
         # Ensure final observation is float32
         return np.concatenate([map_flat, pos_array]).astype(np.float32)
 
-    def save_completed_map(self, reward_val: float):
-        """Saves the completed map as an image with reward and biome in the filename."""
-        if not os.path.exists("wfc_reward_img"):
-            os.makedirs("wfc_reward_img")
-        
-        # Get dominant biome
-        self.dominant_biome = get_dominant_biome(self.grid)
-        
-        filename = f"wfc_reward_img/{self.dominant_biome}_reward_{reward_val:.1f}%.png"
-        
-        # Create a surface to render the map
-        surface = pygame.Surface(
-            (self.map_width * self.tile_size, self.map_length * self.tile_size))
-        surface.fill((0, 0, 0))
-        
-        for y in range(self.map_length):
-            for x in range(self.map_width):
-                cell_set = self.grid[y][x]
-                if len(cell_set) == 1:
-                    tile_name = next(iter(cell_set))
-                    if tile_name in self.tile_images:
-                        surface.blit(
-                            self.tile_images[tile_name],
-                            (x * self.tile_size, y * self.tile_size)
-                        )
-        
-        pygame.image.save(surface, filename)
-        print(f"Saved completed map to {filename}")
-
     def step(self, action: np.ndarray):
         """Performs one step of the WFC process based on the agent's action."""
         info = {}
@@ -229,8 +188,9 @@ class WFCWrapper(gym.Env):
         # Convert action (potentially logits) to a probability distribution using softmax
         # Improve numerical stability by subtracting the max before exponentiating
         action_exp = np.exp(action - np.max(action))
-        action_probs = action_exp / (np.sum(action_exp) + 1e-8) # Add epsilon for stability
-        action_probs = action_exp / (np.sum(action_exp) + 1e-8) # Add epsilon for stability
+        action_probs = action_exp / (
+            np.sum(action_exp) + 1e-8
+        )  # Add epsilon for stability
 
         # action_probs are already float32, biome_wfc_step expects list or numpy array
         # No need to convert to float64 unless biome_wfc specifically requires it (it doesn't seem to)
@@ -268,20 +228,18 @@ class WFCWrapper(gym.Env):
         #     print(reward)
         # Get the next observation
         observation = self.get_observation()
-        info = {
-            "steps": self.current_step,
-            "terminated_reason": "completed" if terminated else None,
-            "truncated_reason": (
+        info["steps"] = self.current_step
+        if terminated:
+            info["terminated_reason"] = "completed"
+        if truncated:
+            info["truncated_reason"] = (
                 "contradiction" if self.current_step < self.max_steps else "max_steps"
-            ) if truncated else None,
-        }
+            )
 
-        if terminated and self.tile_images is not None:
-            self.save_completed_map(reward_val)
+        # Ensure reward is float
+        reward = float(reward)
 
-        if self.render_mode == "human":
-            self.render()
-        return observation, reward_val, terminated, truncated, info
+        return observation, reward, terminated, truncated, info
 
     def reset(self, seed=None, options=None):
         """Resets the environment to the initial state."""
@@ -293,11 +251,9 @@ class WFCWrapper(gym.Env):
         self.current_step = 0
         # Compute and store initial longest path
         observation = self.get_observation()
-        
-        if self.render_mode == "human" and self.tile_images is not None:
-            self.render()
-            
-        return observation, {}
+        info = {}  # Can provide initial info if needed
+        # print("Environment Reset") # Debug print
+        return observation, info
 
     def render(self):
         """Renders the current grid state to the console."""

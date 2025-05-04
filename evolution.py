@@ -14,26 +14,26 @@ import numpy as np
 import optuna
 import pygame
 import yaml
+from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.stats import truncnorm
 from tqdm import tqdm
 
 from biome_adjacency_rules import create_adjacency_matrix
 from tasks.binary_task import binary_percent_water, binary_reward
-from tasks.water_biome import water_biome_reward
+from tasks.river_task import river_reward
+from tasks.pond_task import pond_reward
 from tasks.grass_biome import grass_biome_reward
 from tasks.hill_biome import hill_biome_reward
+
 from wfc import (  # We might not need render_wfc_grid if we keep console rendering
     load_tile_images,
     render_wfc_grid,
 )
 from wfc_env import CombinedReward, WFCWrapper
 
-tile_images = load_tile_images()
-
 class CrossOverMethod(Enum):
     UNIFORM = 0
     ONE_POINT = 1
-
 
 class PopulationMember:
     def __init__(self, env: WFCWrapper):
@@ -91,11 +91,6 @@ class PopulationMember:
         self.reward = 0
         for idx, action in enumerate(self.action_sequence):
             _, reward, terminate, truncate, info = self.env.step(action)
-            _, reward, terminate, truncate, _ = self.env.step(action)
-            if not np.isfinite(reward):
-                print(f"Invalid reward encountered: {reward}")
-                self.reward = float("-inf")
-                break
             self.reward += reward
             self.info = info
             if terminate or truncate:
@@ -171,16 +166,19 @@ def reproduce_pair(
 def evolve(
     env: WFCWrapper,
     generations: int = 100,
-    population_size: int = 5,
+    population_size: int = 50,
     number_of_actions_mutated_mean: int = 10,
-    number_of_actions_mutated_standard_deviation: float = 10,
+    number_of_actions_mutated_standard_deviation: float = 10.0,
     action_noise_standard_deviation: float = 0.1,
     survival_rate: float = 0.2,
     cross_over_method: CrossOverMethod = CrossOverMethod.ONE_POINT,
     patience: int = 10,
+    qd: bool = False,
 ) -> tuple[list[PopulationMember], PopulationMember, int, list[float], list[float]]:
-    patience_counter = 0
-    best_agent: PopulationMember | None = None
+    """
+    Standard EA if qd=False; QD selection + global reproduction if qd=True.
+    """
+    # --- Initialization ---
     population = [PopulationMember(env) for _ in range(population_size)]
     best_agent: PopulationMember | None = None
     best_agent_rewards: list[float] = []
@@ -191,67 +189,92 @@ def evolve(
         # 1) Evaluate entire pop
         with Pool(min(cpu_count() * 2, len(population))) as pool:
             population = pool.map(run_member, population)
-        population.sort(key=lambda x: x.reward, reverse=True)
-        best_agent_in_population = population[0]
-        best_agent_rewards.append(best_agent_in_population.reward)
-        median_reward = population[len(population) // 2].reward
-        median_agent_rewards.append(median_reward)
-        if best_agent is None or best_agent_in_population.reward > best_agent.reward:
-            best_agent = copy.deepcopy(best_agent_in_population)
+
+        # 2) Gather scores & stats
+        #    - fitness-based reward for standard EA
+        #    - qd_score for QD clustering
+        fitnesses = np.array([m.reward for m in population])
+        best_idx = int(np.argmax(fitnesses))
+        median_val = float(np.median(fitnesses))
+
+        best_agent_rewards.append(population[best_idx].reward)
+        median_agent_rewards.append(median_val)
+
+        # Track global best & early stopping
+        if best_agent is None or population[best_idx].reward > best_agent.reward:
+            best_agent = copy.deepcopy(population[best_idx])
             patience_counter = 0
         else:
             patience_counter += 1
 
         if (
-            best_agent.info.get("achieved_max_reward", False)
-            or patience_counter == patience
+            population[best_idx].info.get("achieved_max_reward", False)
+            or patience_counter >= patience
         ):
-            return (
-                population,
-                best_agent,
-                generation,
-                best_agent_rewards,
-                median_agent_rewards,
-            )
-        # Determine survivors and reproduce
-        n_survivors = max(2, int(population_size * survival_rate))
-        survivors = population[:n_survivors]
-        offspring: list[PopulationMember] = []
-        number_of_offspring_needed = population_size - n_survivors
+            return population, best_agent, gen, best_agent_rewards, median_agent_rewards
 
-        pairs_needed = math.ceil(number_of_offspring_needed / 2)
+        # 3) Selection
+        if not qd:
+            # Standard: top‐N by fitness
+            sorted_pop = sorted(population, key=lambda m: m.reward, reverse=True)
+            number_of_surviving_members = max(2, int(population_size * survival_rate))
+            survivors = sorted_pop[:number_of_surviving_members]
+        else:
+            # QD: cluster on qd_score
+            scores = np.array([m.info["qd_score"] for m in population])
+            Z = linkage(scores.reshape(-1, 1), method="ward")
+            cutoff = np.median(Z[:, 2])
+            labels = fcluster(Z, t=cutoff, criterion="distance")
 
-        # Generate exactly the number of pairs required.
-        pairs_args = [
-            (
-                *random.sample(survivors, 2),
-                number_of_actions_mutated_mean,
-                number_of_actions_mutated_standard_deviation,
-                action_noise_standard_deviation,
-                cross_over_method,
+            # pick survivors within each cluster
+            survivors = []
+            for cluster in np.unique(labels):
+                members = [
+                    population[i] for i, lbl in enumerate(labels) if lbl == cluster
+                ]
+                members.sort(
+                    key=lambda m: m.info.get("qd_score", m.reward), reverse=True
+                )
+                number_of_cluster_survivors = max(1, int(len(members) * survival_rate))
+                survivors.extend(members[:number_of_cluster_survivors])
+
+            # ensure at least two survivors overall
+            if len(survivors) < 2:
+                # fallback to best two by fitness
+                pop_by_fit = sorted(population, key=lambda m: m.reward, reverse=True)
+                survivors = pop_by_fit[:2]
+
+        # 4) Reproduction (global)
+        number_of_surviving_members = len(survivors)
+        n_offspring = population_size - number_of_surviving_members
+        n_pairs = math.ceil(n_offspring / 2)
+        pairs_args = []
+        for _ in range(n_pairs):
+            if len(survivors) >= 2:
+                p1, p2 = random.sample(survivors, 2)
+            else:
+                p1 = p2 = survivors[0]
+            pairs_args.append(
+                (
+                    p1,
+                    p2,
+                    number_of_actions_mutated_mean,
+                    number_of_actions_mutated_standard_deviation,
+                    action_noise_standard_deviation,
+                    cross_over_method,
+                )
             )
-            for _ in range(pairs_needed)
-        ]
 
         with Pool(min(cpu_count() * 2, len(pairs_args))) as pool:
             results = pool.map(reproduce_pair, pairs_args)
 
-        # Flatten and trim the offspring list
-        offspring = [child for pair in reproduction_results for child in pair][
-            :number_of_offspring_needed
-        ]
-        population = survivors + offspring
-    # Ensure the best agent is returned even if the population is empty or has issues
-    if population:
-        population.sort(key=lambda x: x.reward, reverse=True)
-        current_best = population[0]
-        if best_agent is None or current_best.reward > best_agent.reward:
-            best_agent = copy.deepcopy(current_best)
-    elif best_agent is None:
-        # Handle edge case where population is empty and no best_agent was ever found
-        print("Warning: Evolution resulted in an empty population and no best agent.")
-        pass
+        # flatten and trim
+        offspring = [child for pair in results for child in pair][:n_offspring]
 
+        # 5) Form next gen
+        population = survivors + offspring
+
+    # end for
     return population, best_agent, generations, best_agent_rewards, median_agent_rewards
 
 
@@ -305,8 +328,61 @@ def objective(
                         binary_reward, target_path_length=target_path_length
                     ),
                     deterministic=True,
+                    qd_function=binary_percent_water if qd else None,
                 )
                 print(f"Target Path Length: {target_path_length}")
+            case "river":
+                base_env = WFCWrapper(
+                    map_length=MAP_LENGTH,
+                    map_width=MAP_WIDTH,
+                    tile_symbols=tile_symbols,
+                    adjacency_bool=adjacency_bool,
+                    num_tiles=num_tiles,
+                    tile_to_index=tile_to_index,
+                    reward=river_reward,
+                    deterministic=True,
+                    qd_function=None,  # Add QD function if needed
+                )
+                print("Running river task")
+            case "pond":
+                base_env = WFCWrapper(
+                    map_length=MAP_LENGTH,
+                    map_width=MAP_WIDTH,
+                    tile_symbols=tile_symbols,
+                    adjacency_bool=adjacency_bool,
+                    num_tiles=num_tiles,
+                    tile_to_index=tile_to_index,
+                    reward=pond_reward,
+                    deterministic=True,
+                    qd_function=None,  # Add QD function if needed
+                )
+                print("Running pond task")
+            case "grass":
+                base_env = WFCWrapper(
+                    map_length=MAP_LENGTH,
+                    map_width=MAP_WIDTH,
+                    tile_symbols=tile_symbols,
+                    adjacency_bool=adjacency_bool,
+                    num_tiles=num_tiles,
+                    tile_to_index=tile_to_index,
+                    reward=grass_biome_reward,
+                    deterministic=True,
+                    qd_function=None,  # Add QD function if needed
+                )
+                print("Running pond task")
+            case "hill":
+                base_env = WFCWrapper(
+                    map_length=MAP_LENGTH,
+                    map_width=MAP_WIDTH,
+                    tile_symbols=tile_symbols,
+                    adjacency_bool=adjacency_bool,
+                    num_tiles=num_tiles,
+                    tile_to_index=tile_to_index,
+                    reward=hill_biome_reward,
+                    deterministic=True,
+                    qd_function=None,  # Add QD function if needed
+                )
+                print("Running pond task")
             case _:
                 raise ValueError(f"{task} is not a defined task")
 
@@ -321,6 +397,7 @@ def objective(
             survival_rate=survival_rate,
             cross_over_method=CrossOverMethod(cross_over_method),
             patience=patience,
+            qd=qd,
         )
         print(f"Best reward at sample {i + 1}/{NUMBER_OF_SAMPLES}: {best_agent.reward}")
         total_reward += best_agent.reward
@@ -331,8 +408,8 @@ def objective(
     return total_reward - (0.001) * (end_time - start_time)
 
 
-def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images):
-    """Renders the action sequence of the best agent."""
+def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images, task_name: str = ""):
+    """Renders the action sequence of the best agent and saves the final map."""
     if not best_agent:
         print("No best agent found to render.")
         return
@@ -341,57 +418,75 @@ def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images
     SCREEN_WIDTH = env.map_width * 32
     SCREEN_HEIGHT = env.map_length * 32
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption("Best Evolved WFC Map")
-    env.tile_images = tile_images
+    pygame.display.set_caption(f"Best Evolved WFC Map - {task_name}")
+
+    # Create a surface for saving the final map
+    final_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
     
     env.reset()
     total_reward = 0
     print("Rendering best agent's action sequence...")
     
     for action in tqdm(best_agent.action_sequence, desc="Rendering Steps"):
-        # Handle pygame events
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                return
-        
-        # Step through the environment with the action
         _, reward, terminate, truncate, _ = env.step(action)
         total_reward += reward
-
+        
+        # Clear screen
         screen.fill((0, 0, 0))
-    
+        
         # Render the current state
         for y in range(env.map_length):
             for x in range(env.map_width):
                 cell_set = env.grid[y][x]
                 if len(cell_set) == 1:  # Collapsed cell
                     tile_name = next(iter(cell_set))
-                    if tile_name in env.tile_images:
-                        screen.blit(
-                            env.tile_images[tile_name],
-                            (x * 32, y * 32)
-                        )
+                    if tile_name in tile_images:
+                        screen.blit(tile_images[tile_name], (x * 32, y * 32))
+                    else:
+                        # Fallback for missing tiles
+                        pygame.draw.rect(screen, (255, 0, 255), (x * 32, y * 32, 32, 32))
                 elif len(cell_set) == 0:  # Contradiction
-                    pygame.draw.rect(
-                        screen,
-                        (255, 0, 0),
-                        (x * 32, y * 32, 32, 32)
-                    )
+                    pygame.draw.rect(screen, (255, 0, 0), (x * 32, y * 32, 32, 32))
                 else:  # Superposition
-                    pygame.draw.rect(
-                        screen,
-                        (0, 0, 0),
-                        (x * 32, y * 32, 32, 32)
-                    )
+                    pygame.draw.rect(screen, (100, 100, 100), (x * 32, y * 32, 32, 32))
+        
         pygame.display.flip()
-
+        
+        # Capture final frame if this is the last step
         if terminate or truncate:
+            # Make one more render pass to ensure final state is captured
+            screen.fill((0, 0, 0))
+            for y in range(env.map_length):
+                for x in range(env.map_width):
+                    cell_set = env.grid[y][x]
+                    if len(cell_set) == 1:
+                        tile_name = next(iter(cell_set))
+                        if tile_name in tile_images:
+                            screen.blit(tile_images[tile_name], (x * 32, y * 32))
+                            final_surface.blit(tile_images[tile_name], (x * 32, y * 32))
+                        else:
+                            pygame.draw.rect(screen, (255, 0, 255), (x * 32, y * 32, 32, 32))
+                            pygame.draw.rect(final_surface, (255, 0, 255), (x * 32, y * 32, 32, 32))
+                    elif len(cell_set) == 0:
+                        pygame.draw.rect(screen, (255, 0, 0), (x * 32, y * 32, 32, 32))
+                        pygame.draw.rect(final_surface, (255, 0, 0), (x * 32, y * 32, 32, 32))
+                    else:
+                        pygame.draw.rect(screen, (100, 100, 100), (x * 32, y * 32, 32, 32))
+                        pygame.draw.rect(final_surface, (100, 100, 100), (x * 32, y * 32, 32, 32))
+            pygame.display.flip()
             break
 
+    # Save the final rendered map
+    if task_name:
+        os.makedirs("wfc_reward_img", exist_ok=True)
+        filename = f"wfc_reward_img/{task_name}_{best_agent.reward:.2f}.png"
+        pygame.image.save(final_surface, filename)
+        print(f"Saved final map to {filename}")
+    
     print(f"Final map reward for the best agent: {total_reward:.4f}")
     print(f"Best agent reward during evolution: {best_agent.reward:.4f}")
 
+    # Keep the window open for a bit
     print("Displaying final map for 5 seconds...")
     start_time = time.time()
     while time.time() - start_time < 5:
@@ -399,7 +494,8 @@ def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images
             if event.type == pygame.QUIT:
                 pygame.quit()
                 return
-        pygame.display.flip()    
+        pygame.display.flip()
+    
     pygame.quit()
 
 
@@ -449,16 +545,16 @@ if __name__ == "__main__":
         help="Filename for the saved hyperparameters YAML.",
     )
     parser.add_argument(
-        "--task",
-        type=str,
-        default="water",
-        help="Task being evaluated",
+        "--qd",
+        action="store_true",
+        default=False,
+        help="Use QD mode for evolution.",
     )
     parser.add_argument(
         "--task",
         action="append",
         default=["binary_easy"],
-        choices=["binary_easy", "binary_hard", "water"],
+        choices=["binary_easy", "binary_hard", "river", "pond", "grass", "hill"],
         help="The task being optimized. Used to pick reward. Pick from: binary_easy, binary_hard, river, pond ect.",
     )
 
@@ -474,9 +570,10 @@ if __name__ == "__main__":
     task_rewards = {
         "binary_easy": partial(binary_reward, target_path_length=50),
         "binary_hard": partial(binary_reward, target_path_length=50, hard=True),
-        "water": water_biome_reward,
+        "river": river_reward,
+        "pond": pond_reward,
         "grass": grass_biome_reward,
-        # "hill": hill_biome_reward,
+        "hill": hill_biome_reward,
     }
 
     # Create the WFC environment instance
@@ -493,6 +590,7 @@ if __name__ == "__main__":
         deterministic=True,
         # qd_function=binary_percent_water if args.qd else None,
     )
+    tile_images = load_tile_images()  # Load images needed for rendering later
 
     hyperparams = {}
     best_agent = None
@@ -535,6 +633,7 @@ if __name__ == "__main__":
             survival_rate=hyperparams["survival_rate"],
             cross_over_method=CrossOverMethod(hyperparams["cross_over_method"]),
             patience=hyperparams["patience"],
+            qd=args.qd,
         )
         end_time = time.time()
         print(f"Evolution finished in {end_time - start_time:.2f} seconds.")
@@ -594,20 +693,25 @@ if __name__ == "__main__":
     if best_agent:
         print("\nInitializing Pygame for rendering the best map...")
         pygame.init()
-        # tile_images = load_tile_images()  # Load images needed for rendering later
-        render_best_agent(env, best_agent, tile_images)
+        task_name = "_".join([task for task in args.task])
+        render_best_agent(env, best_agent, tile_images, task_name)
     else:
         print("\nNo best agent was found during the process.")
 
-    # Clean up for pickling
-    if hasattr(best_agent.env, "tile_images"):
-        best_agent.env.tile_images = None
-
+    AGENT_DIR = "agents"
+    os.makedirs(AGENT_DIR, exist_ok=True)
     # save the best agent in a .pkl file
-    with open(
-        f"{AGENT_DIR}/best_evolved_{'_'.join([task for task in args.task])}_agent.pkl",
-        "wb",
-    ) as f:
-        pickle.dump(best_agent, f)
+    if best_agent:
+        task_str = "_".join([task for task in args.task])
+        filename = f"{AGENT_DIR}/best_evolved_{task_str}_reward_{best_agent.reward:.2f}_agent.pkl"
+        with open(filename, "wb") as f:
+            pickle.dump({
+                'agent': best_agent,
+                'task': args.task,
+                'reward': best_agent.reward,
+                'generations': generations if 'generations' in locals() else None,
+                'hyperparameters': hyperparams if hyperparams else None
+            }, f)
+        print(f"Saved best agent to {filename}")
 
     print("Script finished.")
