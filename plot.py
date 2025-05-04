@@ -15,7 +15,7 @@ import yaml
 
 from biome_adjacency_rules import create_adjacency_matrix
 from evolution import evolve
-from tasks.binary_task import binary_reward, binary_percent_water
+from tasks.binary_task import binary_percent_water, binary_reward
 from wfc_env import WFCWrapper
 
 FIGURES_DIRECTORY = "figures"
@@ -44,8 +44,8 @@ def binary_convergence_over_path_lengths(
     """
     # Constants
     MIN_PATH_LENGTH = 10
-    MAX_PATH_LENGTH = 100
-    STEP = 10
+    MAX_PATH_LENGTH = 20
+    STEP = 1
     MAX_GENERATIONS = 100
     MAP_LENGTH = 15
     MAP_WIDTH = 20
@@ -142,12 +142,13 @@ def binary_convergence_over_path_lengths(
                 generations_to_converge[idx, sample_idx] = generations
 
     # Count how many runs actually converged at each path length
-    number_converged      = np.sum(~np.isnan(generations_to_converge), axis=1)
-    convergence_fraction  = number_converged / sample_size
+    number_converged = np.sum(~np.isnan(generations_to_converge), axis=1)
+    convergence_fraction = number_converged / sample_size
 
     # Only keep path-lengths where at least one run converged
     valid = number_converged > 0
     path_lengths = path_lengths[valid]
+    convergence_fraction = convergence_fraction[valid]  # ← Add this line
 
     # Extract just the valid rows
     data_valid = generations_to_converge[valid]
@@ -158,7 +159,7 @@ def binary_convergence_over_path_lengths(
     # Compute standard error: use ddof=0 or guard ddof=1 for counts>1
     counts = number_converged[valid]
     # here we use ddof=0 to avoid the df<=0 issue
-    std_dev        = np.nanstd(data_valid, axis=1, ddof=0)
+    std_dev = np.nanstd(data_valid, axis=1, ddof=0)
     standard_errors = std_dev / np.sqrt(counts)
 
     # --- Plot mean ± SEM and convergence fraction with twin axes ---
@@ -240,11 +241,11 @@ if __name__ == "__main__":
             print(f"Error loading or using hyperparameters: {e}")
             exit(1)
     start_time = time.time()
-    binary_convergence_over_path_lengths(20, hyperparams, args.qd)
+    binary_convergence_over_path_lengths(2, hyperparams, args.qd)
     elapsed = time.time() - start_time
     print(f"Plotting finished in {elapsed:.2f} seconds.")
 
     start_time = time.time()
-    binary_convergence_over_path_lengths(20, hyperparams, args.qd, True)
+    binary_convergence_over_path_lengths(2, hyperparams, args.qd, True)
     elapsed = time.time() - start_time
     print(f"Plotting finished in {elapsed:.2f} seconds.")
