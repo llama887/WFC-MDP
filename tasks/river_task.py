@@ -46,7 +46,7 @@ def check_river_flow(
                 return True
     return False
 
-def river_reward(grid: list[list[set[str]]]) -> float:
+def river_reward(grid: list[list[set[str]]]) -> tuple[float, dict]:
     water_tiles = {
         "water", "water_tl", "water_tr", "water_t", "water_l", "water_r",
         "water_bl", "water_b", "water_br", "shore_tl", "shore_tr",
@@ -69,7 +69,7 @@ def river_reward(grid: list[list[set[str]]]) -> float:
 
     total_cells = len(grid) * len(grid[0])
     if total_cells == 0:
-        return -float('inf')
+        return -float('inf'), {}
 
     water_ratio = water_cells / total_cells
     shore_ratio = shore_cells / water_cells if water_cells > 0 else 0
@@ -86,20 +86,28 @@ def river_reward(grid: list[list[set[str]]]) -> float:
     IDEAL_REGIONS = 1
 
     flow_penalty = 0 if has_flow else -100
-    
+
     if water_ratio < IDEAL_WATER_RATIO_MIN:
         water_penalty = (IDEAL_WATER_RATIO_MIN - water_ratio) * -200
     elif water_ratio > IDEAL_WATER_RATIO_MAX:
         water_penalty = (water_ratio - IDEAL_WATER_RATIO_MAX) * -200
     else:
         water_penalty = 0
-    
+
     shore_penalty = max(0, (shore_ratio - IDEAL_SHORE_RATIO)) * -100
     region_penalty = abs(regions - IDEAL_REGIONS) * -50
     flow_bonus = 20 if (has_horizontal_flow and has_vertical_flow) else 0
-    total_reward = (flow_penalty + water_penalty + shore_penalty + region_penalty + flow_bonus)
 
-    return min(total_reward, 0)
+    total_reward = flow_penalty + water_penalty + shore_penalty + region_penalty + flow_bonus
+
+    return min(total_reward, 0), {
+        "flow": has_flow,
+        "regions": regions,
+        "water_ratio": water_ratio,
+        "shore_ratio": shore_ratio,
+        "flow_bonus": flow_bonus,
+        "reward": total_reward
+    }
 
 def has_water_path(
     grid: list[list[set[str]]], start: tuple, end: tuple, water_tiles: set[str]

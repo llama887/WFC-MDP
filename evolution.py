@@ -89,6 +89,7 @@ class PopulationMember:
 
     def run_action_sequence(self):
         self.reward = 0
+        self.env.reset()
         for idx, action in enumerate(self.action_sequence):
             _, reward, terminate, truncate, info = self.env.step(action)
             self.reward += reward
@@ -449,7 +450,7 @@ def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images
                     pygame.draw.rect(screen, (255, 0, 0), (x * 32, y * 32, 32, 32))
                 else:  # Superposition
                     pygame.draw.rect(screen, (100, 100, 100), (x * 32, y * 32, 32, 32))
-        
+
         pygame.display.flip()
         
         # Capture final frame if this is the last step
@@ -553,12 +554,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--task",
         action="append",
-        default=["binary_easy"],
+        default=[],
         choices=["binary_easy", "binary_hard", "river", "pond", "grass", "hill"],
         help="The task being optimized. Used to pick reward. Pick from: binary_easy, binary_hard, river, pond ect. Specify one or more --task flags to combine tasks."
     )
 
     args = parser.parse_args()
+    if not args.task:
+        args.task = ["binary_easy"]
 
     # Define environment parameters
     MAP_LENGTH = 15

@@ -1,4 +1,5 @@
 import numpy as np
+from collections import deque
 from .utils import calc_num_regions
 
 def get_pond_biome(grid: list[list[set[str]]]) -> str:
@@ -83,7 +84,7 @@ def pond_reward(grid: list[list[set[str]]]) -> float:
 
     total_cells = len(grid) * len(grid[0])
     if total_cells == 0:
-        return -float('inf')
+        return -float('inf'), {}
 
     water_ratio = water_cells / total_cells
     pure_ratio = pure_water_cells / total_cells
@@ -95,6 +96,33 @@ def pond_reward(grid: list[list[set[str]]]) -> float:
     )
 
     regions = calc_num_regions(water_map.astype(np.int8))
+
+    def count_largest_pond_cluster(water_map):
+        visited = np.zeros_like(water_map, dtype=bool)
+        max_cluster = 0
+
+        for y in range(water_map.shape[0]):
+            for x in range(water_map.shape[1]):
+                if water_map[y, x] and not visited[y, x]:
+                    queue = deque([(y, x)])
+                    visited[y, x] = True
+                    cluster_size = 1
+
+                    while queue:
+                        cy, cx = queue.popleft()
+                        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                            ny, nx = cy + dy, cx + dx
+                            if 0 <= ny < water_map.shape[0] and 0 <= nx < water_map.shape[1]:
+                                if water_map[ny, nx] and not visited[ny, nx]:
+                                    visited[ny, nx] = True
+                                    queue.append((ny, nx))
+                                    cluster_size += 1
+
+                    max_cluster = max(max_cluster, cluster_size)
+
+        return max_cluster
+
+    largest_cluster = count_largest_pond_cluster(water_map)
 
     IDEAL_WATER_RATIO = 0.4
     IDEAL_PURE_RATIO = 0.3
@@ -108,9 +136,27 @@ def pond_reward(grid: list[list[set[str]]]) -> float:
     flow_penalty = -max(0, flow_length - MAX_FLOW_LENGTH) * 50
     region_penalty = -abs(regions - IDEAL_REGIONS) * 50
 
-    total_reward = (water_penalty + pure_penalty + shore_penalty + flow_penalty + region_penalty)
+    cluster_bonus = largest_cluster * 2
 
-    return total_reward, {}
+    total_reward = (
+        water_penalty +
+        pure_penalty +
+        shore_penalty +
+        flow_penalty +
+        region_penalty +
+        cluster_bonus
+    )
+
+    return total_reward, {
+        "water_ratio": water_ratio,
+        "pure_ratio": pure_ratio,
+        "shore_ratio": shore_ratio,
+        "flow_length": flow_length,
+        "regions": regions,
+        "largest_cluster": largest_cluster,
+        "reward": total_reward
+    }
+
 
 def has_water_path(
     grid: list[list[set[str]]], start: tuple, end: tuple, water_tiles: set[str]
