@@ -20,6 +20,8 @@ from tqdm import tqdm
 from biome_adjacency_rules import create_adjacency_matrix
 from tasks.binary_task import binary_percent_water, binary_reward
 from tasks.water_biome import water_biome_reward
+from tasks.grass_biome import grass_biome_reward
+from tasks.hill_biome import hill_biome_reward
 from wfc import (  # We might not need render_wfc_grid if we keep console rendering
     load_tile_images,
     render_wfc_grid,
@@ -473,6 +475,8 @@ if __name__ == "__main__":
         "binary_easy": partial(binary_reward, target_path_length=50),
         "binary_hard": partial(binary_reward, target_path_length=50, hard=True),
         "water": water_biome_reward,
+        "grass": grass_biome_reward,
+        # "hill": hill_biome_reward,
     }
 
     # Create the WFC environment instance
