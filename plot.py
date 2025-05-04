@@ -44,8 +44,8 @@ def binary_convergence_over_path_lengths(
     """
     # Constants
     MIN_PATH_LENGTH = 10
-    MAX_PATH_LENGTH = 20
-    STEP = 1
+    MAX_PATH_LENGTH = 100
+    STEP = 10
     MAX_GENERATIONS = 100
     MAP_LENGTH = 15
     MAP_WIDTH = 20
@@ -145,32 +145,27 @@ def binary_convergence_over_path_lengths(
     number_converged = np.sum(~np.isnan(generations_to_converge), axis=1)
     convergence_fraction = number_converged / sample_size
 
-    # Only keep path-lengths where at least one run converged
+    # Determine which path lengths have at least one convergence
     valid = number_converged > 0
-    path_lengths = path_lengths[valid]
-    convergence_fraction = convergence_fraction[valid]  # ← Add this line
+    data_valid = generations_to_converge  # full array, NaNs where no convergence
 
-    # Extract just the valid rows
-    data_valid = generations_to_converge[valid]
-
-    # Compute mean generations (ignores NaNs by default)
+    # Compute mean generations ignoring NaNs
     mean_generations = np.nanmean(data_valid, axis=1)
 
-    # Compute standard error: use ddof=0 or guard ddof=1 for counts>1
-    counts = number_converged[valid]
-    # here we use ddof=0 to avoid the df<=0 issue
+    # Compute standard deviation and standard errors
     std_dev = np.nanstd(data_valid, axis=1, ddof=0)
-    standard_errors = std_dev / np.sqrt(counts)
+    standard_errors = np.zeros_like(std_dev)
+    standard_errors[valid] = std_dev[valid] / np.sqrt(number_converged[valid])
 
     # --- Plot mean ± SEM and convergence fraction with twin axes ---
     fig, ax1 = plt.subplots(figsize=(8, 5))
     ax2 = ax1.twinx()
 
-    # Error‐bar line for mean generations
+    # Error‐bar line for mean generations (only where valid)
     ax1.errorbar(
-        path_lengths,
-        mean_generations,
-        yerr=standard_errors,
+        path_lengths[valid],
+        mean_generations[valid],
+        yerr=standard_errors[valid],
         fmt="o-",
         capsize=4,
         label="Mean generations to converge",
@@ -178,17 +173,20 @@ def binary_convergence_over_path_lengths(
     ax1.set_xlabel("Desired Path Length")
     ax1.set_ylabel("Mean Generations to Converge")
 
-    # Bar chart for convergence fraction
+    # Bar chart for convergence fraction (only where valid)
     bar_width = STEP * 0.8
     ax2.bar(
-        path_lengths,
-        convergence_fraction,
+        path_lengths[valid],
+        convergence_fraction[valid],
         width=bar_width,
         alpha=0.3,
         label="Fraction converged",
         align="center",
     )
     ax2.set_ylabel("Fraction of Runs Converged")
+
+    # Ensure the x‐axis shows ticks for all desired path‐lengths
+    ax1.set_xticks(path_lengths)
 
     # Title and combined legend
     qd_label = " (QD)" if qd else ""
@@ -198,13 +196,10 @@ def binary_convergence_over_path_lengths(
     h2, l2 = ax2.get_legend_handles_labels()
     ax1.legend(h1 + h2, l1 + l2, loc="upper left")
 
-    qd_prefix = "qd_" if qd else ""
-    hard_prefix = "hard_" if hard else ""
     fig.tight_layout()
-    plt.savefig(
-        f"{FIGURES_DIRECTORY}/{qd_prefix}{hard_prefix}convergence_over_path.png"
-    )
+    plt.savefig(f"{FIGURES_DIRECTORY}/{qd_prefix}{hard_prefix}convergence_over_path.png")
     plt.close()
+
 
 
 if __name__ == "__main__":
@@ -241,11 +236,11 @@ if __name__ == "__main__":
             print(f"Error loading or using hyperparameters: {e}")
             exit(1)
     start_time = time.time()
-    binary_convergence_over_path_lengths(2, hyperparams, args.qd)
+    binary_convergence_over_path_lengths(20, hyperparams, args.qd)
     elapsed = time.time() - start_time
     print(f"Plotting finished in {elapsed:.2f} seconds.")
 
     start_time = time.time()
-    binary_convergence_over_path_lengths(2, hyperparams, args.qd, True)
+    binary_convergence_over_path_lengths(20, hyperparams, args.qd, True)
     elapsed = time.time() - start_time
     print(f"Plotting finished in {elapsed:.2f} seconds.")
