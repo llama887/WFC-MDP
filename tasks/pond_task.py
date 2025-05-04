@@ -110,7 +110,7 @@ def pond_reward(grid: list[list[set[str]]]) -> float:
 
     total_reward = (water_penalty + pure_penalty + shore_penalty + flow_penalty + region_penalty)
 
-    return total_reward
+    return total_reward, {}
 
 def has_water_path(
     grid: list[list[set[str]]], start: tuple, end: tuple, water_tiles: set[str]

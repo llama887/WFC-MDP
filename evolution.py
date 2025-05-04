@@ -555,7 +555,7 @@ if __name__ == "__main__":
         action="append",
         default=["binary_easy"],
         choices=["binary_easy", "binary_hard", "river", "pond", "grass", "hill"],
-        help="The task being optimized. Used to pick reward. Pick from: binary_easy, binary_hard, river, pond ect.",
+        help="The task being optimized. Used to pick reward. Pick from: binary_easy, binary_hard, river, pond ect. Specify one or more --task flags to combine tasks."
     )
 
     args = parser.parse_args()
@@ -575,6 +575,11 @@ if __name__ == "__main__":
         "grass": grass_biome_reward,
         "hill": hill_biome_reward,
     }
+    
+    if len(args.task) == 1:
+        selected_reward = task_rewards[args.task[0]]
+    else:
+        selected_reward = CombinedReward([task_rewards[task] for task in args.task]) # partial(binary_reward, target_path_length=30),
 
     # Create the WFC environment instance
     env = WFCWrapper(
@@ -584,9 +589,7 @@ if __name__ == "__main__":
         adjacency_bool=adjacency_bool,
         num_tiles=num_tiles,
         tile_to_index=tile_to_index,
-        reward=CombinedReward(
-            [task_rewards[task] for task in args.task]
-        ),  # partial(binary_reward, target_path_length=30),
+        reward=selected_reward,
         deterministic=True,
         # qd_function=binary_percent_water if args.qd else None,
     )
@@ -693,7 +696,7 @@ if __name__ == "__main__":
     if best_agent:
         print("\nInitializing Pygame for rendering the best map...")
         pygame.init()
-        task_name = "_".join([task for task in args.task])
+        task_name = "_".join(args.task)
         render_best_agent(env, best_agent, tile_images, task_name)
     else:
         print("\nNo best agent was found during the process.")
@@ -702,7 +705,7 @@ if __name__ == "__main__":
     os.makedirs(AGENT_DIR, exist_ok=True)
     # save the best agent in a .pkl file
     if best_agent:
-        task_str = "_".join([task for task in args.task])
+        task_str = "_".join(args.task)
         filename = f"{AGENT_DIR}/best_evolved_{task_str}_reward_{best_agent.reward:.2f}_agent.pkl"
         with open(filename, "wb") as f:
             pickle.dump({
