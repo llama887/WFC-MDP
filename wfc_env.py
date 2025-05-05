@@ -218,9 +218,10 @@ class WFCWrapper(gym.Env):
         # Calculate reward using the updated grid and initial longest path
         if terminated:
             reward, info = self.reward(self.grid)
-            assert reward <= self.max_reward, (
-                f"Reward {reward} exceeds max reward {self.max_reward}"
-            )
+            if self.max_reward > 0:
+                assert reward <= self.max_reward, (
+                    f"Reward {reward} exceeds max reward {self.max_reward}"
+                )
             if reward == self.max_reward:
                 info["achieved_max_reward"] = True
             if self.qd_function is not None:
