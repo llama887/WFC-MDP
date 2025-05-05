@@ -298,40 +298,72 @@ def combo_convergence_over_path_lengths(
     plt.savefig(f"{FIGURES_DIRECTORY}/combo_convergence_over_path.png")
     plt.close()
 
-def plot_task_convergence_bar_chart(csv_path: str = "convergence_summary.csv") -> None:
-    convergence_data = defaultdict(list)
+def collect_convergence_data(task_name: str, reward_fn, hyperparams, qd=False, runs=20):
+    adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
+    num_tiles = len(tile_symbols)
 
-    with open(csv_path, "r") as f:
-        reader = csv.reader(f)
-        for row in reader:
-            task = row[0]
-            gen = int(row[1])
-            convergence_data[task].append(gen)
+    MAP_LENGTH = 15
+    MAP_WIDTH = 20
+    generations_list = []
 
-    label_map = {
-        "pond_reward": "Pond",
-        "river_reward": "River",
-        "grass_reward": "Grass",
-        "hill_reward": "Hill",
-        "binary_easy_pond": "Binary + Pond",
+    for i in range(runs):
+        print(f"[{task_name}] Run {i+1}/{runs}")
+        env = WFCWrapper(
+            map_length=MAP_LENGTH,
+            map_width=MAP_WIDTH,
+            tile_symbols=tile_symbols,
+            adjacency_bool=adjacency_bool,
+            num_tiles=num_tiles,
+            tile_to_index=tile_to_index,
+            reward=reward_fn,
+            deterministic=True,
+            qd_function=binary_percent_water if qd else None,
+        )
+
+        _, best_agent, generations, _, _ = evolve(
+            env=env,
+            generations=100,
+            population_size=hyperparams["population_size"],
+            number_of_actions_mutated_mean=hyperparams["number_of_actions_mutated_mean"],
+            number_of_actions_mutated_standard_deviation=hyperparams["number_of_actions_mutated_standard_deviation"],
+            action_noise_standard_deviation=hyperparams["action_noise_standard_deviation"],
+            survival_rate=hyperparams["survival_rate"],
+        )
+
+        if best_agent.info.get("achieved_max_reward", False):
+            generations_list.append(generations)
+
+    return generations_list
+
+
+def plot_avg_task_convergence(hyperparams, qd=False):
+    task_info = {
+        "Pond": pond_reward,
+        "River": river_reward,
+        "Grass": grass_reward,
+        "Hill": hill_reward,
     }
 
-    tasks = []
     means = []
+    errors = []
+    labels = []
 
-    for task, gens in convergence_data.items():
-        pretty_label = label_map.get(task, task.replace("_", " ").title())
-        tasks.append(pretty_label)
-        means.append(sum(gens) / len(gens))
+    for label, reward_fn in task_info.items():
+        gens = collect_convergence_data(label, reward_fn, hyperparams, qd=qd)
+        if gens:
+            labels.append(label)
+            means.append(np.mean(gens))
+            errors.append(np.std(gens) / np.sqrt(len(gens)))
+        else:
+            print(f"[WARNING] No converged runs for {label}.")
 
     plt.figure(figsize=(10, 5))
-    plt.bar(tasks, means, color="mediumpurple")
-    plt.title("Mean Generations to Converge per Task")
-    plt.ylabel("Average Generations")
-    plt.xlabel("Task")
-    plt.xticks(rotation=20)
+    plt.bar(labels, means, yerr=errors, capsize=5, color="mediumpurple")
+    plt.title("Mean Generations to Converge per Biome (20 runs)")
+    plt.ylabel("Avg. Generations")
+    plt.xlabel("Biome")
     plt.tight_layout()
-    plt.savefig(f"{FIGURES_DIRECTORY}/task_convergence_bar_chart.png")
+    plt.savefig(f"{FIGURES_DIRECTORY}/mean_convergence_bar_chart.png")
     plt.close()
 
 
@@ -385,4 +417,5 @@ if __name__ == "__main__":
     print(f"[Combo] Plotting finished in {time.time() - start_time:.2f} seconds.")
 
     # ---- SUMMARY BAR CHART ----
-    plot_task_convergence_bar_chart()
+    plot_avg_task_convergence(hyperparams, args.qd)
+
