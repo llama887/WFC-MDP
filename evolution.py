@@ -213,7 +213,7 @@ def evolve(
             or patience_counter >= patience
         ):
             print(f"[DEBUG] Converged at generation {gen}")
-            task_str = "_".join(env.reward.__name__ if hasattr(env.reward, '__name__') else args.task)
+            task_str = getattr(env.reward, '__name__', type(env.reward).__name__)
             with open("convergence_summary.csv", "a") as f:
                 f.write(f"{task_str},{gen}\n")
 

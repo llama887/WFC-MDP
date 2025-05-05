@@ -345,7 +345,9 @@ if __name__ == "__main__":
         default=None,
         help="Path to a YAML file containing hyperparameters to load.",
     )
-    
+
+    parser.add_argument('--qd', action='store_true', help='Use QD variant of evolution')
+
     args = parser.parse_args()
     
     if args.load_hyperparameters:
