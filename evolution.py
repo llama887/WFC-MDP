@@ -462,6 +462,7 @@ def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images
 
         pygame.display.flip()
         
+        # Capture final frame if this is the last step
         if terminate or truncate:
             break
 
