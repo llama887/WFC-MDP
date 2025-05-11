@@ -305,8 +305,8 @@ def objective(
     )
     survival_rate = trial.suggest_float("survival_rate", 0.01, 0.99)
     cross_over_method = trial.suggest_categorical("cross_over_method", [0, 1])
-    patience = trial.suggest_int("patience", 10, 20)
-    # Constuct Env
+    patience = trial.suggest_int("patience", 30, 100)
+    # Construct Env
     MAP_LENGTH = 15
     MAP_WIDTH = 20
 
@@ -319,9 +319,7 @@ def objective(
     for i in range(NUMBER_OF_SAMPLES):
         match task:
             case "binary":
-                target_path_length = random.randint(
-                    50, 70
-                )  # only focus on the harder problems
+                target_path_length = 80 # only focus on the harder problems
                 # Create the WFC environment instance
                 base_env = WFCWrapper(
                     map_length=MAP_LENGTH,
@@ -331,12 +329,12 @@ def objective(
                     num_tiles=num_tiles,
                     tile_to_index=tile_to_index,
                     reward=partial(
-                        binary_reward, target_path_length=target_path_length
+                        binary_reward, target_path_length=target_path_length, hard=True
                     ),
                     deterministic=True,
                     qd_function=binary_percent_water if qd else None,
                 )
-                print(f"Target Path Length: {target_path_length}")
+                # print(f"Target Path Length: {target_path_length}")
             case "river":
                 base_env = WFCWrapper(
                     map_length=MAP_LENGTH,
@@ -411,7 +409,7 @@ def objective(
 
     # Return the best reward but with account for how long it took
     print(f"Total Reward: {total_reward} | Time: {end_time - start_time}")
-    return total_reward - (0.001) * (end_time - start_time)
+    return total_reward
 
 def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images, task_name: str = ""):
     """Renders the action sequence of the best agent and saves the final map."""
