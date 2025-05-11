@@ -1,5 +1,6 @@
 import numpy as np
-from .utils import calc_num_regions
+from collections import deque
+from .utils import calc_num_regions, percent_target_tiles_excluding_excluded_tiles
 
 def get_river_biome(grid: list[list[set[str]]]) -> str:
     water_tiles = {
@@ -10,12 +11,16 @@ def get_river_biome(grid: list[list[set[str]]]) -> str:
 
     water_cells = 0
     shore_cells = 0
+    pure_water_cells = 0
+    
     for row in grid:
         for cell in row:
             if len(cell) == 1:
                 tile = next(iter(cell)).lower()
                 if tile in water_tiles:
                     water_cells += 1
+                    if tile == "water":
+                        pure_water_cells += 1
                     if "shore" in tile:
                         shore_cells += 1
 
@@ -26,25 +31,48 @@ def get_river_biome(grid: list[list[set[str]]]) -> str:
     water_ratio = water_cells / total_cells
     shore_ratio = shore_cells / water_cells if water_cells > 0 else 0
 
-    has_flow = check_river_flow(grid, water_tiles, "horizontal") or \
-               check_river_flow(grid, water_tiles, "vertical")
+    has_flow = measure_river_flow(grid, water_tiles) >= min(len(grid), len(grid[0])) * 0.75
 
     if has_flow and 0.2 <= water_ratio <= 0.4 and shore_ratio <= 0.3:
         return "river"
     return "unknown"
 
-def check_river_flow(
-    grid: list[list[set[str]]], water_tiles: set[str], direction: str
-) -> bool:
-    if direction == "horizontal":
-        for y in range(len(grid)):
-            if has_water_path(grid, (0, y), (len(grid[0]) - 1, y), water_tiles):
-                return True
-    else:
-        for x in range(len(grid[0])):
-            if has_water_path(grid, (x, 0), (x, len(grid) - 1), water_tiles):
-                return True
-    return False
+def measure_river_flow(grid: list[list[set[str]]], water_tiles: set[str]) -> float:
+    h, w = len(grid), len(grid[0])
+    water_map = np.zeros((h, w), dtype=bool)
+    
+    for y in range(h):
+        for x in range(w):
+            cell = grid[y][x]
+            if len(cell) == 1 and next(iter(cell)).lower() in water_tiles:
+                water_map[y, x] = True
+
+    def measure_flow(axis: int) -> float:
+        max_flow = 0
+        if axis == 0:  # horizontal
+            for y in range(h):
+                current = 0
+                for x in range(w):
+                    if water_map[y, x]:
+                        current += 1
+                        max_flow = max(max_flow, current)
+                    else:
+                        current = 0
+        else:  # vertical
+            for x in range(w):
+                current = 0
+                for y in range(h):
+                    if water_map[y, x]:
+                        current += 1
+                        max_flow = max(max_flow, current)
+                    else:
+                        current = 0
+        return max_flow
+
+    horizontal_flow = measure_flow(0)
+    vertical_flow = measure_flow(1)
+    
+    return max(horizontal_flow, vertical_flow)
 
 def river_reward(grid: list[list[set[str]]]) -> tuple[float, dict]:
     water_tiles = {
@@ -53,93 +81,126 @@ def river_reward(grid: list[list[set[str]]]) -> tuple[float, dict]:
         "shore_bl", "shore_br", "shore_lr", "shore_rl"
     }
 
-    water_map = np.zeros((len(grid), len(grid[0])), dtype=bool)
-    water_cells = 0
-    shore_cells = 0
-
-    for y in range(len(grid)):
-        for x in range(len(grid[0])):
-            if len(grid[y][x]) == 1:
-                tile = next(iter(grid[y][x])).lower()
+    h, w = len(grid), len(grid[0])
+    water_map = np.zeros((h, w), dtype=bool)
+    shore_map = np.zeros((h, w), dtype=bool)
+    
+    for y in range(h):
+        for x in range(w):
+            cell = grid[y][x]
+            if len(cell) == 1:
+                tile = next(iter(cell)).lower()
                 if tile in water_tiles:
                     water_map[y, x] = True
-                    water_cells += 1
                     if "shore" in tile:
-                        shore_cells += 1
+                        shore_map[y, x] = True
 
-    total_cells = len(grid) * len(grid[0])
-    if total_cells == 0:
+    # empty-grid guard
+    if h == 0 or w == 0:
         return -float('inf'), {}
 
-    water_ratio = water_cells / total_cells
-    shore_ratio = shore_cells / water_cells if water_cells > 0 else 0
+    water_ratio = percent_target_tiles_excluding_excluded_tiles(
+        grid,
+        is_target_tiles=lambda t: t.lower() in water_tiles,
+        exclude_prefixes=["path"],
+    )
+    
+    shore_ratio = (shore_map.sum() / water_map.sum()) if water_map.sum() > 0 else 0.0
 
-    has_horizontal_flow = check_river_flow(grid, water_tiles, "horizontal")
-    has_vertical_flow = check_river_flow(grid, water_tiles, "vertical")
-    has_flow = has_horizontal_flow or has_vertical_flow
+    flow_length = measure_river_flow(grid, water_tiles)
+    max_dimension = max(h, w)
+    flow_quality = flow_length / max_dimension if max_dimension > 0 else 0.0
 
     regions = calc_num_regions(water_map.astype(np.int8))
 
+    def largest_cluster(wmap: np.ndarray) -> int:
+        visited = np.zeros_like(wmap, dtype=bool)
+        best = 0
+        for y in range(h):
+            for x in range(w):
+                if wmap[y,x] and not visited[y,x]:
+                    size = 0
+                    dq = deque([(y,x)])
+                    visited[y,x] = True
+                    while dq:
+                        cy, cx = dq.popleft()
+                        size += 1
+                        for dy, dx in [(-1,0),(1,0),(0,-1),(0,1)]:
+                            ny, nx = cy+dy, cx+dx
+                            if (0 <= ny < h and 0 <= nx < w and 
+                                wmap[ny,nx] and not visited[ny,nx]):
+                                visited[ny,nx] = True
+                                dq.append((ny,nx))
+                    best = max(best, size)
+        return best
+
+    cluster_size = largest_cluster(water_map)
+
+    # Calculate interior water tiles
+    interior = 0
+    for y in range(1, h-1):
+        for x in range(1, w-1):
+            if water_map[y, x] and all(
+                water_map[y+dy, x+dx] for dy, dx in [(-1,0),(1,0),(0,-1),(0,1)]
+            ):
+                interior += 1
+    interior_ratio = (interior / water_map.sum()) if water_map.sum() > 0 else 0.0
+
+    # Reward parameters
     IDEAL_WATER_RATIO_MIN = 0.2
     IDEAL_WATER_RATIO_MAX = 0.4
     IDEAL_SHORE_RATIO = 0.3
     IDEAL_REGIONS = 1
+    MIN_FLOW_QUALITY = 0.75
+    FLOW_BONUS = 20
 
-    flow_penalty = 0 if has_flow else -100
-
+    # Calculate penalties and bonuses - now positive values mean better
+    # Water ratio penalty: how close we are to ideal range
     if water_ratio < IDEAL_WATER_RATIO_MIN:
-        water_penalty = (IDEAL_WATER_RATIO_MIN - water_ratio) * -200
+        water_penalty = (water_ratio - IDEAL_WATER_RATIO_MIN) * 100  # negative
     elif water_ratio > IDEAL_WATER_RATIO_MAX:
-        water_penalty = (water_ratio - IDEAL_WATER_RATIO_MAX) * -200
+        water_penalty = (IDEAL_WATER_RATIO_MAX - water_ratio) * 100  # negative
     else:
-        water_penalty = 0
+        # Within ideal range - bonus based on how centered we are
+        center = (IDEAL_WATER_RATIO_MIN + IDEAL_WATER_RATIO_MAX) / 2
+        water_penalty = -abs(water_ratio - center) * 50  # small penalty for not being centered
 
-    shore_penalty = max(0, (shore_ratio - IDEAL_SHORE_RATIO)) * -100
-    region_penalty = abs(regions - IDEAL_REGIONS) * -50
-    flow_bonus = 20 if (has_horizontal_flow and has_vertical_flow) else 0
+    # Shore ratio penalty: how close we are to ideal
+    shore_penalty = -abs(shore_ratio - IDEAL_SHORE_RATIO) * 100
+    
+    # Region penalty: how close to 1 region we are
+    region_penalty = -abs(regions - IDEAL_REGIONS) * 50
+    
+    # Flow quality: bonus for good flow, penalty for bad
+    flow_penalty = -50 if flow_quality < MIN_FLOW_QUALITY else 0
+    flow_bonus = FLOW_BONUS * flow_quality if flow_quality >= MIN_FLOW_QUALITY else 0
+    
+    # Cluster size bonus: bigger is better
+    cluster_bonus = cluster_size * 0.5
+    
+    # Interior bonus: more interior water is better
+    interior_bonus = interior_ratio * 20
 
-    total_reward = flow_penalty + water_penalty + shore_penalty + region_penalty + flow_bonus
+    # Combine all components - now we sum them (they're all negative or positive)
+    total_reward = (
+        water_penalty
+        + shore_penalty
+        + region_penalty
+        + flow_penalty
+        + flow_bonus
+        + cluster_bonus
+        + interior_bonus
+    )
 
-    return min(total_reward, 0), {
-        "flow": has_flow,
+    # Clamp at 0 (perfect score) - but now higher is better
+    total_reward = min(total_reward, 0.0)
+
+    return total_reward, {
+        "water_ratio": round(water_ratio, 3),
+        "shore_ratio": round(shore_ratio, 3),
+        "flow_quality": round(flow_quality, 3),
         "regions": regions,
-        "water_ratio": water_ratio,
-        "shore_ratio": shore_ratio,
-        "flow_bonus": flow_bonus,
-        "reward": total_reward
+        "cluster_size": cluster_size,
+        "interior_ratio": round(interior_ratio, 3),
+        "reward": total_reward,
     }
-
-def has_water_path(
-    grid: list[list[set[str]]], start: tuple, end: tuple, water_tiles: set[str]
-) -> bool:
-    """Check if there's a continuous water path between two points."""
-    from collections import deque
-
-    water_map = np.zeros((len(grid), len(grid[0])), dtype=bool)
-    for y in range(len(grid)):
-        for x in range(len(grid[0])):
-            if len(grid[y][x]) == 1 and next(iter(grid[y][x])).lower() in water_tiles:
-                water_map[y, x] = True
-
-    if not water_map[start[1], start[0]] or not water_map[end[1], end[0]]:
-        return False
-
-    visited = set()
-    queue = deque([start])
-    visited.add(start)
-
-    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-
-    while queue:
-        current = queue.popleft()
-        if current == end:
-            return True
-
-        for dx, dy in directions:
-            x, y = current[0] + dx, current[1] + dy
-            if (0 <= x < len(grid[0]) and 0 <= y < len(grid) 
-                and water_map[y, x] and (x, y) not in visited):
-                visited.add((x, y))
-                queue.append((x, y))
-
-    return False
