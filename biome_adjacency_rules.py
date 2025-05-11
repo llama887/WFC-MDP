@@ -444,6 +444,16 @@ TILES = {
         },
         "image": "tiles_32x32_B/tile_6_4.png",
     },
+    #pond
+    "pond": {
+        "edges": {
+            "U": ["pond_t", "pond"],
+            "D": ["pond_b", "pond"],
+            "L": ["pond_l", "pond"],
+            "R": ["pond_r", "pond"],
+        },
+        "image": "tiles_32x32_B/tile_8_1.png",
+    },
 }
 
 OPPOSITE_DIRECTION = {"U": "D", "D": "U", "L": "R", "R": "L"}

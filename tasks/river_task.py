@@ -12,7 +12,7 @@ def get_river_biome(grid: list[list[set[str]]]) -> str:
     water_cells = 0
     shore_cells = 0
     pure_water_cells = 0
-    
+
     for row in grid:
         for cell in row:
             if len(cell) == 1:

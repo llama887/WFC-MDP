@@ -6,7 +6,8 @@ def get_pond_biome(grid: list[list[set[str]]]) -> str:
     water_tiles = {
         "water", "water_tl", "water_tr", "water_t", "water_l", "water_r",
         "water_bl", "water_b", "water_br", "shore_tl", "shore_tr",
-        "shore_bl", "shore_br", "shore_lr", "shore_rl"
+        "shore_bl", "shore_br", "shore_lr", "shore_rl",
+        "pond"
     }
 
     water_cells = 0
@@ -19,7 +20,7 @@ def get_pond_biome(grid: list[list[set[str]]]) -> str:
                 tile = next(iter(cell)).lower()
                 if tile in water_tiles:
                     water_cells += 1
-                    if tile == "water":
+                    if tile == "water" or tile == "pond":
                         pure_water_cells += 1
                     if "shore" in tile:
                         shore_cells += 1
@@ -62,7 +63,8 @@ def pond_reward(grid: list[list[set[str]]]) -> tuple[float, dict]:
     water_tiles = {
         "water","water_tl","water_tr","water_t","water_l","water_r",
         "water_bl","water_b","water_br",
-        "shore_tl","shore_tr","shore_bl","shore_br","shore_lr","shore_rl"
+        "shore_tl","shore_tr","shore_bl","shore_br","shore_lr","shore_rl",
+        "pond"
     }
 
     h, w = len(grid), len(grid[0])
