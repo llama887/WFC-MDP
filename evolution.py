@@ -71,7 +71,7 @@ class PopulationMember:
             max(0, min(len(self.action_sequence), number_of_actions_mutated))
         )
 
-        # mutate that number of actions by adding noise sampled from a normal distribution to all values in the action
+    # mutate that number of actions by adding noise sampled from a normal distribution to all values in the action
         mutating_indices = np.random.choice(
             len(self.action_sequence), int(number_of_actions_mutated), replace=False
         )
@@ -213,6 +213,9 @@ def evolve(
             or patience_counter >= patience
         ):
             print(f"[DEBUG] Converged at generation {gen}")
+            print(f"[DEBUG] Best agent reward: {best_agent.reward}")
+            print(f"[DEBUG] Median agent reward: {median_val}")
+            print(f"[DEBUG] Patience counter: {patience_counter}")
             task_str = getattr(env.reward, '__name__', type(env.reward).__name__)
             with open("convergence_summary.csv", "a") as f:
                 f.write(f"{task_str},{gen}\n")
