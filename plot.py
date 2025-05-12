@@ -129,11 +129,14 @@ def binary_convergence_over_path_lengths(
             hard_prefix = "hard_" if hard else ""
             hard_label = ", hard" if hard else ""
 
-            with open(
-                f"{AGENT_DIR}/{qd_prefix}{hard_prefix}_binary{path_length}_agent.pkl",
-                "wb",
-            ) as f:
-                pickle.dump(best_agent, f)
+            if not os.path.exists(
+                f"{AGENT_DIR}/{qd_prefix}{hard_prefix}_binary{path_length}_agent.pkl"
+            ) and best_agent.info.get("achieved_max_reward", False):
+                with open(
+                    f"{AGENT_DIR}/{qd_prefix}{hard_prefix}_binary{path_length}_agent.pkl",
+                    "wb",
+                ) as f:
+                    pickle.dump(best_agent, f)
 
             # x_axis = np.arange(1, len(median_agent_rewards) + 1)
             # plt.plot(x_axis, best_agent_rewards, label="Best Agent")
@@ -293,11 +296,14 @@ def combo_convergence_over_path_lengths(
             hard_prefix = "hard_" if hard else ""
             hard_label = ", hard" if hard else ""
             if best_agent.info.get("achieved_max_reward", False):
-                with open(
-                    f"{AGENT_DIR}/{qd_prefix}{second_task}_{hard_prefix}combo_agent_{path_length}.pkl",
-                    "wb",
-                ) as f:
-                    pickle.dump(best_agent, f)
+                if not os.path.exists(
+                    f"{AGENT_DIR}/{qd_prefix}{hard_prefix}_binary{path_length}_agent.pkl"
+                ):
+                    with open(
+                        f"{AGENT_DIR}/{qd_prefix}{second_task}_{hard_prefix}combo_agent_{path_length}.pkl",
+                        "wb",
+                    ) as f:
+                        pickle.dump(best_agent, f)
                 generations_to_converge[idx, sample_idx] = generations
 
             # plt.plot(best_rewards, label="Best Agent")
@@ -479,9 +485,7 @@ if __name__ == "__main__":
 
     # ---- COMBO ----
     start_time = time.time()
-    combo_convergence_over_path_lengths(
-        20, hyperparams, second_task="pond", qd=args.qd
-    )
+    combo_convergence_over_path_lengths(20, hyperparams, second_task="pond", qd=args.qd)
     print(f"[pond] Plotting finished in {time.time() - start_time:.2f} seconds.")
 
     start_time = time.time()
@@ -490,39 +494,30 @@ if __name__ == "__main__":
     )
     print(f"[pond] Plotting finished in {time.time() - start_time:.2f} seconds.")
 
-
     start_time = time.time()
     combo_convergence_over_path_lengths(
         20, hyperparams, second_task="river", qd=args.qd
     )
-    print(
-        f"[river] Plotting finished in {time.time() - start_time:.2f} seconds."
-    )
+    print(f"[river] Plotting finished in {time.time() - start_time:.2f} seconds.")
 
     start_time = time.time()
     combo_convergence_over_path_lengths(
         20, hyperparams, second_task="river", qd=args.qd, hard=True
     )
-    print(
-        f"[river] Plotting finished in {time.time() - start_time:.2f} seconds."
-    )
-    
+    print(f"[river] Plotting finished in {time.time() - start_time:.2f} seconds.")
+
     start_time = time.time()
     combo_convergence_over_path_lengths(
         20, hyperparams, second_task="grass", qd=args.qd
     )
-    print(
-        f"[grass] Plotting finished in {time.time() - start_time:.2f} seconds."
-    )
+    print(f"[grass] Plotting finished in {time.time() - start_time:.2f} seconds.")
 
     start_time = time.time()
     combo_convergence_over_path_lengths(
         20, hyperparams, second_task="grass", qd=args.qd, hard=True
     )
-    print(
-        f"[grass] Plotting finished in {time.time() - start_time:.2f} seconds."
-    )
-    
+    print(f"[grass] Plotting finished in {time.time() - start_time:.2f} seconds.")
+
     # start_time = time.time()
     # combo_convergence_over_path_lengths(
     #     20, hyperparams, second_task=pond_reward, qd=args.qd
