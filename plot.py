@@ -482,5 +482,27 @@ if __name__ == "__main__":
     )
     print(f"[Pond_reward] Plotting finished in {time.time() - start_time:.2f} seconds.")
 
+    start_time = time.time()
+    combo_convergence_over_path_lengths(
+        20, hyperparams, second_reward=pond_reward, qd=args.qd
+    )
+    print(
+        f"[River_reward] Plotting finished in {time.time() - start_time:.2f} seconds."
+    )
+
+    start_time = time.time()
+    combo_convergence_over_path_lengths(
+        20, hyperparams, second_reward=pond_reward, qd=args.qd
+    )
+    print(
+        f"[Grass_reward] Plotting finished in {time.time() - start_time:.2f} seconds."
+    )
+
+    start_time = time.time()
+    combo_convergence_over_path_lengths(
+        20, hyperparams, second_reward=pond_reward, qd=args.qd
+    )
+    print(f"[Hill_reward] Plotting finished in {time.time() - start_time:.2f} seconds.")
+
     # ---- SUMMARY BAR CHART ----
     plot_avg_task_convergence(hyperparams, args.qd)
