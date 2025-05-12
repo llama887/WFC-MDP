@@ -14,17 +14,20 @@ import matplotlib.pyplot as plt
 import numpy as np
 import csv
 from collections import defaultdict
+import _compat_pickle
 
 from biome_adjacency_rules import create_adjacency_matrix
 from evolution import evolve
 from tasks.binary_task import binary_percent_water, binary_reward
 from wfc_env import WFCWrapper
+from datetime import datetime
 
 from tasks.pond_task import pond_reward
 from tasks.river_task import river_reward
 from tasks.grass_task import grass_reward
 from tasks.hill_task import hill_reward
 from wfc_env import CombinedReward
+from typing import Callable
 
 FIGURES_DIRECTORY = "figures"
 os.makedirs(FIGURES_DIRECTORY, exist_ok=True)
@@ -209,12 +212,14 @@ def combo_convergence_over_path_lengths(
     sample_size: int,
     evolution_hyperparameters: dict[str, Any],
     qd: bool,
+    second_task: str,
     hard: bool = False,
 ) -> None:
     """
     Line plot of generations to converge using CombinedReward
     over various path lengths, and bar chart for convergence fraction.
     """
+    AGENT_DIR = f"agents_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     MIN_PATH_LENGTH = 10
     MAX_PATH_LENGTH = 100
     STEP = 10
@@ -228,13 +233,20 @@ def combo_convergence_over_path_lengths(
     path_lengths = np.arange(MIN_PATH_LENGTH, MAX_PATH_LENGTH + 1, STEP)
     generations_to_converge = np.full((len(path_lengths), sample_size), np.nan)
 
+    task_rewards = {
+        "river": river_reward,
+        "pond": pond_reward,
+        "grass": grass_reward,
+        "hill": hill_reward,
+    }
+    second_reward = task_rewards.get(second_task)
+
     for idx, path_length in enumerate(path_lengths):
         for sample_idx in range(sample_size):
             print(f"[COMBO] Path {path_length}, Run {sample_idx+1}/{sample_size}")
             reward_fn = CombinedReward([
                 partial(binary_reward, target_path_length=path_length, hard=hard),
-                pond_reward,
-                river_reward
+                second_reward,
             ])
 
             env = WFCWrapper(
@@ -259,16 +271,23 @@ def combo_convergence_over_path_lengths(
                 survival_rate=evolution_hyperparameters["survival_rate"],
             )
 
+            qd_prefix = "qd_" if qd else ""
+            qd_label = ", QD" if qd else ""
+            hard_prefix = "hard_" if hard else ""
+            hard_label = ", hard" if hard else ""
             if best_agent.info.get("achieved_max_reward", False):
+                with open(f"{AGENT_DIR}/{qd_prefix}{second_task}_{hard_prefix}combo_agent_{path_length}.pkl", "wb") as f:
+                    pickle.dump(best_agent, f)  
                 generations_to_converge[idx, sample_idx] = generations
 
             plt.plot(best_rewards, label="Best Agent")
             plt.plot(median_rewards, label="Median Agent")
-            plt.title(f"Combined Reward Performance (path={path_length}, run={sample_idx})")
+            plt.title(f"Combined Reward Performance (path={path_length}, run={sample_idx}, biome={second_task}{qd_label}{hard_label})")
+            plt.legend()
             plt.xlabel("Generation")
             plt.ylabel("Reward")
             plt.legend()
-            plt.savefig(f"{FIGURES_DIRECTORY}/combo_perf_{path_length}_run{sample_idx}.png")
+            plt.savefig(f"{FIGURES_DIRECTORY}/{qd_prefix}{second_task}_{hard_prefix}combo_perf_{path_length}_run{sample_idx}.png")
             plt.close()
 
     num_converged = np.sum(~np.isnan(generations_to_converge), axis=1)
@@ -413,8 +432,8 @@ if __name__ == "__main__":
 
     # ---- COMBO ----
     start_time = time.time()
-    combo_convergence_over_path_lengths(20, hyperparams, args.qd)
-    print(f"[Combo] Plotting finished in {time.time() - start_time:.2f} seconds.")
+    combo_convergence_over_path_lengths(20, hyperparams, second_reward=pond_reward, qd=args.qd)
+    print(f"[Pond_reward] Plotting finished in {time.time() - start_time:.2f} seconds.")
 
     # ---- SUMMARY BAR CHART ----
     plot_avg_task_convergence(hyperparams, args.qd)
