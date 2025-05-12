@@ -19,7 +19,6 @@ from biome_adjacency_rules import create_adjacency_matrix
 from evolution import evolve
 from tasks.binary_task import binary_percent_water, binary_reward
 from tasks.grass_task import grass_reward
-from tasks.hill_task import hill_reward
 from tasks.pond_task import pond_reward
 from tasks.river_task import river_reward
 from wfc_env import CombinedReward, WFCWrapper
@@ -237,9 +236,7 @@ def combo_convergence_over_path_lengths(
     MAX_GENERATIONS = 100
     MAP_LENGTH = 15
     MAP_WIDTH = 20
-
-    from biome_adjacency_rules import create_adjacency_matrix
-
+    
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     num_tiles = len(tile_symbols)
     path_lengths = np.arange(MIN_PATH_LENGTH, MAX_PATH_LENGTH + 1, STEP)
@@ -248,8 +245,7 @@ def combo_convergence_over_path_lengths(
     task_rewards = {
         "river": river_reward,
         "pond": pond_reward,
-        "grass": grass_reward,
-        "hill": hill_reward,
+        "grass": grass_reward
     }
     second_reward = task_rewards.get(second_task)
 
@@ -415,8 +411,7 @@ def plot_avg_task_convergence(hyperparams, qd=False):
     task_info = {
         "Pond": pond_reward,
         "River": river_reward,
-        "Grass": grass_reward,
-        "Hill": hill_reward,
+        "Grass": grass_reward
     }
 
     means = []
@@ -559,11 +554,5 @@ if __name__ == "__main__":
     # )
     # print(f"[grass] Plotting finished in {time.time() - start_time:.2f} seconds.")
 
-    # start_time = time.time()
-    # combo_convergence_over_path_lengths(
-    #     20, hyperparams, second_task=pond_reward, qd=args.qd
-    # )
-    # print(f"[Hill_reward] Plotting finished in {time.time() - start_time:.2f} seconds.")
-
     # ---- SUMMARY BAR CHART ----
-    # plot_avg_task_convergence(hyperparams, args.qd)
+    plot_avg_task_convergence(hyperparams, args.qd)
