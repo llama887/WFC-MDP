@@ -48,6 +48,7 @@ def binary_convergence_over_path_lengths(
     """
     # Constants
     AGENT_DIR = f"agents_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    os.makedirs(AGENT_DIR, exist_ok=True)
     MIN_PATH_LENGTH = 10
     MAX_PATH_LENGTH = 100
     STEP = 10
@@ -226,6 +227,7 @@ def combo_convergence_over_path_lengths(
     over various path lengths, and bar chart for convergence fraction.
     """
     AGENT_DIR = f"agents_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    os.makedirs(AGENT_DIR, exist_ok=True)
     MIN_PATH_LENGTH = 10
     MAX_PATH_LENGTH = 100
     STEP = 10
@@ -486,7 +488,7 @@ if __name__ == "__main__":
     combo_convergence_over_path_lengths(
         20, hyperparams, second_task="pond", qd=args.qd, hard=True
     )
-    print(f"[Pond_reward] Plotting finished in {time.time() - start_time:.2f} seconds.")
+    print(f"[pond] Plotting finished in {time.time() - start_time:.2f} seconds.")
 
 
     start_time = time.time()
@@ -513,7 +515,7 @@ if __name__ == "__main__":
         f"[grass] Plotting finished in {time.time() - start_time:.2f} seconds."
     )
 
-        start_time = time.time()
+    start_time = time.time()
     combo_convergence_over_path_lengths(
         20, hyperparams, second_task="grass", qd=args.qd, hard=True
     )
