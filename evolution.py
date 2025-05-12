@@ -20,20 +20,20 @@ from tqdm import tqdm
 
 from biome_adjacency_rules import create_adjacency_matrix
 from tasks.binary_task import binary_percent_water, binary_reward
-from tasks.river_task import river_reward
-from tasks.pond_task import pond_reward
 from tasks.grass_task import grass_reward
 from tasks.hill_task import hill_reward
-
+from tasks.pond_task import pond_reward
+from tasks.river_task import river_reward
 from wfc import (  # We might not need render_wfc_grid if we keep console rendering
     load_tile_images,
-    render_wfc_grid,
 )
 from wfc_env import CombinedReward, WFCWrapper
+
 
 class CrossOverMethod(Enum):
     UNIFORM = 0
     ONE_POINT = 1
+
 
 class PopulationMember:
     def __init__(self, env: WFCWrapper):
@@ -71,7 +71,7 @@ class PopulationMember:
             max(0, min(len(self.action_sequence), number_of_actions_mutated))
         )
 
-    # mutate that number of actions by adding noise sampled from a normal distribution to all values in the action
+        # mutate that number of actions by adding noise sampled from a normal distribution to all values in the action
         mutating_indices = np.random.choice(
             len(self.action_sequence), int(number_of_actions_mutated), replace=False
         )
@@ -216,7 +216,7 @@ def evolve(
             print(f"[DEBUG] Best agent reward: {best_agent.reward}")
             print(f"[DEBUG] Median agent reward: {median_val}")
             print(f"[DEBUG] Patience counter: {patience_counter}")
-            task_str = getattr(env.reward, '__name__', type(env.reward).__name__)
+            task_str = getattr(env.reward, "__name__", type(env.reward).__name__)
             with open("convergence_summary.csv", "a") as f:
                 f.write(f"{task_str},{gen}\n")
 
@@ -322,7 +322,7 @@ def objective(
     for i in range(NUMBER_OF_SAMPLES):
         match task:
             case "binary":
-                target_path_length = 80 # only focus on the harder problems
+                target_path_length = 80  # only focus on the harder problems
                 # Create the WFC environment instance
                 base_env = WFCWrapper(
                     map_length=MAP_LENGTH,
@@ -414,12 +414,15 @@ def objective(
     print(f"Total Reward: {total_reward} | Time: {end_time - start_time}")
     return total_reward
 
-def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images, task_name: str = ""):
+
+def render_best_agent(
+    env: WFCWrapper, best_agent: PopulationMember, tile_images, task_name: str = ""
+):
     """Renders the action sequence of the best agent and saves the final map."""
     if not best_agent:
         print("No best agent found to render.")
         return
-    
+
     pygame.init()
     SCREEN_WIDTH = env.map_width * 32
     SCREEN_HEIGHT = env.map_length * 32
@@ -428,20 +431,20 @@ def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images
 
     # Create a surface for saving the final map
     final_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-    
+
     env.reset()
     total_reward = 0
     print("Info:", best_agent.info)
     print("Rendering best agent's action sequence...")
-    
+
     for action in tqdm(best_agent.action_sequence, desc="Rendering Steps"):
         _, reward, terminate, truncate, _ = env.step(action)
         total_reward += reward
-        
+
         # Clear screen
         screen.fill((0, 0, 0))
         final_surface.fill((0, 0, 0))  # Also clear the final surface
-        
+
         # Render the current state to both surfaces
         for y in range(env.map_length):
             for x in range(env.map_width):
@@ -453,24 +456,32 @@ def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images
                         final_surface.blit(tile_images[tile_name], (x * 32, y * 32))
                     else:
                         # Fallback for missing tiles
-                        pygame.draw.rect(screen, (255, 0, 255), (x * 32, y * 32, 32, 32))
-                        pygame.draw.rect(final_surface, (255, 0, 255), (x * 32, y * 32, 32, 32))
+                        pygame.draw.rect(
+                            screen, (255, 0, 255), (x * 32, y * 32, 32, 32)
+                        )
+                        pygame.draw.rect(
+                            final_surface, (255, 0, 255), (x * 32, y * 32, 32, 32)
+                        )
                 elif len(cell_set) == 0:  # Contradiction
                     pygame.draw.rect(screen, (255, 0, 0), (x * 32, y * 32, 32, 32))
-                    pygame.draw.rect(final_surface, (255, 0, 0), (x * 32, y * 32, 32, 32))
+                    pygame.draw.rect(
+                        final_surface, (255, 0, 0), (x * 32, y * 32, 32, 32)
+                    )
                 else:  # Superposition
                     pygame.draw.rect(screen, (100, 100, 100), (x * 32, y * 32, 32, 32))
-                    pygame.draw.rect(final_surface, (100, 100, 100), (x * 32, y * 32, 32, 32))
+                    pygame.draw.rect(
+                        final_surface, (100, 100, 100), (x * 32, y * 32, 32, 32)
+                    )
 
         pygame.display.flip()
-        
+
         # Capture final frame if this is the last step
         if terminate or truncate:
             break
 
     # --- Draw the path with smooth curves ---
-    if hasattr(best_agent.info, 'get') and 'longest_path' in best_agent.info:
-        path_indices = best_agent.info['longest_path']
+    if hasattr(best_agent.info, "get") and "longest_path" in best_agent.info:
+        path_indices = best_agent.info["longest_path"]
         if path_indices and len(path_indices) > 1:
             print(f"Found path with {len(path_indices)} points")
 
@@ -487,41 +498,45 @@ def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images
             if len(path_points) >= 3:
                 # Create a list of points for smooth curve
                 smooth_points = []
-                
+
                 # Add the first point
                 smooth_points.append(path_points[0])
-                
+
                 # Add intermediate points with smoothing
-                for i in range(1, len(path_points)-1):
-                    prev = path_points[i-1]
+                for i in range(1, len(path_points) - 1):
+                    prev = path_points[i - 1]
                     curr = path_points[i]
-                    next_p = path_points[i+1]
-                    
+                    next_p = path_points[i + 1]
+
                     # Calculate control points for bezier curve
-                    ctrl1 = (
-                        (prev[0] + curr[0]) / 2,
-                        (prev[1] + curr[1]) / 2
-                    )
-                    ctrl2 = (
-                        (curr[0] + next_p[0]) / 2,
-                        (curr[1] + next_p[1]) / 2
-                    )
-                    
+                    ctrl1 = ((prev[0] + curr[0]) / 2, (prev[1] + curr[1]) / 2)
+                    ctrl2 = ((curr[0] + next_p[0]) / 2, (curr[1] + next_p[1]) / 2)
+
                     # Generate points along the bezier curve
                     t_values = np.linspace(0, 1, 10)
                     for t in t_values:
-                        x = (1-t)**2 * ctrl1[0] + 2*(1-t)*t * curr[0] + t**2 * ctrl2[0]
-                        y = (1-t)**2 * ctrl1[1] + 2*(1-t)*t * curr[1] + t**2 * ctrl2[1]
+                        x = (
+                            (1 - t) ** 2 * ctrl1[0]
+                            + 2 * (1 - t) * t * curr[0]
+                            + t**2 * ctrl2[0]
+                        )
+                        y = (
+                            (1 - t) ** 2 * ctrl1[1]
+                            + 2 * (1 - t) * t * curr[1]
+                            + t**2 * ctrl2[1]
+                        )
                         smooth_points.append((x, y))
-                
+
                 # Add the last point
                 smooth_points.append(path_points[-1])
-                
+
                 # Draw the smooth path on both surfaces
                 if len(smooth_points) > 1:
                     pygame.draw.lines(screen, (255, 0, 0), False, smooth_points, 3)
-                    pygame.draw.lines(final_surface, (255, 0, 0), False, smooth_points, 3)
-                    
+                    pygame.draw.lines(
+                        final_surface, (255, 0, 0), False, smooth_points, 3
+                    )
+
                     # Draw circles at the original path points
                     for point in path_points:
                         pygame.draw.circle(screen, (255, 0, 0), point, 4)
@@ -530,7 +545,7 @@ def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images
                 # Fallback to straight lines if not enough points for bezier
                 pygame.draw.lines(screen, (255, 0, 0), False, path_points, 3)
                 pygame.draw.lines(final_surface, (255, 0, 0), False, path_points, 3)
-                
+
                 for point in path_points:
                     pygame.draw.circle(screen, (255, 0, 0), point, 4)
                     pygame.draw.circle(final_surface, (255, 0, 0), point, 4)
@@ -543,7 +558,7 @@ def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images
         filename = f"wfc_reward_img/{task_name}_{best_agent.reward:.2f}.png"
         pygame.image.save(final_surface, filename)
         print(f"Saved final map to {filename}")
-    
+
     print(f"Final map reward for the best agent: {total_reward:.4f}")
     print(f"Best agent reward during evolution: {best_agent.reward:.4f}")
 
@@ -563,8 +578,9 @@ def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images
                 pygame.quit()
                 return
         pygame.display.flip()
-    
+
     pygame.quit()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -622,13 +638,13 @@ if __name__ == "__main__":
         action="append",
         default=[],
         choices=["binary_easy", "binary_hard", "river", "pond", "grass", "hill"],
-        help="The task being optimized. Used to pick reward. Pick from: binary_easy, binary_hard, river, pond ect. Specify one or more --task flags to combine tasks."
+        help="The task being optimized. Used to pick reward. Pick from: binary_easy, binary_hard, river, pond ect. Specify one or more --task flags to combine tasks.",
     )
     parser.add_argument(
         "--override-patience",
         type=int,
         default=None,
-        help="Override the patience setting from YAML."
+        help="Override the patience setting from YAML.",
     )
 
     args = parser.parse_args()
@@ -650,11 +666,13 @@ if __name__ == "__main__":
         "grass": grass_reward,
         "hill": hill_reward,
     }
-    
+
     if len(args.task) == 1:
         selected_reward = task_rewards[args.task[0]]
     else:
-        selected_reward = CombinedReward([task_rewards[task] for task in args.task]) # partial(binary_reward, target_path_length=30),
+        selected_reward = CombinedReward(
+            [task_rewards[task] for task in args.task]
+        )  # partial(binary_reward, target_path_length=30),
 
     # Create the WFC environment instance
     env = WFCWrapper(
@@ -787,13 +805,7 @@ if __name__ == "__main__":
         task_str = "_".join(args.task)
         filename = f"{AGENT_DIR}/best_evolved_{task_str}_reward_{best_agent.reward:.2f}_agent.pkl"
         with open(filename, "wb") as f:
-            pickle.dump({
-                'agent': best_agent,
-                'task': args.task,
-                'reward': best_agent.reward,
-                'generations': generations if 'generations' in locals() else None,
-                'hyperparameters': hyperparams if hyperparams else None
-            }, f)
+            pickle.dump(best_agent, f)
         print(f"Saved best agent to {filename}")
 
     print("Script finished.")

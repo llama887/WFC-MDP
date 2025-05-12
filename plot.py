@@ -7,24 +7,22 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+import pickle
+from datetime import datetime
 from functools import partial
 
-import yaml
 import matplotlib.pyplot as plt
 import numpy as np
-import csv
-from collections import defaultdict
+import yaml
 
 from biome_adjacency_rules import create_adjacency_matrix
 from evolution import evolve
 from tasks.binary_task import binary_percent_water, binary_reward
-from wfc_env import WFCWrapper
-
-from tasks.pond_task import pond_reward
-from tasks.river_task import river_reward
 from tasks.grass_task import grass_reward
 from tasks.hill_task import hill_reward
-from wfc_env import CombinedReward
+from tasks.pond_task import pond_reward
+from tasks.river_task import river_reward
+from wfc_env import CombinedReward, WFCWrapper
 
 FIGURES_DIRECTORY = "figures"
 os.makedirs(FIGURES_DIRECTORY, exist_ok=True)
@@ -49,6 +47,7 @@ def binary_convergence_over_path_lengths(
         Hyperparameters passed through to `evolve(...)`.
     """
     # Constants
+    AGENT_DIR = f"agents_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     MIN_PATH_LENGTH = 10
     MAX_PATH_LENGTH = 100
     STEP = 10
@@ -128,19 +127,26 @@ def binary_convergence_over_path_lengths(
             qd_label = ", QD" if qd else ""
             hard_prefix = "hard_" if hard else ""
             hard_label = ", hard" if hard else ""
-            x_axis = np.arange(1, len(median_agent_rewards) + 1)
-            plt.plot(x_axis, best_agent_rewards, label="Best Agent")
-            plt.plot(x_axis, median_agent_rewards, label="Median Agent")
-            plt.legend()
-            plt.title(
-                f"Performance (path={path_length}, run={sample_idx}{qd_label}{hard_label})"
-            )
-            plt.xlabel("Generation")
-            plt.ylabel("Reward")
-            plt.savefig(
-                f"{FIGURES_DIRECTORY}/{qd_prefix}binary{path_length}_{hard_prefix}performance_{sample_idx}.png"
-            )
-            plt.close()
+
+            with open(
+                f"{AGENT_DIR}/{qd_prefix}{hard_prefix}_binary{path_length}_agent.pkl",
+                "wb",
+            ) as f:
+                pickle.dump(best_agent, f)
+
+            # x_axis = np.arange(1, len(median_agent_rewards) + 1)
+            # plt.plot(x_axis, best_agent_rewards, label="Best Agent")
+            # plt.plot(x_axis, median_agent_rewards, label="Median Agent")
+            # plt.legend()
+            # plt.title(
+            #     f"Performance (path={path_length}, run={sample_idx}{qd_label}{hard_label})"
+            # )
+            # plt.xlabel("Generation")
+            # plt.ylabel("Reward")
+            # plt.savefig(
+            #     f"{FIGURES_DIRECTORY}/{qd_prefix}binary{path_length}_{hard_prefix}performance_{sample_idx}.png"
+            # )
+            # plt.close()
 
             # Record generations‐to‐converge or leave as NaN if it never converged
             if best_agent.info.get("achieved_max_reward", False):
@@ -202,19 +208,24 @@ def binary_convergence_over_path_lengths(
     ax1.legend(h1 + h2, l1 + l2, loc="upper left")
 
     fig.tight_layout()
-    plt.savefig(f"{FIGURES_DIRECTORY}/{qd_prefix}{hard_prefix}convergence_over_path.png")
+    plt.savefig(
+        f"{FIGURES_DIRECTORY}/{qd_prefix}{hard_prefix}convergence_over_path.png"
+    )
     plt.close()
+
 
 def combo_convergence_over_path_lengths(
     sample_size: int,
     evolution_hyperparameters: dict[str, Any],
     qd: bool,
+    second_task: str,
     hard: bool = False,
 ) -> None:
     """
     Line plot of generations to converge using CombinedReward
     over various path lengths, and bar chart for convergence fraction.
     """
+    AGENT_DIR = f"agents_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     MIN_PATH_LENGTH = 10
     MAX_PATH_LENGTH = 100
     STEP = 10
@@ -223,19 +234,29 @@ def combo_convergence_over_path_lengths(
     MAP_WIDTH = 20
 
     from biome_adjacency_rules import create_adjacency_matrix
+
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     num_tiles = len(tile_symbols)
     path_lengths = np.arange(MIN_PATH_LENGTH, MAX_PATH_LENGTH + 1, STEP)
     generations_to_converge = np.full((len(path_lengths), sample_size), np.nan)
 
+    task_rewards = {
+        "river": river_reward,
+        "pond": pond_reward,
+        "grass": grass_reward,
+        "hill": hill_reward,
+    }
+    second_reward = task_rewards.get(second_task)
+
     for idx, path_length in enumerate(path_lengths):
         for sample_idx in range(sample_size):
-            print(f"[COMBO] Path {path_length}, Run {sample_idx+1}/{sample_size}")
-            reward_fn = CombinedReward([
-                partial(binary_reward, target_path_length=path_length, hard=hard),
-                pond_reward,
-                river_reward
-            ])
+            print(f"[COMBO] Path {path_length}, Run {sample_idx + 1}/{sample_size}")
+            reward_fn = CombinedReward(
+                [
+                    partial(binary_reward, target_path_length=path_length, hard=hard),
+                    second_reward,
+                ]
+            )
 
             env = WFCWrapper(
                 map_length=MAP_LENGTH,
@@ -253,23 +274,43 @@ def combo_convergence_over_path_lengths(
                 env=env,
                 generations=MAX_GENERATIONS,
                 population_size=evolution_hyperparameters["population_size"],
-                number_of_actions_mutated_mean=evolution_hyperparameters["number_of_actions_mutated_mean"],
-                number_of_actions_mutated_standard_deviation=evolution_hyperparameters["number_of_actions_mutated_standard_deviation"],
-                action_noise_standard_deviation=evolution_hyperparameters["action_noise_standard_deviation"],
+                number_of_actions_mutated_mean=evolution_hyperparameters[
+                    "number_of_actions_mutated_mean"
+                ],
+                number_of_actions_mutated_standard_deviation=evolution_hyperparameters[
+                    "number_of_actions_mutated_standard_deviation"
+                ],
+                action_noise_standard_deviation=evolution_hyperparameters[
+                    "action_noise_standard_deviation"
+                ],
                 survival_rate=evolution_hyperparameters["survival_rate"],
             )
 
+            qd_prefix = "qd_" if qd else ""
+            qd_label = ", QD" if qd else ""
+            hard_prefix = "hard_" if hard else ""
+            hard_label = ", hard" if hard else ""
             if best_agent.info.get("achieved_max_reward", False):
+                with open(
+                    f"{AGENT_DIR}/{qd_prefix}{second_task}_{hard_prefix}combo_agent_{path_length}.pkl",
+                    "wb",
+                ) as f:
+                    pickle.dump(best_agent, f)
                 generations_to_converge[idx, sample_idx] = generations
 
-            plt.plot(best_rewards, label="Best Agent")
-            plt.plot(median_rewards, label="Median Agent")
-            plt.title(f"Combined Reward Performance (path={path_length}, run={sample_idx})")
-            plt.xlabel("Generation")
-            plt.ylabel("Reward")
-            plt.legend()
-            plt.savefig(f"{FIGURES_DIRECTORY}/combo_perf_{path_length}_run{sample_idx}.png")
-            plt.close()
+            # plt.plot(best_rewards, label="Best Agent")
+            # plt.plot(median_rewards, label="Median Agent")
+            # plt.title(
+            #     f"Combined Reward Performance (path={path_length}, run={sample_idx}, biome={second_task}{qd_label}{hard_label})"
+            # )
+            # plt.legend()
+            # plt.xlabel("Generation")
+            # plt.ylabel("Reward")
+            # plt.legend()
+            # plt.savefig(
+            #     f"{FIGURES_DIRECTORY}/{qd_prefix}{second_task}_{hard_prefix}combo_perf_{path_length}_run{sample_idx}.png"
+            # )
+            # plt.close()
 
     num_converged = np.sum(~np.isnan(generations_to_converge), axis=1)
     fraction_converged = num_converged / sample_size
@@ -281,22 +322,42 @@ def combo_convergence_over_path_lengths(
     ax2 = ax1.twinx()
     valid = num_converged > 0
 
-    ax1.errorbar(path_lengths[valid], mean_gens[valid], yerr=std_err[valid], fmt="o-", capsize=4, label="Mean Generations to Converge")
-    ax2.bar(path_lengths[valid], fraction_converged[valid], width=STEP * 0.8, alpha=0.3, label="Fraction Converged")
+    ax1.errorbar(
+        path_lengths[valid],
+        mean_gens[valid],
+        yerr=std_err[valid],
+        fmt="o-",
+        capsize=4,
+        label="Mean Generations to Converge",
+    )
+    ax2.bar(
+        path_lengths[valid],
+        fraction_converged[valid],
+        width=STEP * 0.8,
+        alpha=0.3,
+        label="Fraction Converged",
+    )
 
+    qd_label = " (QD)" if qd else ""
+    hard_label = " HARD" if hard else ""
     ax1.set_xlabel("Desired Path Length")
     ax1.set_ylabel("Mean Generations to Converge")
     ax2.set_ylabel("Fraction of Runs Converged")
     ax1.set_xticks(path_lengths)
-    ax1.set_title("Convergence vs Path Length (Combined Reward)")
+    ax1.set_title(
+        f"Combined Binary {second_task} Convergence vs Path Length{qd_label}{hard_label}"
+    )
 
     h1, l1 = ax1.get_legend_handles_labels()
     h2, l2 = ax2.get_legend_handles_labels()
     ax1.legend(h1 + h2, l1 + l2, loc="upper left")
 
     plt.tight_layout()
-    plt.savefig(f"{FIGURES_DIRECTORY}/combo_convergence_over_path.png")
+    plt.savefig(
+        f"{FIGURES_DIRECTORY}/{qd_prefix}{hard_prefix}{second_task}_combo_convergence_over_path.png"
+    )
     plt.close()
+
 
 def collect_convergence_data(task_name: str, reward_fn, hyperparams, qd=False, runs=20):
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
@@ -307,7 +368,7 @@ def collect_convergence_data(task_name: str, reward_fn, hyperparams, qd=False, r
     generations_list = []
 
     for i in range(runs):
-        print(f"[{task_name}] Run {i+1}/{runs}")
+        print(f"[{task_name}] Run {i + 1}/{runs}")
         env = WFCWrapper(
             map_length=MAP_LENGTH,
             map_width=MAP_WIDTH,
@@ -324,9 +385,15 @@ def collect_convergence_data(task_name: str, reward_fn, hyperparams, qd=False, r
             env=env,
             generations=100,
             population_size=hyperparams["population_size"],
-            number_of_actions_mutated_mean=hyperparams["number_of_actions_mutated_mean"],
-            number_of_actions_mutated_standard_deviation=hyperparams["number_of_actions_mutated_standard_deviation"],
-            action_noise_standard_deviation=hyperparams["action_noise_standard_deviation"],
+            number_of_actions_mutated_mean=hyperparams[
+                "number_of_actions_mutated_mean"
+            ],
+            number_of_actions_mutated_standard_deviation=hyperparams[
+                "number_of_actions_mutated_standard_deviation"
+            ],
+            action_noise_standard_deviation=hyperparams[
+                "action_noise_standard_deviation"
+            ],
             survival_rate=hyperparams["survival_rate"],
         )
 
@@ -368,9 +435,7 @@ def plot_avg_task_convergence(hyperparams, qd=False):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Plotting WFC Results"
-    )
+    parser = argparse.ArgumentParser(description="Plotting WFC Results")
     parser.add_argument(
         "--load-hyperparameters",
         type=str,
@@ -378,10 +443,10 @@ if __name__ == "__main__":
         help="Path to a YAML file containing hyperparameters to load.",
     )
 
-    parser.add_argument('--qd', action='store_true', help='Use QD variant of evolution')
+    parser.add_argument("--qd", action="store_true", help="Use QD variant of evolution")
 
     args = parser.parse_args()
-    
+
     if args.load_hyperparameters:
         # --- Load Hyperparameters and Run Evolution ---
         print(f"Loading hyperparameters from: {args.load_hyperparameters}")
@@ -389,7 +454,6 @@ if __name__ == "__main__":
             with open(args.load_hyperparameters, "r") as f:
                 hyperparams = yaml.safe_load(f)
             print("Successfully loaded hyperparameters:", hyperparams)
-
 
         except FileNotFoundError:
             print(
@@ -401,21 +465,44 @@ if __name__ == "__main__":
             exit(1)
 
     # ---- BINARY ----
-    start_time = time.time()
-    binary_convergence_over_path_lengths(20, hyperparams, args.qd)
-    elapsed = time.time() - start_time
-    print(f"Plotting finished in {elapsed:.2f} seconds.")
+    # start_time = time.time()
+    # binary_convergence_over_path_lengths(20, hyperparams, args.qd)
+    # elapsed = time.time() - start_time
+    # print(f"Plotting finished in {elapsed:.2f} seconds.")
 
-    start_time = time.time()
-    binary_convergence_over_path_lengths(20, hyperparams, args.qd, True)
-    elapsed = time.time() - start_time
-    print(f"Plotting finished in {elapsed:.2f} seconds.")
+    # start_time = time.time()
+    # binary_convergence_over_path_lengths(20, hyperparams, args.qd, True)
+    # elapsed = time.time() - start_time
+    # print(f"Plotting finished in {elapsed:.2f} seconds.")
 
     # ---- COMBO ----
     start_time = time.time()
-    combo_convergence_over_path_lengths(20, hyperparams, args.qd)
-    print(f"[Combo] Plotting finished in {time.time() - start_time:.2f} seconds.")
+    combo_convergence_over_path_lengths(
+        20, hyperparams, second_reward=pond_reward, qd=args.qd
+    )
+    print(f"[Pond_reward] Plotting finished in {time.time() - start_time:.2f} seconds.")
+
+    start_time = time.time()
+    combo_convergence_over_path_lengths(
+        20, hyperparams, second_reward=pond_reward, qd=args.qd
+    )
+    print(
+        f"[River_reward] Plotting finished in {time.time() - start_time:.2f} seconds."
+    )
+
+    start_time = time.time()
+    combo_convergence_over_path_lengths(
+        20, hyperparams, second_reward=pond_reward, qd=args.qd
+    )
+    print(
+        f"[Grass_reward] Plotting finished in {time.time() - start_time:.2f} seconds."
+    )
+
+    start_time = time.time()
+    combo_convergence_over_path_lengths(
+        20, hyperparams, second_reward=pond_reward, qd=args.qd
+    )
+    print(f"[Hill_reward] Plotting finished in {time.time() - start_time:.2f} seconds.")
 
     # ---- SUMMARY BAR CHART ----
     plot_avg_task_convergence(hyperparams, args.qd)
-
