@@ -158,7 +158,7 @@ def _compute_mutation_rate(hp: dict[str, Any], map_length: int, map_width: int) 
 def evolve_fi2pop(
     reward_fn: Any,
     task_args: Dict[str, Any],
-    generations: int = 200,
+    generations: int = 100,
     pop_size: int = 48,
     mutation_rate: float = 0.0559,
     tournament_k: int = 3,
@@ -292,7 +292,7 @@ def summary_sweep(
 # ----------------------------------------------------------------------------
 def plot_biome_convergence_bar(
     hyperparams: dict[str, Any],
-    runs: int = 30,
+    runs: int = 20,
     hard: bool = True
 ) -> None:
     tasks = {
@@ -305,7 +305,7 @@ def plot_biome_convergence_bar(
     pop_size     = hyperparams.get("population_size", 48)
     mut_rate     = _compute_mutation_rate(hyperparams, MAP_L, MAP_W)
     t_k          = hyperparams.get("tournament_k",    3)
-    MAX_G        = hyperparams.get("generations",    200)
+    MAX_G        = hyperparams.get("generations",    100)
 
     labels, means = [], []
     for name, fn in tasks.items():
@@ -345,7 +345,7 @@ def main():
     )
     parser.add_argument("-l","--load-hyperparameters", required=True,
                         help="Path to YAML of GA hyperparameters")
-    parser.add_argument("-r","--runs", type=int, default=30,
+    parser.add_argument("-r","--runs", type=int, default=20,
                         help="Trials per path length / per task")
     parser.add_argument("--min-path", type=int, default=10,
                         help="Min target path length")
