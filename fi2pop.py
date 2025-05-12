@@ -229,7 +229,7 @@ def evolve_fi2pop(
     return feasible, infeasible, first_gen, best_hist, median_hist
 
 # ----------------------------------------------------------------------------
-# Dual‐axis summary sweep over all combos & modes (10 plots)
+# Dual‐axis summary sweep over all combos & modes
 # ----------------------------------------------------------------------------
 def summary_sweep(
     hyperparams: dict[str, Any],
@@ -288,7 +288,7 @@ def summary_sweep(
             fig.tight_layout(); fig.savefig(out); plt.close(fig)
 
 # ----------------------------------------------------------------------------
-# Green‐bar biome‐only convergence (11th plot)
+# Green‐bar biome‐only convergence
 # ----------------------------------------------------------------------------
 def plot_biome_convergence_bar(
     hyperparams: dict[str, Any],
@@ -369,10 +369,10 @@ def main():
 
     args = parser.parse_args()
 
-    # default mode hard if neither specified
+    # default mode hard
     hard_flag = True if args.hard or not args.easy else False
 
-    # default to all analyses if none specified
+    # default to all analyses
     if not any([args.binary, args.binary_pond, args.binary_river,
                 args.binary_grass, args.binary_hill, args.bar_graph]):
         args.binary = args.binary_pond = args.binary_river = True
@@ -388,10 +388,6 @@ def main():
     if args.binary:
         print("==> Running Binary summary")
         summary_sweep(hyperparams, args.runs, path_lengths)
-
-    # Note: summary_sweep loops all combos; if you want per-flag,
-    # you could split out a helper for single combo—but as written,
-    # summary_sweep covers all five combos in requested modes.
 
     # bar graph
     if args.bar_graph:
