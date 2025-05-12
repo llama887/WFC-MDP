@@ -304,7 +304,8 @@ def combo_convergence_over_path_lengths_fi2pop(
             reward_fn = CombinedReward([
                 partial(binary_reward, target_path_length=L, hard=hard),
                 pond_reward,
-                river_reward
+                river_reward,
+                grass_reward
             ])
             _, _, first_gen, best_hist, med_hist = evolve_fi2pop(
                 reward_fn, {}, MAX_G, pop_size, mut_rate, t_k, True
