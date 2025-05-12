@@ -23,7 +23,7 @@ def river_reward(
 
     number_of_water_centers = count_tiles(
         grid,
-        "water"
+        lambda x: x == "water"
     )
 
     land_binary_map = grid_to_binary_map(

@@ -170,11 +170,11 @@ def calc_longest_path(binary_map: np.ndarray):
 
     return best_length, best_path
 
-def count_tiles(grid: list[list[set[str]]], tile_name: str) -> int:
+def count_tiles(grid: list[list[set[str]]], is_target_tile: Callable[[str], bool]) -> int:
     """Counts the number of tiles in the grid that match the given tile name."""
     count = 0
     for row in grid:
         for cell in row:
-            if len(cell) == 1 and next(iter(cell)) == tile_name:
+            if len(cell) == 1 and is_target_tile(next(iter(cell))):
                 count += 1
     return count
