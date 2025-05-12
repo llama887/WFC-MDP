@@ -478,31 +478,54 @@ if __name__ == "__main__":
     # ---- COMBO ----
     start_time = time.time()
     combo_convergence_over_path_lengths(
-        20, hyperparams, second_reward=pond_reward, qd=args.qd
+        20, hyperparams, second_task="pond", qd=args.qd
+    )
+    print(f"[pond] Plotting finished in {time.time() - start_time:.2f} seconds.")
+
+    start_time = time.time()
+    combo_convergence_over_path_lengths(
+        20, hyperparams, second_task="pond", qd=args.qd, hard=True
     )
     print(f"[Pond_reward] Plotting finished in {time.time() - start_time:.2f} seconds.")
 
+
     start_time = time.time()
     combo_convergence_over_path_lengths(
-        20, hyperparams, second_reward=pond_reward, qd=args.qd
+        20, hyperparams, second_task="river", qd=args.qd
     )
     print(
-        f"[River_reward] Plotting finished in {time.time() - start_time:.2f} seconds."
+        f"[river] Plotting finished in {time.time() - start_time:.2f} seconds."
     )
 
     start_time = time.time()
     combo_convergence_over_path_lengths(
-        20, hyperparams, second_reward=pond_reward, qd=args.qd
+        20, hyperparams, second_task="river", qd=args.qd, hard=True
     )
     print(
-        f"[Grass_reward] Plotting finished in {time.time() - start_time:.2f} seconds."
+        f"[river] Plotting finished in {time.time() - start_time:.2f} seconds."
     )
-
+    
     start_time = time.time()
     combo_convergence_over_path_lengths(
-        20, hyperparams, second_reward=pond_reward, qd=args.qd
+        20, hyperparams, second_task="grass", qd=args.qd
     )
-    print(f"[Hill_reward] Plotting finished in {time.time() - start_time:.2f} seconds.")
+    print(
+        f"[grass] Plotting finished in {time.time() - start_time:.2f} seconds."
+    )
+
+        start_time = time.time()
+    combo_convergence_over_path_lengths(
+        20, hyperparams, second_task="grass", qd=args.qd, hard=True
+    )
+    print(
+        f"[grass] Plotting finished in {time.time() - start_time:.2f} seconds."
+    )
+    
+    # start_time = time.time()
+    # combo_convergence_over_path_lengths(
+    #     20, hyperparams, second_task=pond_reward, qd=args.qd
+    # )
+    # print(f"[Hill_reward] Plotting finished in {time.time() - start_time:.2f} seconds.")
 
     # ---- SUMMARY BAR CHART ----
     plot_avg_task_convergence(hyperparams, args.qd)
