@@ -428,6 +428,7 @@ def render_best_agent(env: WFCWrapper, best_agent: PopulationMember, tile_images
     
     env.reset()
     total_reward = 0
+    print("Info:", best_agent.info)
     print("Rendering best agent's action sequence...")
     
     for action in tqdm(best_agent.action_sequence, desc="Rendering Steps"):
