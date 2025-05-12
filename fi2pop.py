@@ -159,7 +159,7 @@ def evolve_fi2pop(
     reward_fn: Any,
     task_args: Dict[str, Any],
     generations: int = 200,
-    pop_size: int = 37,
+    pop_size: int = 48,
     mutation_rate: float = 0.0559,
     tournament_k: int = 3,
     return_first_gen: bool = False
@@ -373,43 +373,76 @@ def plot_avg_task_convergence_fi2pop(
 # CLI entrypoint (hard-only)
 # ----------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="FI-2Pop HARD plotting")
-    parser.add_argument(
-        "--load-hyperparameters", "-l",
-        type=str, required=True,
-        help="Path to YAML file of binary hyperparameters"
+    import argparse
+    import yaml
+
+    parser = argparse.ArgumentParser(
+        description="FI-2Pop HARD-mode convergence sweeps"
     )
     parser.add_argument(
-        "--runs", "-r",
+        "-l", "--load-hyperparameters",
+        required=True,
+        help="Path to YAML file of GA hyperparameters"
+    )
+    parser.add_argument(
+        "-r", "--runs",
         type=int, default=30,
-        help="Trials per path length / per task"
+        help="Number of independent trials per path length or per task"
     )
+    # flags to select which analysis to run
+    parser.add_argument(
+        "--binary",
+        action="store_true",
+        help="Run only the binary-vs-path-length sweep"
+    )
+    parser.add_argument(
+        "--combo",
+        action="store_true",
+        help="Run only the combo-vs-path-length sweep"
+    )
+    parser.add_argument(
+        "--bar",
+        action="store_true",
+        help="Run only the per-task mean-convergence bar chart"
+    )
+
     args = parser.parse_args()
 
+    # If no flags are provided, default to running all three
+    if not (args.binary or args.combo or args.bar):
+        args.binary = args.combo = args.bar = True
+
+    # load hyperparameters
     with open(args.load_hyperparameters) as f:
         hyperparams = yaml.safe_load(f)
 
-    print("==> FI-2Pop Binary HARD Convergence")
-    binary_convergence_over_path_lengths_fi2pop(
-        sample_size=args.runs,
-        hyperparams=hyperparams,
-        hard=True
-    )
+    # 1) Binary sweep
+    if args.binary:
+        print("==> FI-2Pop Binary HARD Convergence")
+        binary_convergence_over_path_lengths_fi2pop(
+            sample_size=args.runs,
+            hyperparams=hyperparams,
+            hard=True
+        )
 
-    print("==> FI-2Pop Combo HARD Convergence")
-    combo_convergence_over_path_lengths_fi2pop(
-        sample_size=args.runs,
-        hyperparams=hyperparams,
-        hard=True
-    )
+    # 2) Combo sweep
+    if args.combo:
+        print("==> FI-2Pop Combo HARD Convergence")
+        combo_convergence_over_path_lengths_fi2pop(
+            sample_size=args.runs,
+            hyperparams=hyperparams,
+            hard=True
+        )
 
-    print("==> FI-2Pop Mean-Convergence Bar Chart")
-    plot_avg_task_convergence_fi2pop(
-        hyperparams=hyperparams,
-        runs=args.runs
-    )
+    # 3) Per-task bar chart
+    if args.bar:
+        print("==> FI-2Pop Mean-Convergence Bar Chart")
+        plot_avg_task_convergence_fi2pop(
+            hyperparams=hyperparams,
+            runs=args.runs
+        )
 
-    print("All HARD-mode FI-2Pop plots complete in 'figures/'")
-
+    print("Done.")
+    
 if __name__ == "__main__":
     main()
