@@ -9,3 +9,10 @@ pond_reward,34
 pond_reward,86
 pond_reward,80
 pond_reward,39
+CombinedReward,100
+river_reward,8
+river_reward,16
+river_reward,40
+CombinedReward,85
+grass_reward,31
+hill_reward,31
