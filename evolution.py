@@ -1,3 +1,4 @@
+from typing import Literal
 import argparse
 import copy
 import math
@@ -38,6 +39,7 @@ class CrossOverMethod(Enum):
 
 
 class PopulationMember:
+<<<<<<< HEAD
     def __init__(
         self, env: WFCWrapper, genotype_representation: Literal["1d", "2d"] = "1d"
     ):
@@ -45,6 +47,13 @@ class PopulationMember:
         self.env.reset()
         self.reward: float = float("-inf")
         self.genotype_representation: Literal["1d", "2d"] = genotype_representation
+=======
+    def __init__(self, env: WFCWrapper, genotype_representation: Literal["1d", "2d"]="1d"):
+        self.env: WFCWrapper = copy.deepcopy(env)
+        self.env.reset()
+        self.reward: float = float("-inf")
+        self.genotype_representation: Literal["1d", "2d"]=genotype_representation
+>>>>>>> 0241fcf (2d evolution representation)
         self.action_sequence: np.ndarray = np.array(
             [
                 self.env.action_space.sample()
@@ -94,7 +103,11 @@ class PopulationMember:
 
     def run_action_sequence(self):
         self.reward = 0
+<<<<<<< HEAD
         observation, _ = self.env.reset()
+=======
+        observation,  _ =self.env.reset()
+>>>>>>> 0241fcf (2d evolution representation)
         if self.genotype_representation == "1d":
             for idx, action in enumerate(self.action_sequence):
                 _, reward, terminate, truncate, info = self.env.step(action)
@@ -106,15 +119,22 @@ class PopulationMember:
             truncate = False
             terminate = False
             while not (terminate or truncate):
+<<<<<<< HEAD
                 next_collapse_x, next_collapse_y = map(int, observation[-2:])
                 # print(f"Next collapse: {next_collapse_x}, {next_collapse_y}")
                 flattened_index = next_collapse_y * self.env.map_width + next_collapse_x
                 observation, reward, terminate, truncate, info = self.env.step(
                     self.action_sequence[flattened_index]
                 )
+=======
+                next_collapse_x, next_collapse_y = observation[-2:]
+                flattened_index = next_collapse_y * self.env.map_width + next_collapse_x
+                _, reward, terminate, truncate, info = self.env.step(self.action_sequence[flattened_index]):
+>>>>>>> 0241fcf (2d evolution representation)
                 self.reward += reward
                 self.info = info
 
+                   
     @staticmethod
     def crossover(
         parent1: "PopulationMember",
@@ -275,7 +295,11 @@ def evolve(
                 pop_by_fit = sorted(population, key=lambda m: m.reward, reverse=True)
                 survivors = pop_by_fit[:2]
 
+<<<<<<< HEAD
         # 4) Reproduction
+=======
+        # 4) Reproduction 
+>>>>>>> 0241fcf (2d evolution representation)
         number_of_surviving_members = len(survivors)
         n_offspring = population_size - number_of_surviving_members
         n_pairs = math.ceil(n_offspring / 2)
