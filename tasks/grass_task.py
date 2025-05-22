@@ -1,7 +1,5 @@
 import numpy as np
-from collections import Counter
-from scipy.ndimage import label
-from .utils import count_tiles, grid_to_binary_map, percent_target_tiles_excluding_excluded_tiles
+from .utils import count_tiles, percent_target_tiles_excluding_excluded_tiles
 
 
 def grass_reward(grid: np.ndarray) -> tuple[float, dict[str, any]]:

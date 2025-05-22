@@ -1,7 +1,6 @@
 import numpy as np
-from collections import deque
-from .utils import calc_num_regions, calc_longest_path, count_tiles, grid_to_binary_map, percent_target_tiles_excluding_excluded_tiles
-from typing import Any, Callable
+from .utils import calc_num_regions, calc_longest_path, count_tiles, grid_to_binary_map
+from typing import Any
 
 def river_reward(
     grid: list[list[set[str]]]

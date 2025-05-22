@@ -5,7 +5,6 @@ import argparse
 import copy
 import os
 import random
-import time
 from functools import partial
 from multiprocessing import Pool, cpu_count
 from typing import Any, Dict, List, Optional, Tuple
@@ -30,7 +29,7 @@ from wfc_env import WFCWrapper, CombinedReward
 # ----------------------------------------------------------------------------
 # Task callbacks
 # ----------------------------------------------------------------------------
-from tasks.binary_task import binary_reward, binary_percent_water
+from tasks.binary_task import binary_reward
 from tasks.pond_task   import pond_reward
 from tasks.river_task  import river_reward
 from tasks.grass_task  import grass_reward

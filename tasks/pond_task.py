@@ -1,5 +1,4 @@
 import numpy as np
-from collections import deque
 from .utils import calc_num_regions, percent_target_tiles_excluding_excluded_tiles, grid_to_binary_map, calc_longest_path
 
 def pond_reward(grid: list[list[set[str]]]) -> tuple[float, dict]:
