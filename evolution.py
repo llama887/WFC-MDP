@@ -105,7 +105,7 @@ class PopulationMember:
             while not (terminate or truncate):
                 next_collapse_x, next_collapse_y = observation[-2:]
                 flattened_index = next_collapse_y * self.env.map_width + next_collapse_x
-                _, reward, terminate, truncate, info = self.env.step(self.action_sequence[flattened_index]):
+                observation, reward, terminate, truncate, info = self.env.step(self.action_sequence[flattened_index]):
                 self.reward += reward
                 self.info = info
 
