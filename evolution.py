@@ -1,3 +1,4 @@
+from typing import Literal
 import argparse
 import copy
 import math
@@ -36,10 +37,11 @@ class CrossOverMethod(Enum):
 
 
 class PopulationMember:
-    def __init__(self, env: WFCWrapper):
+    def __init__(self, env: WFCWrapper, genotype_representation: Literal["1d", "2d"]="1d"):
         self.env: WFCWrapper = copy.deepcopy(env)
         self.env.reset()
         self.reward: float = float("-inf")
+        self.genotype_representation: Literal["1d", "2d"]=genotype_representation
         self.action_sequence: np.ndarray = np.array(
             [
                 self.env.action_space.sample()
@@ -89,14 +91,25 @@ class PopulationMember:
 
     def run_action_sequence(self):
         self.reward = 0
-        self.env.reset()
-        for idx, action in enumerate(self.action_sequence):
-            _, reward, terminate, truncate, info = self.env.step(action)
-            self.reward += reward
-            self.info = info
-            if terminate or truncate:
-                break
+        observation,  _ =self.env.reset()
+        if self.genotype_representation == "1d":
+            for idx, action in enumerate(self.action_sequence):
+                _, reward, terminate, truncate, info = self.env.step(action)
+                self.reward += reward
+                self.info = info
+                if terminate or truncate:
+                    break
+        if self.genotype_representation == "2d":
+            truncate = False
+            terminate = False
+            while not (terminate or truncate):
+                next_collapse_x, next_collapse_y = observation[-2:]
+                flattened_index = next_collapse_y * self.env.map_width + next_collapse_x
+                _, reward, terminate, truncate, info = self.env.step(self.action_sequence[flattened_index]):
+                self.reward += reward
+                self.info = info
 
+                   
     @staticmethod
     def crossover(
         parent1: "PopulationMember",
@@ -253,7 +266,7 @@ def evolve(
                 pop_by_fit = sorted(population, key=lambda m: m.reward, reverse=True)
                 survivors = pop_by_fit[:2]
 
-        # 4) Reproduction (global)
+        # 4) Reproduction 
         number_of_surviving_members = len(survivors)
         n_offspring = population_size - number_of_surviving_members
         n_pairs = math.ceil(n_offspring / 2)
