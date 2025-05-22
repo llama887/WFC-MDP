@@ -129,8 +129,12 @@ class PopulationMember:
 =======
                 next_collapse_x, next_collapse_y = observation[-2:]
                 flattened_index = next_collapse_y * self.env.map_width + next_collapse_x
+<<<<<<< HEAD
                 _, reward, terminate, truncate, info = self.env.step(self.action_sequence[flattened_index]):
 >>>>>>> 0241fcf (2d evolution representation)
+=======
+                observation, reward, terminate, truncate, info = self.env.step(self.action_sequence[flattened_index]):
+>>>>>>> 2a76eb1 (bug fixs, observation is now updated correctly)
                 self.reward += reward
                 self.info = info
 
