@@ -120,6 +120,7 @@ class PopulationMember:
             terminate = False
             while not (terminate or truncate):
 <<<<<<< HEAD
+<<<<<<< HEAD
                 next_collapse_x, next_collapse_y = map(int, observation[-2:])
                 # print(f"Next collapse: {next_collapse_x}, {next_collapse_y}")
                 flattened_index = next_collapse_y * self.env.map_width + next_collapse_x
@@ -135,6 +136,12 @@ class PopulationMember:
 =======
                 observation, reward, terminate, truncate, info = self.env.step(self.action_sequence[flattened_index]):
 >>>>>>> 2a76eb1 (bug fixs, observation is now updated correctly)
+=======
+                next_collapse_x, next_collapse_y = map(int, observation[-2:])
+                # print(f"Next collapse: {next_collapse_x}, {next_collapse_y}")
+                flattened_index = next_collapse_y * self.env.map_width + next_collapse_x
+                observation, reward, terminate, truncate, info = self.env.step(self.action_sequence[flattened_index])
+>>>>>>> c0c3fa9 (minor bug fixes for 2d genotype)
                 self.reward += reward
                 self.info = info
 
@@ -223,10 +230,14 @@ def evolve(
     Standard EA if qd=False; QD selection + global reproduction if qd=True.
     """
     # --- Initialization ---
+<<<<<<< HEAD
     population = [
         PopulationMember(env, genotype_representation=genotype_representation)
         for _ in range(population_size)
     ]
+=======
+    population = [PopulationMember(env, genotype_representation=genotype_representation) for _ in range(population_size)]
+>>>>>>> c0c3fa9 (minor bug fixes for 2d genotype)
     best_agent: PopulationMember | None = None
     best_agent_rewards: list[float] = []
     median_agent_rewards: list[float] = []
@@ -697,6 +708,7 @@ if __name__ == "__main__":
         help="Override the patience setting from YAML.",
     )
 
+<<<<<<< HEAD
     parser.add_argument(
         "--genotype-dimensions",
         type=int,
@@ -704,6 +716,9 @@ if __name__ == "__main__":
         default=1,
         help="The dimensions of the genotype representation. 1d or 2d",
     )
+=======
+    parser.add_argument("--genotype-dimensions", type=int, choices=[1, 2], default=1, help="The dimensions of the genotype representation. 1d or 2d")
+>>>>>>> c0c3fa9 (minor bug fixes for 2d genotype)
 
     args = parser.parse_args()
     if not args.task:
