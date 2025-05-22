@@ -103,9 +103,10 @@ class PopulationMember:
             truncate = False
             terminate = False
             while not (terminate or truncate):
-                next_collapse_x, next_collapse_y = observation[-2:]
+                next_collapse_x, next_collapse_y = map(int, observation[-2:])
+                # print(f"Next collapse: {next_collapse_x}, {next_collapse_y}")
                 flattened_index = next_collapse_y * self.env.map_width + next_collapse_x
-                observation, reward, terminate, truncate, info = self.env.step(self.action_sequence[flattened_index]):
+                observation, reward, terminate, truncate, info = self.env.step(self.action_sequence[flattened_index])
                 self.reward += reward
                 self.info = info
 
@@ -188,12 +189,13 @@ def evolve(
     cross_over_method: CrossOverMethod = CrossOverMethod.ONE_POINT,
     patience: int = 10,
     qd: bool = False,
+    genotype_representation: Literal["1d", "2d"] = "1d",
 ) -> tuple[list[PopulationMember], PopulationMember, int, list[float], list[float]]:
     """
     Standard EA if qd=False; QD selection + global reproduction if qd=True.
     """
     # --- Initialization ---
-    population = [PopulationMember(env) for _ in range(population_size)]
+    population = [PopulationMember(env, genotype_representation=genotype_representation) for _ in range(population_size)]
     best_agent: PopulationMember | None = None
     best_agent_rewards: list[float] = []
     median_agent_rewards: list[float] = []
@@ -660,6 +662,8 @@ if __name__ == "__main__":
         help="Override the patience setting from YAML.",
     )
 
+    parser.add_argument("--genotype-dimensions", type=int, choices=[1, 2], default=1, help="The dimensions of the genotype representation. 1d or 2d")
+
     args = parser.parse_args()
     if not args.task:
         args.task = ["binary_easy"]
@@ -672,8 +676,8 @@ if __name__ == "__main__":
     num_tiles = len(tile_symbols)
 
     task_rewards = {
-        "binary_easy": partial(binary_reward, target_path_length=50),
-        "binary_hard": partial(binary_reward, target_path_length=50, hard=True),
+        "binary_easy": partial(binary_reward, target_path_length=80),
+        "binary_hard": partial(binary_reward, target_path_length=80, hard=True),
         "river": river_reward,
         "pond": pond_reward,
         "grass": grass_reward,
@@ -745,6 +749,7 @@ if __name__ == "__main__":
             cross_over_method=CrossOverMethod(hyperparams["cross_over_method"]),
             patience=hyperparams["patience"],
             qd=args.qd,
+            genotype_representation=str(args.genotype_dimensions) + "d",
         )
         end_time = time.time()
         print(f"Evolution finished in {end_time - start_time:.2f} seconds.")
