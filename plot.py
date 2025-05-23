@@ -15,13 +15,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 
-from biome_adjacency_rules import create_adjacency_matrix
-from evolution import evolve
+from assets.biome_adjacency_rules import create_adjacency_matrix
+from core.evolution import evolve
+from core.wfc_env import CombinedReward, WFCWrapper
 from tasks.binary_task import binary_percent_water, binary_reward
 from tasks.grass_task import grass_reward
 from tasks.pond_task import pond_reward
 from tasks.river_task import river_reward
-from wfc_env import CombinedReward, WFCWrapper
 
 FIGURES_DIRECTORY = "figures"
 os.makedirs(FIGURES_DIRECTORY, exist_ok=True)
@@ -236,17 +236,13 @@ def combo_convergence_over_path_lengths(
     MAX_GENERATIONS = 100
     MAP_LENGTH = 15
     MAP_WIDTH = 20
-    
+
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     num_tiles = len(tile_symbols)
     path_lengths = np.arange(MIN_PATH_LENGTH, MAX_PATH_LENGTH + 1, STEP)
     generations_to_converge = np.full((len(path_lengths), sample_size), np.nan)
 
-    task_rewards = {
-        "river": river_reward,
-        "pond": pond_reward,
-        "grass": grass_reward
-    }
+    task_rewards = {"river": river_reward, "pond": pond_reward, "grass": grass_reward}
     second_reward = task_rewards.get(second_task)
 
     for idx, path_length in enumerate(path_lengths):
@@ -408,11 +404,7 @@ def collect_convergence_data(task_name: str, reward_fn, hyperparams, qd=False, r
 
 
 def plot_avg_task_convergence(hyperparams, qd=False):
-    task_info = {
-        "Pond": pond_reward,
-        "River": river_reward,
-        "Grass": grass_reward
-    }
+    task_info = {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}
 
     means = []
     errors = []
@@ -458,7 +450,7 @@ if __name__ == "__main__":
         type=str,
         default="easy",
         choices=["easy", "hard"],
-        help="means that the task will run in combo with binary, specifies easy or hard"
+        help="means that the task will run in combo with binary, specifies easy or hard",
     )
 
     parser.add_argument("--qd", action="store_true", help="Use QD variant of evolution")
@@ -497,7 +489,7 @@ if __name__ == "__main__":
         start_time = time.time()
         combo_convergence_over_path_lengths(20, hyperparams, args.qd, "river")
         print(f"[river] Plotting finished in {time.time() - start_time:.2f} seconds.")
-    elif args.task == "river" and args.combo == "hard": 
+    elif args.task == "river" and args.combo == "hard":
         start_time = time.time()
         combo_convergence_over_path_lengths(20, hyperparams, args.qd, "river", True)
         print(f"[river] Plotting finished in {time.time() - start_time:.2f} seconds.")
@@ -517,7 +509,6 @@ if __name__ == "__main__":
         start_time = time.time()
         combo_convergence_over_path_lengths(20, hyperparams, args.qd, "grass", True)
         print(f"[grass] Plotting finished in {time.time() - start_time:.2f} seconds.")
-    
 
     # ---- COMBO ----
     # start_time = time.time()
