@@ -29,6 +29,10 @@ from .wfc import (  # We might not need render_wfc_grid if we keep console rende
     load_tile_images,
 )
 from .wfc_env import CombinedReward, WFCWrapper
+from wfc import (  # We might not need render_wfc_grid if we keep console rendering
+    load_tile_images,
+)
+from wfc_env import CombinedReward, WFCWrapper
 
 from tasks.binary_task import binary_percent_water, binary_reward
 from tasks.grass_task import grass_reward
@@ -37,6 +41,7 @@ from tasks.pond_task import pond_reward
 from tasks.river_task import river_reward
 
 from assets.biome_adjacency_rules import create_adjacency_matrix
+from ..assets.biome_adjacency_rules import create_adjacency_matrix
 
 
 class CrossOverMethod(Enum):
@@ -205,7 +210,6 @@ def evolve(
     # --- Initialization ---
     population = [PopulationMember(env, genotype_representation=genotype_representation) for _ in range(population_size)]
     best_agent: PopulationMember | None = None
-    median_agent: PopulationMember | None = None
     best_agent_rewards: list[float] = []
     median_agent_rewards: list[float] = []
     patience_counter = 0
@@ -216,31 +220,20 @@ def evolve(
             population = pool.map(run_member, population)
 
         # 2) Gather scores & stats
+        #    - fitness-based reward for standard EA
+        #    - qd_score for QD clustering
         fitnesses = np.array([m.reward for m in population])
         best_idx = int(np.argmax(fitnesses))
+        median_val = float(np.median(fitnesses))
 
-        # find the population member whose reward is the median
-        sorted_idx = np.argsort(fitnesses)
-        median_pos = len(fitnesses) // 2
-        median_idx = sorted_idx[median_pos]
-        median_val = fitnesses[median_pos]
-        median_member = population[median_idx]
-
-        # record for plotting
         best_agent_rewards.append(population[best_idx].reward)
         median_agent_rewards.append(median_val)
 
-        # Track global best (as before)
+        # Track global best & early stopping
         if best_agent is None or population[best_idx].reward > best_agent.reward:
             best_agent = copy.deepcopy(population[best_idx])
-
-        # Track median agent AND patience
-        if median_agent is None or median_member.reward > median_agent.reward:
-            # median got better → update and reset patience
-            median_agent = copy.deepcopy(median_member)
             patience_counter = 0
         else:
-            # median did not improve → increment patience
             patience_counter += 1
 
         if (
