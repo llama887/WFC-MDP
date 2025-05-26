@@ -1,3 +1,10 @@
+import os
+import sys
+
+# Add the project root to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+
 import random
 from typing import Any, Callable
 
@@ -7,7 +14,7 @@ import pygame
 from gymnasium import spaces
 
 # Import functions from biome_wfc instead of fast_wfc
-from .wfc import (  # We might not need render_wfc_grid if we keep console rendering
+from wfc import (  # We might not need render_wfc_grid if we keep console rendering
     biome_wfc_step,
     find_lowest_entropy_cell,
     initialize_wfc_grid,
