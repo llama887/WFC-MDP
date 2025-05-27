@@ -6,7 +6,6 @@ import random
 import sys
 import time
 import yaml
-from functools import partial
 from multiprocessing import Pool, cpu_count
 from typing import Any, List, Optional, Tuple
 
@@ -723,7 +722,7 @@ if __name__ == "__main__":
 
     # Print configuration summary
     print("=== MCTS Configuration ===")
-    print(f"Smart vs Original Logic Flags:")
+    print("Smart vs Original Logic Flags:")
     print(f"  Uniform cell selection: {uniform_cell_selection} {'(ORIGINAL)' if uniform_cell_selection else '(SMART)'}")
     print(f"  Allow illegal tiles: {allow_illegal_tiles} {'(ORIGINAL)' if allow_illegal_tiles else '(SMART)'}")
     print(f"  No reuse tree: {no_reuse_tree} {'(ORIGINAL)' if no_reuse_tree else '(SMART)'}")
