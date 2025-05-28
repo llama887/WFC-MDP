@@ -463,8 +463,9 @@ def plot_binary_convergence_from_csv(
         statistics["desired_path_length"],
         statistics["fraction_converged"],
         width=(
-            statistics["desired_path_length"].iloc[1]
-            - statistics["desired_path_length"].iloc[0]
+            statistics["desired_path_length"].diff().dropna().median()
+            if len(statistics) > 1
+            else 5  # sensible default
         )
         * 0.8,
         alpha=0.3,
@@ -570,7 +571,7 @@ def plot_combo_convergence_from_csv(
 
     figure.tight_layout()
     if output_png_path is None:
-        prefix = f"{'qd_' if use_quality_diversity else ''}{'hard_' if use_hard_variant else ''}{genotype_dimensions}{second_task}_combo_"
+        prefix = f"{'qd_' if use_quality_diversity else ''}{'hard_' if use_hard_variant else ''}{genotype_dimensions}d_{second_task}_combo_"
         output_png_path = os.path.join(
             FIGURES_DIRECTORY, f"{prefix}convergence_over_path.png"
         )
@@ -771,7 +772,7 @@ if __name__ == "__main__":
             use_hard_variant=True,
             genotype_dimensions=args.genotype_dimensions,
         )
-    elif args.task == "biome":
+    elif args.task == "biomes":
         # Always also produce the summary bar chart
         summary_csv = collect_average_biome_convergence_data(
             evolution_hyperparameters=evolution_hyperparameters,
