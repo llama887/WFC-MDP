@@ -3,3 +3,4 @@ optuna==4.2.1
 scipy==1.15.2
 matplotlib==3.10.1
 pygame==2.6.1
+pillow==11.2.1
