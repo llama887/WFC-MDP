@@ -423,7 +423,6 @@ def collect_average_biome_convergence_data(
     print(f"Saved biome average convergence data to {csv_path}")
     return csv_path
 
-
 def plot_binary_convergence_from_csv(
     csv_file_path: str,
     use_quality_diversity: bool = False,
@@ -431,74 +430,78 @@ def plot_binary_convergence_from_csv(
     output_png_path: str | None = None,
     genotype_dimensions: Literal[1, 2] = 1,
 ) -> None:
-    """
-    Load binary convergence CSV, compute mean+SEM and fraction, and plot twin‐axis.
-    """
     data_frame = pd.read_csv(csv_file_path)
     valid_frame = data_frame.dropna(subset=["generations_to_converge"])
-
     statistics = (
-        valid_frame.groupby("desired_path_length")["generations_to_converge"]
-        .agg(mean_generation="mean", standard_deviation="std", count="count")
+        valid_frame
+        .groupby("desired_path_length")["generations_to_converge"]
+        .agg(
+            mean_generation="mean",
+            standard_deviation="std",
+            count="count"
+        )
         .reset_index()
     )
-    statistics["standard_error"] = statistics["standard_deviation"] / np.sqrt(
-        statistics["count"]
-    )
+    statistics["standard_error"] = statistics["standard_deviation"] / np.sqrt(statistics["count"])
     total_runs = int(data_frame["run_index"].max())
     statistics["fraction_converged"] = statistics["count"] / total_runs
 
-    figure, axis_left = plt.subplots(figsize=(8, 5))
-    axis_right = axis_left.twinx()
+    fig, ax_left = plt.subplots(figsize=(8, 5))
+    ax_right = ax_left.twinx()
 
-    axis_left.errorbar(
+    # constants
+    X_MIN, X_MAX, STEP = 0, 100, 10
+    BAR_WIDTH = STEP * 0.8
+
+    # 1) plot the mean ± stderr
+    ax_left.errorbar(
         statistics["desired_path_length"],
         statistics["mean_generation"],
         yerr=statistics["standard_error"],
         fmt="o-",
         capsize=4,
-        label="Mean generations to converge",
+        label="Mean generations to converge"
     )
-    axis_right.bar(
+
+    # annotate each mean point
+    for x, y in zip(statistics["desired_path_length"], statistics["mean_generation"]):
+        ax_left.text(x, y, f"{y:.1f}", ha="center", va="bottom")
+
+    # 2) plot the fraction‐converged bars
+    ax_right.bar(
         statistics["desired_path_length"],
         statistics["fraction_converged"],
-        width=(
-            statistics["desired_path_length"].diff().dropna().median()
-            if len(statistics) > 1
-            else 5  # sensible default
-        )
-        * 0.8,
+        width=BAR_WIDTH,
         alpha=0.3,
         label="Fraction converged",
-        align="center",
+        align="center"
     )
 
-    axis_left.set_xlabel("Desired Path Length")
-    axis_left.set_ylabel("Mean Generations to Converge")
-    axis_right.set_ylabel("Fraction of Runs Converged")
-    axis_left.set_xticks(statistics["desired_path_length"])
+    # fix x‐axis and right‐axis limits/ticks
+    ax_left.set_xticks(np.arange(X_MIN, X_MAX + 1, STEP))
+    ax_left.set_xlim(X_MIN, X_MAX)
+    ax_right.set_ylim(0, 1)
+
+    ax_left.set_xlabel("Desired Path Length")
+    ax_left.set_ylabel("Mean Generations to Converge")
+    ax_right.set_ylabel("Fraction of Runs Converged")
 
     title = "Convergence Behavior vs Desired Path Length"
-    if use_quality_diversity:
-        title += " (QD)"
-    if use_hard_variant:
-        title += " HARD"
-    axis_left.set_title(title)
+    if use_quality_diversity: title += " (QD)"
+    if use_hard_variant:       title += " HARD"
+    ax_left.set_title(title)
 
-    handles_left, labels_left = axis_left.get_legend_handles_labels()
-    handles_right, labels_right = axis_right.get_legend_handles_labels()
-    axis_left.legend(
-        handles_left + handles_right, labels_left + labels_right, loc="upper left"
-    )
+    # combine legends
+    hL, lL = ax_left.get_legend_handles_labels()
+    hR, lR = ax_right.get_legend_handles_labels()
+    ax_left.legend(hL + hR, lL + lR, loc="upper left")
 
-    figure.tight_layout()
+    fig.tight_layout()
     if output_png_path is None:
-        prefix = f"{'qd_' if use_quality_diversity else ''}{'hard_' if use_hard_variant else ''}{genotype_dimensions}d"
-        output_png_path = os.path.join(
-            FIGURES_DIRECTORY, f"{prefix}binary_convergence_over_path.png"
-        )
-    figure.savefig(output_png_path)
-    plt.close(figure)
+        prefix = f"{'qd_' if use_quality_diversity else ''}{'hard_' if use_hard_variant else ''}{genotype_dimensions}d_"
+        output_png_path = os.path.join(FIGURES_DIRECTORY, f"{prefix}binary_convergence_over_path.png")
+    fig.savefig(output_png_path)
+    plt.close(fig)
     print(f"Saved binary convergence plot to {output_png_path}")
 
 
@@ -510,73 +513,74 @@ def plot_combo_convergence_from_csv(
     output_png_path: str | None = None,
     genotype_dimensions: Literal[1, 2] = 1,
 ) -> None:
-    """
-    Load combo convergence CSV, compute mean+SEM and fraction, and plot twin‐axis.
-    """
     data_frame = pd.read_csv(csv_file_path)
     valid_frame = data_frame.dropna(subset=["generations_to_converge"])
-
     statistics = (
-        valid_frame.groupby("desired_path_length")["generations_to_converge"]
-        .agg(mean_generation="mean", standard_deviation="std", count="count")
+        valid_frame
+        .groupby("desired_path_length")["generations_to_converge"]
+        .agg(
+            mean_generation="mean",
+            standard_deviation="std",
+            count="count"
+        )
         .reset_index()
     )
-    statistics["standard_error"] = statistics["standard_deviation"] / np.sqrt(
-        statistics["count"]
-    )
+    statistics["standard_error"] = statistics["standard_deviation"] / np.sqrt(statistics["count"])
     total_runs = int(data_frame["run_index"].max())
     statistics["fraction_converged"] = statistics["count"] / total_runs
 
-    figure, axis_left = plt.subplots(figsize=(8, 5))
-    axis_right = axis_left.twinx()
+    fig, ax_left = plt.subplots(figsize=(8, 5))
+    ax_right = ax_left.twinx()
 
-    axis_left.errorbar(
+    # constants
+    X_MIN, X_MAX, STEP = 0, 100, 10
+    BAR_WIDTH = STEP * 0.8
+
+    ax_left.errorbar(
         statistics["desired_path_length"],
         statistics["mean_generation"],
         yerr=statistics["standard_error"],
         fmt="o-",
         capsize=4,
-        label="Mean generations to converge",
+        label="Mean generations to converge"
     )
-    axis_right.bar(
+
+    # annotate means
+    for x, y in zip(statistics["desired_path_length"], statistics["mean_generation"]):
+        ax_left.text(x, y, f"{y:.1f}", ha="center", va="bottom")
+
+    ax_right.bar(
         statistics["desired_path_length"],
         statistics["fraction_converged"],
-        width=(
-            statistics["desired_path_length"].iloc[1]
-            - statistics["desired_path_length"].iloc[0]
-        )
-        * 0.8,
+        width=BAR_WIDTH,
         alpha=0.3,
         label="Fraction converged",
-        align="center",
+        align="center"
     )
 
-    axis_left.set_xlabel("Desired Path Length")
-    axis_left.set_ylabel("Mean Generations to Converge")
-    axis_right.set_ylabel("Fraction of Runs Converged")
-    axis_left.set_xticks(statistics["desired_path_length"])
+    ax_left.set_xticks(np.arange(X_MIN, X_MAX + 1, STEP))
+    ax_left.set_xlim(X_MIN, X_MAX)
+    ax_right.set_ylim(0, 1)
+
+    ax_left.set_xlabel("Desired Path Length")
+    ax_left.set_ylabel("Mean Generations to Converge")
+    ax_right.set_ylabel("Fraction of Runs Converged")
 
     title = f"Combined Binary + {second_task.capitalize()} Convergence vs Desired Path Length"
-    if use_quality_diversity:
-        title += " (QD)"
-    if use_hard_variant:
-        title += " HARD"
-    axis_left.set_title(title)
+    if use_quality_diversity: title += " (QD)"
+    if use_hard_variant:       title += " HARD"
+    ax_left.set_title(title)
 
-    handles_left, labels_left = axis_left.get_legend_handles_labels()
-    handles_right, labels_right = axis_right.get_legend_handles_labels()
-    axis_left.legend(
-        handles_left + handles_right, labels_left + labels_right, loc="upper left"
-    )
+    hL, lL = ax_left.get_legend_handles_labels()
+    hR, lR = ax_right.get_legend_handles_labels()
+    ax_left.legend(hL + hR, lL + lR, loc="upper left")
 
-    figure.tight_layout()
+    fig.tight_layout()
     if output_png_path is None:
         prefix = f"{'qd_' if use_quality_diversity else ''}{'hard_' if use_hard_variant else ''}{genotype_dimensions}d_{second_task}_combo_"
-        output_png_path = os.path.join(
-            FIGURES_DIRECTORY, f"{prefix}convergence_over_path.png"
-        )
-    figure.savefig(output_png_path)
-    plt.close(figure)
+        output_png_path = os.path.join(FIGURES_DIRECTORY, f"{prefix}convergence_over_path.png")
+    fig.savefig(output_png_path)
+    plt.close(fig)
     print(f"Saved combo convergence plot to {output_png_path}")
 
 
