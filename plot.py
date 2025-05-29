@@ -378,7 +378,7 @@ def collect_combo_convergence(
                 }
             )
 
-    prefix = f"{'qd_' if use_quality_diversity else ''}{'hard_' if use_hard_variant else ''}{str(genotype_dimensions)}d_"
+    prefix = f"{'qd_' if use_quality_diversity else ''}{'hard_' if use_hard_variant else ''}{str(genotype_dimensions)}d_{second_task}_combo_"
     csv_filename = f"{prefix}convergence_over_path.csv"
     csv_path = os.path.join(FIGURES_DIRECTORY, csv_filename)
     pd.DataFrame(data_rows).to_csv(csv_path, index=False)
