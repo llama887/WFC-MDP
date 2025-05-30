@@ -4,7 +4,6 @@ import sys
 # Add the project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-
 import random
 from typing import Any, Callable
 
@@ -354,8 +353,5 @@ class WFCWrapper(gym.Env):
 
     def close(self):
         """Cleans up any resources used by the environment."""
-        if hasattr(self, "screen"):
-            pygame.quit()
-        if hasattr(self, "screen"):
-            pygame.quit()
+        if hasattr(self, "screen")
             pygame.quit()

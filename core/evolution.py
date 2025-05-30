@@ -4,7 +4,7 @@ import sys
 # Add the project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-
+from typing import Literal
 import argparse
 import copy
 import math
@@ -25,18 +25,18 @@ import yaml
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.stats import truncnorm
 from tqdm import tqdm
+from .wfc import (  # We might not need render_wfc_grid if we keep console rendering
+    load_tile_images,
+)
+from .wfc_env import CombinedReward, WFCWrapper
 
-from assets.biome_adjacency_rules import create_adjacency_matrix
 from tasks.binary_task import binary_percent_water, binary_reward
 from tasks.grass_task import grass_reward
 from tasks.hill_task import hill_reward
 from tasks.pond_task import pond_reward
 from tasks.river_task import river_reward
 
-from .wfc import (  # We might not need render_wfc_grid if we keep console rendering
-    load_tile_images,
-)
-from .wfc_env import CombinedReward, WFCWrapper
+from assets.biome_adjacency_rules import create_adjacency_matrix
 
 
 class CrossOverMethod(Enum):
@@ -45,13 +45,11 @@ class CrossOverMethod(Enum):
 
 
 class PopulationMember:
-    def __init__(
-        self, env: WFCWrapper, genotype_representation: Literal["1d", "2d"] = "1d"
-    ):
+    def __init__(self, env: WFCWrapper, genotype_representation: Literal["1d", "2d"]="1d"):
         self.env: WFCWrapper = copy.deepcopy(env)
         self.env.reset()
         self.reward: float = float("-inf")
-        self.genotype_representation: Literal["1d", "2d"] = genotype_representation
+        self.genotype_representation: Literal["1d", "2d"]=genotype_representation
         self.action_sequence: np.ndarray = np.array(
             [
                 self.env.action_space.sample()
@@ -101,7 +99,7 @@ class PopulationMember:
 
     def run_action_sequence(self):
         self.reward = 0
-        observation, _ = self.env.reset()
+        observation,  _ =self.env.reset()
         if self.genotype_representation == "1d":
             for idx, action in enumerate(self.action_sequence):
                 _, reward, terminate, truncate, info = self.env.step(action)
@@ -116,12 +114,11 @@ class PopulationMember:
                 next_collapse_x, next_collapse_y = map(int, observation[-2:])
                 # print(f"Next collapse: {next_collapse_x}, {next_collapse_y}")
                 flattened_index = next_collapse_y * self.env.map_width + next_collapse_x
-                observation, reward, terminate, truncate, info = self.env.step(
-                    self.action_sequence[flattened_index]
-                )
+                observation, reward, terminate, truncate, info = self.env.step(self.action_sequence[flattened_index])
                 self.reward += reward
                 self.info = info
 
+                   
     @staticmethod
     def crossover(
         parent1: "PopulationMember",
@@ -206,12 +203,8 @@ def evolve(
     Standard EA if qd=False; QD selection + global reproduction if qd=True.
     """
     # --- Initialization ---
-    population = [
-        PopulationMember(env, genotype_representation=genotype_representation)
-        for _ in range(population_size)
-    ]
+    population = [PopulationMember(env, genotype_representation=genotype_representation) for _ in range(population_size)]
     best_agent: PopulationMember | None = None
-    median_agent: PopulationMember | None = None
     best_agent_rewards: list[float] = []
     median_agent_rewards: list[float] = []
     patience_counter = 0
@@ -222,31 +215,20 @@ def evolve(
             population = pool.map(run_member, population)
 
         # 2) Gather scores & stats
+        #    - fitness-based reward for standard EA
+        #    - qd_score for QD clustering
         fitnesses = np.array([m.reward for m in population])
         best_idx = int(np.argmax(fitnesses))
+        median_val = float(np.median(fitnesses))
 
-        # find the population member whose reward is the median
-        sorted_idx = np.argsort(fitnesses)
-        median_pos = len(fitnesses) // 2
-        median_idx = sorted_idx[median_pos]
-        median_val = fitnesses[median_pos]
-        median_member = population[median_idx]
-
-        # record for plotting
         best_agent_rewards.append(population[best_idx].reward)
         median_agent_rewards.append(median_val)
 
-        # Track global best (as before)
+        # Track global best & early stopping
         if best_agent is None or population[best_idx].reward > best_agent.reward:
             best_agent = copy.deepcopy(population[best_idx])
-
-        # Track median agent AND patience
-        if median_agent is None or median_member.reward > median_agent.reward:
-            # median got better → update and reset patience
-            median_agent = copy.deepcopy(median_member)
             patience_counter = 0
         else:
-            # median did not improve → increment patience
             patience_counter += 1
 
         if (
@@ -294,7 +276,7 @@ def evolve(
                 pop_by_fit = sorted(population, key=lambda m: m.reward, reverse=True)
                 survivors = pop_by_fit[:2]
 
-        # 4) Reproduction
+        # 4) Reproduction 
         number_of_surviving_members = len(survivors)
         n_offspring = population_size - number_of_surviving_members
         n_pairs = math.ceil(n_offspring / 2)
@@ -688,13 +670,7 @@ if __name__ == "__main__":
         help="Override the patience setting from YAML.",
     )
 
-    parser.add_argument(
-        "--genotype-dimensions",
-        type=int,
-        choices=[1, 2],
-        default=1,
-        help="The dimensions of the genotype representation. 1d or 2d",
-    )
+    parser.add_argument("--genotype-dimensions", type=int, choices=[1, 2], default=1, help="The dimensions of the genotype representation. 1d or 2d")
 
     args = parser.parse_args()
     if not args.task:
