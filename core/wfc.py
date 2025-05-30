@@ -96,11 +96,8 @@ def collapse_cell(
         if best_tile is not None and max_prob > 0.0:
             chosen_tile = best_tile
         else:
-            # i want to some how return a fail state and eventually truncate in the step function if the action_probs is all 0's after masking, I think return None here works? AI!
-            for tile in tile_symbols:
-                if tile in possible_tiles:
-                    chosen_tile = tile
-                    break
+            # If all action probabilities are zero or negative, return None to signal failure
+            return None
 
     else:
         # — stochastic path (unchanged) —
