@@ -39,21 +39,11 @@ class CrossOverMethod(Enum):
 
 
 class PopulationMember:
-<<<<<<< HEAD
-    def __init__(
-        self, env: WFCWrapper, genotype_representation: Literal["1d", "2d"] = "1d"
-    ):
-        self.env: WFCWrapper = copy.deepcopy(env)
-        self.env.reset()
-        self.reward: float = float("-inf")
-        self.genotype_representation: Literal["1d", "2d"] = genotype_representation
-=======
     def __init__(self, env: WFCWrapper, genotype_representation: Literal["1d", "2d"]="1d"):
         self.env: WFCWrapper = copy.deepcopy(env)
         self.env.reset()
         self.reward: float = float("-inf")
         self.genotype_representation: Literal["1d", "2d"]=genotype_representation
->>>>>>> 0241fcf (2d evolution representation)
         self.action_sequence: np.ndarray = np.array(
             [
                 self.env.action_space.sample()
@@ -103,11 +93,7 @@ class PopulationMember:
 
     def run_action_sequence(self):
         self.reward = 0
-<<<<<<< HEAD
-        observation, _ = self.env.reset()
-=======
         observation,  _ =self.env.reset()
->>>>>>> 0241fcf (2d evolution representation)
         if self.genotype_representation == "1d":
             for idx, action in enumerate(self.action_sequence):
                 _, reward, terminate, truncate, info = self.env.step(action)
@@ -119,29 +105,10 @@ class PopulationMember:
             truncate = False
             terminate = False
             while not (terminate or truncate):
-<<<<<<< HEAD
-<<<<<<< HEAD
-                next_collapse_x, next_collapse_y = map(int, observation[-2:])
-                # print(f"Next collapse: {next_collapse_x}, {next_collapse_y}")
-                flattened_index = next_collapse_y * self.env.map_width + next_collapse_x
-                observation, reward, terminate, truncate, info = self.env.step(
-                    self.action_sequence[flattened_index]
-                )
-=======
-                next_collapse_x, next_collapse_y = observation[-2:]
-                flattened_index = next_collapse_y * self.env.map_width + next_collapse_x
-<<<<<<< HEAD
-                _, reward, terminate, truncate, info = self.env.step(self.action_sequence[flattened_index]):
->>>>>>> 0241fcf (2d evolution representation)
-=======
-                observation, reward, terminate, truncate, info = self.env.step(self.action_sequence[flattened_index]):
->>>>>>> 2a76eb1 (bug fixs, observation is now updated correctly)
-=======
                 next_collapse_x, next_collapse_y = map(int, observation[-2:])
                 # print(f"Next collapse: {next_collapse_x}, {next_collapse_y}")
                 flattened_index = next_collapse_y * self.env.map_width + next_collapse_x
                 observation, reward, terminate, truncate, info = self.env.step(self.action_sequence[flattened_index])
->>>>>>> c0c3fa9 (minor bug fixes for 2d genotype)
                 self.reward += reward
                 self.info = info
 
@@ -230,14 +197,7 @@ def evolve(
     Standard EA if qd=False; QD selection + global reproduction if qd=True.
     """
     # --- Initialization ---
-<<<<<<< HEAD
-    population = [
-        PopulationMember(env, genotype_representation=genotype_representation)
-        for _ in range(population_size)
-    ]
-=======
     population = [PopulationMember(env, genotype_representation=genotype_representation) for _ in range(population_size)]
->>>>>>> c0c3fa9 (minor bug fixes for 2d genotype)
     best_agent: PopulationMember | None = None
     best_agent_rewards: list[float] = []
     median_agent_rewards: list[float] = []
@@ -310,11 +270,7 @@ def evolve(
                 pop_by_fit = sorted(population, key=lambda m: m.reward, reverse=True)
                 survivors = pop_by_fit[:2]
 
-<<<<<<< HEAD
-        # 4) Reproduction
-=======
         # 4) Reproduction 
->>>>>>> 0241fcf (2d evolution representation)
         number_of_surviving_members = len(survivors)
         n_offspring = population_size - number_of_surviving_members
         n_pairs = math.ceil(n_offspring / 2)
@@ -708,17 +664,7 @@ if __name__ == "__main__":
         help="Override the patience setting from YAML.",
     )
 
-<<<<<<< HEAD
-    parser.add_argument(
-        "--genotype-dimensions",
-        type=int,
-        choices=[1, 2],
-        default=1,
-        help="The dimensions of the genotype representation. 1d or 2d",
-    )
-=======
     parser.add_argument("--genotype-dimensions", type=int, choices=[1, 2], default=1, help="The dimensions of the genotype representation. 1d or 2d")
->>>>>>> c0c3fa9 (minor bug fixes for 2d genotype)
 
     args = parser.parse_args()
     if not args.task:
