@@ -1,3 +1,9 @@
+import os
+import sys
+
+# Add the project root to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from typing import Literal
 import argparse
 import copy
@@ -19,10 +25,10 @@ import yaml
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.stats import truncnorm
 from tqdm import tqdm
-from wfc import (  # We might not need render_wfc_grid if we keep console rendering
+from .wfc import (  # We might not need render_wfc_grid if we keep console rendering
     load_tile_images,
 )
-from wfc_env import CombinedReward, WFCWrapper
+from .wfc_env import CombinedReward, WFCWrapper
 
 from tasks.binary_task import binary_percent_water, binary_reward
 from tasks.grass_task import grass_reward
@@ -30,7 +36,7 @@ from tasks.hill_task import hill_reward
 from tasks.pond_task import pond_reward
 from tasks.river_task import river_reward
 
-from ..assets.biome_adjacency_rules import create_adjacency_matrix
+from assets.biome_adjacency_rules import create_adjacency_matrix
 
 
 class CrossOverMethod(Enum):
