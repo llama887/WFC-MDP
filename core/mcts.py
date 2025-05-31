@@ -16,6 +16,7 @@ from tqdm import tqdm
 from wfc_env import WFCWrapper
 from assets.biome_adjacency_rules import create_adjacency_matrix
 from tasks.binary_task import binary_reward
+import pygame
 
 class Action(BaseModel):
     """Represents an action in the MCTS tree with its statistics"""
@@ -239,8 +240,64 @@ class MCTS:
         
         return node
 
+def render_action_sequence(env: WFCWrapper, action_sequence: list[np.ndarray], tile_images) -> None:
+    env = deepcopy(env)  # Ensure we don't modify the original environment
+    pygame.init()
+    SCREEN_WIDTH = env.map_width * 32
+    SCREEN_HEIGHT = env.map_length * 32
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    pygame.display.set_caption(f"Best Map")
 
-    # Define environment parameters
+    # Create a surface for saving the final map
+    final_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+
+    env.reset()
+    total_reward = 0
+    print("Rendering action sequence...")
+
+    for action in tqdm(action_sequence, desc="Rendering Steps"):
+        _, reward, terminate, truncate, _ = env.step(action)
+        total_reward += reward
+
+        # Clear screen
+        screen.fill((0, 0, 0))
+        final_surface.fill((0, 0, 0))  # Also clear the final surface
+
+        # Render the current state to both surfaces
+        for y in range(env.map_length):
+            for x in range(env.map_width):
+                cell_set = env.grid[y][x]
+                if len(cell_set) == 1:  # Collapsed cell
+                    tile_name = next(iter(cell_set))
+                    if tile_name in tile_images:
+                        screen.blit(tile_images[tile_name], (x * 32, y * 32))
+                        final_surface.blit(tile_images[tile_name], (x * 32, y * 32))
+                    else:
+                        # Fallback for missing tiles
+                        pygame.draw.rect(
+                            screen, (255, 0, 255), (x * 32, y * 32, 32, 32)
+                        )
+                        pygame.draw.rect(
+                            final_surface, (255, 0, 255), (x * 32, y * 32, 32, 32)
+                        )
+                elif len(cell_set) == 0:  # Contradiction
+                    pygame.draw.rect(screen, (255, 0, 0), (x * 32, y * 32, 32, 32))
+                    pygame.draw.rect(
+                        final_surface, (255, 0, 0), (x * 32, y * 32, 32, 32)
+                    )
+                else:  # Superposition
+                    pygame.draw.rect(screen, (100, 100, 100), (x * 32, y * 32, 32, 32))
+                    pygame.draw.rect(
+                        final_surface, (100, 100, 100), (x * 32, y * 32, 32, 32)
+                    )
+
+        pygame.display.flip()
+
+        # Capture final frame if this is the last step
+        if terminate or truncate:
+            break
+
+# Define environment parameters
 MAP_LENGTH = 15
 MAP_WIDTH = 20
 
@@ -268,12 +325,8 @@ mcts = MCTS(env)
 # Run the search                                                                                                                                                                                                                     
 best_action, best_action_sequence = mcts.search()                                                                                                                                                                                    
                                                                                                                                                                                                                                      
-# Use the best action for the current step                                                                                                                                                                                           
-observation, reward, terminated, truncated, info = env.step(best_action.action_logits)                                                                                                                                     
-                                                                                                                                                                                                                                     
-# If you want to replay the entire best sequence:                                                                                                                                                                                    
-env.reset()  # Reset environment                                                                                                                                                                                                     
-for action in best_action_sequence:                                                                                                                                                                                                  
-    observation, reward, terminated, truncated, info = env.step(action)                                                                                                                                                    
-    if terminated or truncated:                                                                                                                                                                                                      
-        break  
+# I think this only gives me the best next action, not the full sequence, make ti so that it runs the serach until a full action sequence is recovered.
+# Do no forget that search has early stopping if a solution is found, so we need to run it until we get a full sequence. AI!
+
+
+
