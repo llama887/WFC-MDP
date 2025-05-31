@@ -322,11 +322,65 @@ env.reset()
 # Create MCTS instance                                                                                                                                                                                                               
 mcts = MCTS(env)                                                                                                                                                                                                                     
                                                                                                                                                                                                                                      
-# Run the search                                                                                                                                                                                                                     
-best_action, best_action_sequence = mcts.search()                                                                                                                                                                                    
-                                                                                                                                                                                                                                     
-# I think this only gives me the best next action, not the full sequence, make ti so that it runs the serach until a full action sequence is recovered.
-# Do no forget that search has early stopping if a solution is found, so we need to run it until we get a full sequence. AI!
+# Function to run MCTS until we have a complete solution
+def run_mcts_until_complete(env, mcts, max_iterations=10):
+    """
+    Run MCTS search repeatedly until we have a complete solution or reach max iterations
+    
+    Args:
+        env: The WFC environment
+        mcts: The MCTS instance
+        max_iterations: Maximum number of MCTS search iterations
+        
+    Returns:
+        best_action_sequence: The best action sequence found
+        total_reward: The total reward of the best sequence
+    """
+    best_action_sequence = []
+    total_reward = 0
+    
+    # Clone the environment to avoid modifying the original
+    test_env = deepcopy(env)
+    
+    for i in range(max_iterations):
+        print(f"MCTS iteration {i+1}/{max_iterations}")
+        
+        # Run the search
+        _, action_sequence = mcts.search()
+        
+        # If we found a solution with early stopping, return it
+        if action_sequence and len(action_sequence) > 0:
+            # Test the action sequence
+            test_env.reset()
+            for action in action_sequence:
+                _, reward, terminated, truncated, _ = test_env.step(action)
+                total_reward += reward
+                if terminated or truncated:
+                    break
+            
+            # If the sequence successfully completes the map, return it
+            if terminated and not truncated:
+                print(f"Found complete solution with reward {total_reward}")
+                return action_sequence, total_reward
+        
+        # If we didn't find a complete solution, reset and try again
+        mcts = MCTS(env)
+    
+    print(f"Failed to find complete solution after {max_iterations} iterations")
+    return best_action_sequence, total_reward
 
+# Run MCTS until we have a complete solution
+best_action_sequence, total_reward = run_mcts_until_complete(env, mcts)
+
+# Load tile images for visualization
+from assets.biome_adjacency_rules import load_tile_images
+tile_images = load_tile_images()
+
+# Render the best action sequence if we found one
+if best_action_sequence:
+    print(f"Rendering best solution with reward {total_reward}")
+    render_action_sequence(env, best_action_sequence, tile_images)
+else:
+    print("No complete solution found")
 
 
