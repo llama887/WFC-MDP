@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 import multiprocessing
 from multiprocessing import Pool
 from functools import partial
+from typing import Optional, List, Dict, Tuple
 
 from wfc_env import WFCWrapper
 from assets.biome_adjacency_rules import create_adjacency_matrix
@@ -18,10 +19,13 @@ from tasks.binary_task import binary_reward
 
 class Action(BaseModel):
     """Represents an action in the MCTS tree with its statistics"""
-    action_logits: list[float] = Field(default_factory=list, description="Logits for the action taken")
+    action_logits: np.ndarray = Field(default_factory=lambda: np.array([]), description="Logits for the action taken")
     visits: int = Field(default=0, description="Number of times this action has been taken")
     total_reward: float = Field(default=0.0, description="Total reward accumulated from this action")
     tile_index: int = Field(default=-1, description="Index of the tile this action represents")
+    
+    class Config:
+        arbitrary_types_allowed = True
 
 class MCTSConfig(BaseModel):
     """Configuration for the MCTS algorithm"""
@@ -91,7 +95,7 @@ class Node:
         self.children.append(child)
         return child
     
-    def simulate(self) -> tuple[float, list[list[float]], bool]:
+    def simulate(self) -> Tuple[float, List[np.ndarray], bool]:
         """Run a simulation from this node to a terminal state
         
         Returns:
@@ -111,9 +115,9 @@ class Node:
         action_sequence = []
         # Run random actions until terminal state
         while not (terminated or truncated):
-            # picka  random action from available actions
+            # pick a random action from available actions
             action_idx = np.random.choice(list(self.available_actions.keys()))
-            action: list[float] = self.available_actions[action_idx].action_logits
+            action = self.available_actions[action_idx].action_logits
             
             # Take a step in the environment
             _, reward, terminated, truncated, info = sim_env.step(action)
@@ -144,10 +148,10 @@ class MCTS:
         self.env = env                                                                                                                                                                                                               
         self.config = config                                                                                                                                                                                                         
         self.root = Node(env)                                                                                                                                                                                                        
-        self.best_action_sequence = []                                                                                                                                                                                               
+        self.best_action_sequence: List[np.ndarray] = []                                                                                                                                                                               
         self.best_reward = float('-inf')                                                                                                                                                                                             
                                                                                                                                                                                                                                      
-    def _run_simulation(self, node: Node) -> tuple[float, list[list[float]], bool, Node]:
+    def _run_simulation(self, node: Node) -> Tuple[float, List[np.ndarray], bool, Node]:
         """Run a single simulation from a node
         
         Returns:
@@ -164,7 +168,7 @@ class MCTS:
         
         return reward, action_sequence, achieved_max_reward, node
     
-    def search(self) -> tuple[Action, list[list[float]]]:
+    def search(self) -> Tuple[Action, List[np.ndarray]]:
         """Run the MCTS algorithm and return the best action and sequence
         
         Returns:
@@ -210,7 +214,7 @@ class MCTS:
         if not self.root.children:                                                                                                                                                                                                   
             # If no children, return a random action                                                                                                                                                                                 
             action_logits = self.env.action_space.sample()                                                                                                                                                                           
-            return Action(action_logits=action_logits.tolist()), self.best_action_sequence                                                                                                                                           
+            return Action(action_logits=action_logits), self.best_action_sequence                                                                                                                                                           
                                                                                                                                                                                                                                      
         best_child = max(self.root.children, key=lambda child: child.visits)                                                                                                                                                         
         return best_child.action_taken, self.best_action_sequence
@@ -262,11 +266,11 @@ mcts = MCTS(env)
 best_action, best_action_sequence = mcts.search()                                                                                                                                                                                    
                                                                                                                                                                                                                                      
 # Use the best action for the current step                                                                                                                                                                                           
-observation, reward, terminated, truncated, info = env.step(np.array(best_action.action_logits))                                                                                                                                     
+observation, reward, terminated, truncated, info = env.step(best_action.action_logits)                                                                                                                                     
                                                                                                                                                                                                                                      
 # If you want to replay the entire best sequence:                                                                                                                                                                                    
 env.reset()  # Reset environment                                                                                                                                                                                                     
 for action in best_action_sequence:                                                                                                                                                                                                  
-    observation, reward, terminated, truncated, info = env.step(np.array(action))                                                                                                                                                    
+    observation, reward, terminated, truncated, info = env.step(action)                                                                                                                                                    
     if terminated or truncated:                                                                                                                                                                                                      
         break  
