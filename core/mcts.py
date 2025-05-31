@@ -7,11 +7,13 @@ import math
 import numpy as np
 from copy import deepcopy
 from pydantic import BaseModel, Field
+import multiprocessing
+from multiprocessing import Pool
+from functools import partial
 
 from .wfc_env import WFCWrapper
 from assets.biome_adjacency_rules import create_adjacency_matrix
 from tasks.binary_task import binary_reward
-from functools import partial
 
 class Action(BaseModel):
     """Represents an action in the MCTS tree with its statistics"""
