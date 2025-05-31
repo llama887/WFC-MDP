@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 import multiprocessing
 from multiprocessing import Pool
 from functools import partial
-from typing import Optional, List, Dict, Tuple
+from tqdm import tqdm
 
 from wfc_env import WFCWrapper
 from assets.biome_adjacency_rules import create_adjacency_matrix
@@ -31,17 +31,16 @@ class MCTSConfig(BaseModel):
     """Configuration for the MCTS algorithm"""
     exploration_weight: float = Field(default=1.0, description="Exploration weight for UCT calculation")
     num_simulations: int = Field(default=48, description="Number of simulations to run")
-    max_depth: int = Field(default=50, description="Maximum depth of the search tree")
 
 class Node:
     """A node in the MCTS tree"""
-    def __init__(self, env: WFCWrapper, parent: Optional['Node']=None, action_taken: Optional[Action]=None):
+    def __init__(self, env: WFCWrapper, parent: Node | None=None, action_taken: Action | None=None):
         self.env = deepcopy(env)
         self.parent = parent
         self.action_taken = action_taken  # Action that led to this node
-        self.children: List['Node'] = []
+        self.children: list[Node] = []
         # Available actions are the possible actions from this node's environment state
-        self.available_actions: Dict[int, Action] = {i: Action(action_logits=np.eye(env.action_space.n)[i], tile_index=i) 
+        self.available_actions: dict[int, Action] = {i: Action(action_logits=np.eye(env.num_tiles)[i], tile_index=i) 
                                                       for i in range(env.num_tiles)}
         self.visits = 0
         self.total_reward = 0.0
@@ -95,7 +94,7 @@ class Node:
         self.children.append(child)
         return child
     
-    def simulate(self) -> Tuple[float, List[np.ndarray], bool]:
+    def simulate(self) -> tuple[float, list[np.ndarray], bool]:
         """Run a simulation from this node to a terminal state
         
         Returns:
@@ -148,10 +147,10 @@ class MCTS:
         self.env = env                                                                                                                                                                                                               
         self.config = config                                                                                                                                                                                                         
         self.root = Node(env)                                                                                                                                                                                                        
-        self.best_action_sequence: List[np.ndarray] = []                                                                                                                                                                               
+        self.best_action_sequence: list[np.ndarray] = []                                                                                                                                                                               
         self.best_reward = float('-inf')                                                                                                                                                                                             
                                                                                                                                                                                                                                      
-    def _run_simulation(self, node: Node) -> Tuple[float, List[np.ndarray], bool, Node]:
+    def _run_simulation(self, node: Node) -> tuple[float, list[np.ndarray], bool, Node]:
         """Run a single simulation from a node
         
         Returns:
@@ -168,7 +167,7 @@ class MCTS:
         
         return reward, action_sequence, achieved_max_reward, node
     
-    def search(self) -> Tuple[Action, List[np.ndarray]]:
+    def search(self) -> tuple[Action, list[np.ndarray]]:
         """Run the MCTS algorithm and return the best action and sequence
         
         Returns:
@@ -181,7 +180,10 @@ class MCTS:
         # Create a list to store simulation results
         simulation_results = []
         
+
+
         with Pool(processes=num_processes) as pool:
+            # Use tqdm to show progress bar for simulations AI!
             # Create nodes for parallel processing
             nodes = []
             for _ in range(self.config.num_simulations):
@@ -190,7 +192,7 @@ class MCTS:
             
             # Run simulations in parallel
             simulation_results = pool.map(
-                lambda node: self._run_simulation(node),
+                self._run_simulation,
                 nodes
             )
         
@@ -226,7 +228,7 @@ class MCTS:
         
         # Traverse the tree until we find a node that is not fully expanded
         # or until we reach a terminal state or maximum depth
-        while not node.is_terminal and node.is_fully_expanded and depth < self.config.max_depth:
+        while not node.is_terminal and node.is_fully_expanded:
             node = node.best_child(self.config.exploration_weight)
             depth += 1
         
