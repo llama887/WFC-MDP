@@ -35,13 +35,13 @@ class MCTSConfig(BaseModel):
 
 class Node:
     """A node in the MCTS tree"""
-    def __init__(self, env: WFCWrapper, parent: Node | None=None, action_taken: Action | None=None):
+    def __init__(self, env: WFCWrapper, parent: Optional['Node']=None, action_taken: Optional[Action]=None):
         self.env = deepcopy(env)
         self.parent = parent
         self.action_taken = action_taken  # Action that led to this node
-        self.children: list[Node] = []
+        self.children: List['Node'] = []
         # Available actions are the possible actions from this node's environment state
-        self.available_actions: dict[int, Action] = {i: Action(action_logits=np.eye(env.action_space.n)[i].tolist(), tile_index=i) 
+        self.available_actions: Dict[int, Action] = {i: Action(action_logits=np.eye(env.action_space.n)[i], tile_index=i) 
                                                       for i in range(env.num_tiles)}
         self.visits = 0
         self.total_reward = 0.0
