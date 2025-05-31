@@ -1,14 +1,21 @@
+import os
+import sys
+
+# Add the project root to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import math
 import numpy as np
-from typing import List, Dict, Optional, Tuple
 from copy import deepcopy
 from pydantic import BaseModel, Field
 
 from .wfc_env import WFCWrapper
+from assets.biome_adjacency_rules import create_adjacency_matrix
+from tasks.binary_task import binary_reward
+from functools import partial
 
 class Action(BaseModel):
     """Represents an action in the MCTS tree with its statistics"""
-    action_logits: List[float] = Field(default_factory=list, description="Logits for the action taken")
+    action_logits: list[float] = Field(default_factory=list, description="Logits for the action taken")
     visits: int = Field(default=0, description="Number of times this action has been taken")
     total_reward: float = Field(default=0.0, description="Total reward accumulated from this action")
     tile_index: int = Field(default=-1, description="Index of the tile this action represents")
@@ -16,17 +23,19 @@ class Action(BaseModel):
 class MCTSConfig(BaseModel):
     """Configuration for the MCTS algorithm"""
     exploration_weight: float = Field(default=1.0, description="Exploration weight for UCT calculation")
-    num_simulations: int = Field(default=100, description="Number of simulations to run")
+    num_simulations: int = Field(default=48, description="Number of simulations to run")
     max_depth: int = Field(default=50, description="Maximum depth of the search tree")
 
 class Node:
     """A node in the MCTS tree"""
-    def __init__(self, env: WFCWrapper, parent=None, action_taken=None):
+    def __init__(self, env: WFCWrapper, parent: "Node"| None =None, action_taken: Action | None=None):
         self.env = deepcopy(env)
         self.parent = parent
         self.action_taken = action_taken  # Action that led to this node
-        self.children: List[Node] = []
-        self.available_actions: Dict[int, Action] = {}  # Maps tile index to Action
+        self.children: list[Node] = []
+        # Available actions are the possible actions from this node's environment state
+        self.available_actions: dict[int, Action] = {i: Action(action_logits=np.eye(env.action_space.n)[i].tolist(), tile_index=i) 
+                                                      for i in range(env.action_space.n)}
         self.visits = 0
         self.total_reward = 0.0
         self.is_terminal = False
@@ -55,34 +64,6 @@ class Node:
     
     def expand(self) -> 'Node':
         """Expand the node by adding a new child"""
-        # Get the current state observation
-        obs = self.env.get_observation()
-        
-        # Find the lowest entropy cell position
-        pos_tuple = self.env.find_lowest_entropy_cell(self.env.grid, deterministic=True)
-        if pos_tuple is None:
-            self.is_terminal = True
-            return self
-        
-        # Get possible tiles for this cell
-        x, y = pos_tuple
-        possible_tiles = list(self.env.grid[y][x])
-        
-        # Create actions for each possible tile if not already created
-        if not self.available_actions:
-            for tile in possible_tiles:
-                tile_idx = self.env.tile_to_index.get(tile)
-                if tile_idx is not None and tile_idx not in self.available_actions:
-                    # Create action with one-hot encoding (only one 1.0, rest 0.0)
-                    action_logits = [0.0] * self.env.num_tiles
-                    action_logits[tile_idx] = 1.0
-                    
-                    self.available_actions[tile_idx] = Action(
-                        action_logits=action_logits,
-                        visits=0,
-                        total_reward=0.0,
-                        tile_index=tile_idx
-                    )
         
         # Choose an unexplored action
         unexplored = [idx for idx, action in self.available_actions.items() 
@@ -107,8 +88,14 @@ class Node:
         self.children.append(child)
         return child
     
-    def simulate(self) -> float:
-        """Run a simulation from this node to a terminal state"""
+    def simulate(self) -> tuple[float, list[list[float]], bool]:
+        """Run a simulation from this node to a terminal state
+        
+        Returns:
+            - total_reward: Total reward accumulated during the simulation
+            - action_sequence: List of actions taken during the simulation
+            - achieved_max_reward: Whether the maximum reward was achieved
+        """
         if self.is_terminal:
             # Get the final reward from the environment
             return self.env.reward(self.env.grid)[0]
@@ -118,17 +105,21 @@ class Node:
         terminated = False
         truncated = False
         total_reward = 0.0
-        
+        action_sequence = []
         # Run random actions until terminal state
         while not (terminated or truncated):
-            # Sample a random action
-            action = sim_env.action_space.sample()
+            # picka  random action from available actions
+            action_idx = np.random.choice(list(self.available_actions.keys()))
+            action: list[float] = self.available_actions[action_idx].action_logits
             
             # Take a step in the environment
-            _, reward, terminated, truncated, _ = sim_env.step(action)
+            _, reward, terminated, truncated, info = sim_env.step(action)
             total_reward += reward
+            action_sequence.append(action)
+            if terminated and info.get("achieved_max_reward", False):
+                return total_reward, action_sequence, True
         
-        return total_reward
+        return total_reward, action_sequence, False
     
     def backpropagate(self, reward: float) -> None:
         """Update statistics for this node and all ancestors"""
@@ -144,33 +135,52 @@ class Node:
             
             node = node.parent
 
-class MCTS:
-    """Monte Carlo Tree Search implementation for WFC"""
-    def __init__(self, env: WFCWrapper, config: MCTSConfig = MCTSConfig()):
-        self.env = env
-        self.config = config
-        self.root = Node(env)
-    
-    def search(self) -> Action:
-        """Run the MCTS algorithm and return the best action"""
-        for _ in range(self.config.num_simulations):
-            # Selection and expansion
-            node = self.select_node()
-            
-            # Simulation
-            reward = node.simulate()
-            
-            # Backpropagation
-            node.backpropagate(reward)
-        
-        # Return the action with the most visits
-        if not self.root.children:
-            # If no children, return a random action
-            action_logits = self.env.action_space.sample()
-            return Action(action_logits=action_logits.tolist())
-        
-        best_child = max(self.root.children, key=lambda child: child.visits)
-        return best_child.action_taken
+class MCTS:                                                                                                                                                                                                                          
+    """Monte Carlo Tree Search implementation for WFC"""                                                                                                                                                                             
+    def __init__(self, env: WFCWrapper, config: MCTSConfig = MCTSConfig()):                                                                                                                                                          
+        self.env = env                                                                                                                                                                                                               
+        self.config = config                                                                                                                                                                                                         
+        self.root = Node(env)                                                                                                                                                                                                        
+        self.best_action_sequence = []                                                                                                                                                                                               
+        self.best_reward = float('-inf')                                                                                                                                                                                             
+                                                                                                                                                                                                                                     
+    def search(self) -> tuple[Action, list[list[float]]]:                                                                                                                                                                            
+        """Run the MCTS algorithm and return the best action and sequence                                                                                                                                                            
+                                                                                                                                                                                                                                     
+        Returns:                                                                                                                                                                                                                     
+            - best_action: The best action to take next                                                                                                                                                                              
+            - best_action_sequence: The best action sequence found during search                                                                                                                                                     
+        """             
+        # parallelize this using multiprocessing AI!                                                                                                                                                                                                             
+        for _ in range(self.config.num_simulations):                                                                                                                                                                                 
+            # Selection and expansion                                                                                                                                                                                                
+            node = self.select_node()                                                                                                                                                                                                
+                                                                                                                                                                                                                                     
+            # Simulation                                                                                                                      P                                                                                       
+            reward, action_sequence, achieved_max_reward = node.simulate()                                                                                                                                                           
+            # Early stop if we found a solution that achieves maximum reward                                                                                                                                                         
+            if achieved_max_reward:                                                                                                                                                                                                  
+                node.backpropagate(reward)                                                                                                                                                                                           
+                self.best_action_sequence = action_sequence                                                                                                                                                                          
+                self.best_reward = reward                                                                                                                                                                                            
+                return node.action_taken, action_sequence                                                                                                                                                                            
+                                                                                                                                                                                                                                     
+            # Track best action sequence found so far                                                                                                                                                                                
+            if reward > self.best_reward:                                                                                                                                                                                            
+                self.best_reward = reward                                                                                                                                                                                            
+                self.best_action_sequence = action_sequence                                                                                                                                                                          
+                                                                                                                                                                                                                                     
+            # Backpropagation                                                                                                                                                                                                        
+            node.backpropagate(reward)                                                                                                                                                                                               
+                                                                                                                                                                                                                                     
+        # Return the action with the most visits                                                                                                                                                                                     
+        if not self.root.children:                                                                                                                                                                                                   
+            # If no children, return a random action                                                                                                                                                                                 
+            action_logits = self.env.action_space.sample()                                                                                                                                                                           
+            return Action(action_logits=action_logits.tolist()), self.best_action_sequence                                                                                                                                           
+                                                                                                                                                                                                                                     
+        best_child = max(self.root.children, key=lambda child: child.visits)                                                                                                                                                         
+        return best_child.action_taken, self.best_action_sequence
     
     def select_node(self) -> Node:
         """Select a node to expand using UCT"""
@@ -188,3 +198,42 @@ class MCTS:
             return node.expand()
         
         return node
+
+
+    # Define environment parameters
+MAP_LENGTH = 15
+MAP_WIDTH = 20
+
+adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
+num_tiles = len(tile_symbols)
+
+# Create the WFC environment instance
+env = WFCWrapper(
+    map_length=MAP_LENGTH,
+    map_width=MAP_WIDTH,
+    tile_symbols=tile_symbols,
+    adjacency_bool=adjacency_bool,
+    num_tiles=num_tiles,
+    tile_to_index=tile_to_index,
+    reward=partial(binary_reward, target_path_length=80, hard=True),
+    deterministic=True,
+    # qd_function=binary_percent_water if args.qd else None,
+)
+                                                                                                                                                                                                            
+env.reset()                                                                                                                                                                                                                          
+                                                                                                                                                                                                                                     
+# Create MCTS instance                                                                                                                                                                                                               
+mcts = MCTS(env)                                                                                                                                                                                                                     
+                                                                                                                                                                                                                                     
+# Run the search                                                                                                                                                                                                                     
+best_action, best_action_sequence = mcts.search()                                                                                                                                                                                    
+                                                                                                                                                                                                                                     
+# Use the best action for the current step                                                                                                                                                                                           
+observation, reward, terminated, truncated, info = env.step(np.array(best_action.action_logits))                                                                                                                                     
+                                                                                                                                                                                                                                     
+# If you want to replay the entire best sequence:                                                                                                                                                                                    
+env.reset()  # Reset environment                                                                                                                                                                                                     
+for action in best_action_sequence:                                                                                                                                                                                                  
+    observation, reward, terminated, truncated, info = env.step(np.array(action))                                                                                                                                                    
+    if terminated or truncated:                                                                                                                                                                                                      
+        break  
