@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import sys
 
@@ -11,7 +12,7 @@ import multiprocessing
 from multiprocessing import Pool
 from functools import partial
 
-from .wfc_env import WFCWrapper
+from wfc_env import WFCWrapper
 from assets.biome_adjacency_rules import create_adjacency_matrix
 from tasks.binary_task import binary_reward
 
@@ -30,14 +31,14 @@ class MCTSConfig(BaseModel):
 
 class Node:
     """A node in the MCTS tree"""
-    def __init__(self, env: WFCWrapper, parent: "Node"| None =None, action_taken: Action | None=None):
+    def __init__(self, env: WFCWrapper, parent: Node | None=None, action_taken: Action | None=None):
         self.env = deepcopy(env)
         self.parent = parent
         self.action_taken = action_taken  # Action that led to this node
         self.children: list[Node] = []
         # Available actions are the possible actions from this node's environment state
         self.available_actions: dict[int, Action] = {i: Action(action_logits=np.eye(env.action_space.n)[i].tolist(), tile_index=i) 
-                                                      for i in range(env.action_space.n)}
+                                                      for i in range(env.num_tiles)}
         self.visits = 0
         self.total_reward = 0.0
         self.is_terminal = False
