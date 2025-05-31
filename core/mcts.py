@@ -246,7 +246,7 @@ def render_action_sequence(env: WFCWrapper, action_sequence: list[np.ndarray], t
     SCREEN_WIDTH = env.map_width * 32
     SCREEN_HEIGHT = env.map_length * 32
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption(f"Best Map")
+    pygame.display.set_caption("Best Map")
 
     # Create a surface for saving the final map
     final_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
