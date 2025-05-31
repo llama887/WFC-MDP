@@ -146,34 +146,64 @@ class MCTS:
         self.best_action_sequence = []                                                                                                                                                                                               
         self.best_reward = float('-inf')                                                                                                                                                                                             
                                                                                                                                                                                                                                      
-    def search(self) -> tuple[Action, list[list[float]]]:                                                                                                                                                                            
-        """Run the MCTS algorithm and return the best action and sequence                                                                                                                                                            
-                                                                                                                                                                                                                                     
-        Returns:                                                                                                                                                                                                                     
-            - best_action: The best action to take next                                                                                                                                                                              
-            - best_action_sequence: The best action sequence found during search                                                                                                                                                     
-        """             
-        # parallelize this using multiprocessing AI!                                                                                                                                                                                                             
-        for _ in range(self.config.num_simulations):                                                                                                                                                                                 
-            # Selection and expansion                                                                                                                                                                                                
-            node = self.select_node()                                                                                                                                                                                                
-                                                                                                                                                                                                                                     
-            # Simulation                                                                                                                      P                                                                                       
-            reward, action_sequence, achieved_max_reward = node.simulate()                                                                                                                                                           
-            # Early stop if we found a solution that achieves maximum reward                                                                                                                                                         
-            if achieved_max_reward:                                                                                                                                                                                                  
-                node.backpropagate(reward)                                                                                                                                                                                           
-                self.best_action_sequence = action_sequence                                                                                                                                                                          
-                self.best_reward = reward                                                                                                                                                                                            
-                return node.action_taken, action_sequence                                                                                                                                                                            
-                                                                                                                                                                                                                                     
-            # Track best action sequence found so far                                                                                                                                                                                
-            if reward > self.best_reward:                                                                                                                                                                                            
-                self.best_reward = reward                                                                                                                                                                                            
-                self.best_action_sequence = action_sequence                                                                                                                                                                          
-                                                                                                                                                                                                                                     
-            # Backpropagation                                                                                                                                                                                                        
-            node.backpropagate(reward)                                                                                                                                                                                               
+    def _run_simulation(self, node: Node) -> tuple[float, list[list[float]], bool, Node]:
+        """Run a single simulation from a node
+        
+        Returns:
+            - reward: The reward from the simulation
+            - action_sequence: The action sequence from the simulation
+            - achieved_max_reward: Whether the maximum reward was achieved
+            - node: The node that was simulated
+        """
+        # Simulation
+        reward, action_sequence, achieved_max_reward = node.simulate()
+        
+        # Backpropagation
+        node.backpropagate(reward)
+        
+        return reward, action_sequence, achieved_max_reward, node
+    
+    def search(self) -> tuple[Action, list[list[float]]]:
+        """Run the MCTS algorithm and return the best action and sequence
+        
+        Returns:
+            - best_action: The best action to take next
+            - best_action_sequence: The best action sequence found during search
+        """
+        # Determine number of processes to use
+        num_processes = min(multiprocessing.cpu_count(), self.config.num_simulations)
+        
+        # Create a list to store simulation results
+        simulation_results = []
+        
+        with Pool(processes=num_processes) as pool:
+            # Create nodes for parallel processing
+            nodes = []
+            for _ in range(self.config.num_simulations):
+                node = self.select_node()
+                nodes.append(node)
+            
+            # Run simulations in parallel
+            simulation_results = pool.map(
+                lambda node: self._run_simulation(node),
+                nodes
+            )
+        
+        # Process results
+        for reward, action_sequence, achieved_max_reward, _ in simulation_results:
+            # Early stop if we found a solution that achieves maximum reward
+            if achieved_max_reward:
+                self.best_action_sequence = action_sequence
+                self.best_reward = reward
+                # Find the child that corresponds to this action sequence
+                for child in self.root.children:
+                    if child.action_taken and child.action_taken.action_logits == action_sequence[0]:
+                        return child.action_taken, action_sequence
+            
+            # Track best action sequence found so far
+            if reward > self.best_reward:
+                self.best_reward = reward
+                self.best_action_sequence = action_sequence
                                                                                                                                                                                                                                      
         # Return the action with the most visits                                                                                                                                                                                     
         if not self.root.children:                                                                                                                                                                                                   
