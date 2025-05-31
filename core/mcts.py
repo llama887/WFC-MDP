@@ -31,7 +31,7 @@ class Action(BaseModel):
 class MCTSConfig(BaseModel):
     """Configuration for the MCTS algorithm"""
     exploration_weight: float = Field(default=1.0, description="Exploration weight for UCT calculation")
-    num_simulations: int = Field(default=48, description="Number of simulations to run")
+    num_simulations: int = Field(default=20, description="Number of simulations to run")
 
 class Node:
     """A node in the MCTS tree"""
@@ -190,13 +190,11 @@ class MCTS:
                 node = self.select_node()
                 nodes.append(node)
             
-            # Run simulations in parallel with progress bar
-            simulation_results = list(tqdm(
-                pool.imap(self._run_simulation, nodes),
-                total=len(nodes),
-                desc="Running MCTS simulations",
-                unit="sim"
-            ))
+            # Run simulations in parallel
+            simulation_results = pool.map(
+                self._run_simulation,
+                nodes
+            )
         
         # Process results
         for reward, action_sequence, achieved_max_reward, _ in simulation_results:
@@ -206,7 +204,7 @@ class MCTS:
                 self.best_reward = reward
                 # Find the child that corresponds to this action sequence
                 for child in self.root.children:
-                    if child.action_taken and child.action_taken.action_logits == action_sequence[0]:
+                    if (child.action_taken and np.array_equal(child.action_taken.action_logits, action_sequence[0])):
                         return child.action_taken, action_sequence
             
             # Track best action sequence found so far
@@ -312,7 +310,7 @@ env = WFCWrapper(
     adjacency_bool=adjacency_bool,
     num_tiles=num_tiles,
     tile_to_index=tile_to_index,
-    reward=partial(binary_reward, target_path_length=80, hard=True),
+    reward=partial(binary_reward, target_path_length=20, hard=True),
     deterministic=True,
     # qd_function=binary_percent_water if args.qd else None,
 )
@@ -323,7 +321,7 @@ env.reset()
 mcts = MCTS(env)                                                                                                                                                                                                                     
                                                                                                                                                                                                                                      
 # Function to run MCTS until we have a complete solution
-def run_mcts_until_complete(env, mcts, max_iterations=10):
+def run_mcts_until_complete(env, mcts, max_iterations=100):
     """
     Run MCTS search repeatedly until we have a complete solution or reach max iterations
     
@@ -342,24 +340,24 @@ def run_mcts_until_complete(env, mcts, max_iterations=10):
     # Clone the environment to avoid modifying the original
     test_env = deepcopy(env)
     
-    for i in range(max_iterations):
-        print(f"MCTS iteration {i+1}/{max_iterations}")
+    for i in tqdm(range(max_iterations), desc="MCTS Iterations"):
         
         # Run the search
         _, action_sequence = mcts.search()
         
         # If we found a solution with early stopping, return it
+        info = {}
         if action_sequence and len(action_sequence) > 0:
             # Test the action sequence
             test_env.reset()
             for action in action_sequence:
-                _, reward, terminated, truncated, _ = test_env.step(action)
+                _, reward, terminated, truncated, info = test_env.step(action)
                 total_reward += reward
                 if terminated or truncated:
                     break
             
             # If the sequence successfully completes the map, return it
-            if terminated and not truncated:
+            if terminated and info.get("achieved_max_reward", False):
                 print(f"Found complete solution with reward {total_reward}")
                 return action_sequence, total_reward
         

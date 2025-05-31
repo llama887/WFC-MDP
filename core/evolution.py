@@ -41,7 +41,6 @@ from tasks.pond_task import pond_reward
 from tasks.river_task import river_reward
 
 from assets.biome_adjacency_rules import create_adjacency_matrix
-from ..assets.biome_adjacency_rules import create_adjacency_matrix
 
 
 class CrossOverMethod(Enum):
