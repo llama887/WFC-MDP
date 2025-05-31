@@ -183,18 +183,19 @@ class MCTS:
 
 
         with Pool(processes=num_processes) as pool:
-            # Use tqdm to show progress bar for simulations AI!
             # Create nodes for parallel processing
             nodes = []
             for _ in range(self.config.num_simulations):
                 node = self.select_node()
                 nodes.append(node)
             
-            # Run simulations in parallel
-            simulation_results = pool.map(
-                self._run_simulation,
-                nodes
-            )
+            # Run simulations in parallel with progress bar
+            simulation_results = list(tqdm(
+                pool.imap(self._run_simulation, nodes),
+                total=len(nodes),
+                desc="Running MCTS simulations",
+                unit="sim"
+            ))
         
         # Process results
         for reward, action_sequence, achieved_max_reward, _ in simulation_results:
