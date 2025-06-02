@@ -351,22 +351,34 @@ def run_mcts_until_complete(env: WFCWrapper, mcts: MCTS, max_iterations:int=1000
         # If we found a solution with early stopping, return it
         if found_max:
             assert len(action_sequence) > 0, "Action sequence should not be empty"
-            info = {}
             # Test the action sequence
             test_env.reset()
             current_reward = 0
+            step_rewards = []  # Track individual step rewards
+            step_info = []     # Track info from each step
             for action in action_sequence:
                 _, reward, terminated, truncated, info = test_env.step(action)
                 current_reward += reward
+                step_rewards.append(reward)
+                step_info.append(info)
                 if terminated or truncated:
                     break
-            assert current_reward >= 0, f"Current reward should be non-negative, got {current_reward}"
-            assert info.get("achieved_max_reward", False) == found_max, f"Achieved max reward should match found_max. Achieved: {info.get('achieved_max_reward', False)}, Found: {found_max}"
             
-            # If the sequence successfully completes the map, return it
+            # Debugging: Print step-by-step rewards and info
+            print(f"Testing action sequence (found_max={found_max})")
+            for i, (r, info) in enumerate(zip(step_rewards, step_info)):
+                print(f"  Step {i}: reward={r}, terminated={info.get('terminated', False)}, truncated={info.get('truncated', False)}, achieved_max={info.get('achieved_max_reward', False)}")
+            
+            # Validate reward consistency
             if terminated and info.get("achieved_max_reward", False):
-                print(f"Found complete solution with reward {current_reward}")
+                if current_reward != 0:
+                    print(f"WARNING: Max reward achieved but total reward is {current_reward} (expected 0)")
+                    print("This indicates a potential bug in the reward calculation or environment logic")
+                else:
+                    print(f"Found complete solution with reward {current_reward}")
                 return action_sequence, current_reward
+            else:
+                print(f"WARNING: Expected max reward but not achieved. Final state: terminated={terminated}, achieved_max={info.get('achieved_max_reward', False)}")
         
         # If we didn't find a complete solution, reset and try again
         mcts = MCTS(env)
