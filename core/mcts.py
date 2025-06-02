@@ -124,6 +124,7 @@ class Node:
             total_reward += reward
             action_sequence.append(action)
             if terminated and info.get("achieved_max_reward", False):
+                assert total_reward == 0, f"Total reward is {total_reward} while achieved_max_reward is {info.get("achieved_max_reward", False)}, expected 0 for max reward"
                 return total_reward, action_sequence, True
         
         return total_reward, action_sequence, False
@@ -196,16 +197,18 @@ class MCTS:
                 nodes
             )
         
+        found_max_reward = False
         # Process results
         for reward, action_sequence, achieved_max_reward, _ in simulation_results:
             # Early stop if we found a solution that achieves maximum reward
             if achieved_max_reward:
+                found_max_reward = True
                 self.best_action_sequence = action_sequence
                 self.best_reward = reward
                 # Find the child that corresponds to this action sequence
                 for child in self.root.children:
                     if (child.action_taken and np.array_equal(child.action_taken.action_logits, action_sequence[0])):
-                        return child.action_taken, action_sequence
+                        return child.action_taken, action_sequence, found_max_reward
             
             # Track best action sequence found so far
             if reward > self.best_reward:
@@ -219,7 +222,7 @@ class MCTS:
             return Action(action_logits=action_logits), self.best_action_sequence                                                                                                                                                           
                                                                                                                                                                                                                                      
         best_child = max(self.root.children, key=lambda child: child.visits)                                                                                                                                                         
-        return best_child.action_taken, self.best_action_sequence
+        return best_child.action_taken, self.best_action_sequence, found_max_reward
     
     def select_node(self) -> Node:
         """Select a node to expand using UCT"""
@@ -321,7 +324,7 @@ env.reset()
 mcts = MCTS(env)                                                                                                                                                                                                                     
                                                                                                                                                                                                                                      
 # Function to run MCTS until we have a complete solution
-def run_mcts_until_complete(env, mcts, max_iterations=100):
+def run_mcts_until_complete(env: WFCWrapper, mcts: MCTS, max_iterations:int=1000):
     """
     Run MCTS search repeatedly until we have a complete solution or reach max iterations
     
@@ -343,23 +346,27 @@ def run_mcts_until_complete(env, mcts, max_iterations=100):
     for i in tqdm(range(max_iterations), desc="MCTS Iterations"):
         
         # Run the search
-        _, action_sequence = mcts.search()
+        _, action_sequence, found_max = mcts.search()
         
         # If we found a solution with early stopping, return it
-        info = {}
-        if action_sequence and len(action_sequence) > 0:
+        if found_max:
+            assert len(action_sequence) > 0, "Action sequence should not be empty"
+            info = {}
             # Test the action sequence
             test_env.reset()
+            current_reward = 0
             for action in action_sequence:
                 _, reward, terminated, truncated, info = test_env.step(action)
-                total_reward += reward
+                current_reward += reward
                 if terminated or truncated:
                     break
+            assert current_reward >= 0, f"Current reward should be non-negative, got {current_reward}"
+            assert info.get("achieved_max_reward", False) == found_max, f"Achieved max reward should match found_max. Achieved: {info.get('achieved_max_reward', False)}, Found: {found_max}"
             
             # If the sequence successfully completes the map, return it
             if terminated and info.get("achieved_max_reward", False):
-                print(f"Found complete solution with reward {total_reward}")
-                return action_sequence, total_reward
+                print(f"Found complete solution with reward {current_reward}")
+                return action_sequence, current_reward
         
         # If we didn't find a complete solution, reset and try again
         mcts = MCTS(env)
