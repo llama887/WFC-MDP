@@ -589,7 +589,7 @@ def render_best_agent(
     print(f"Final map reward for the best agent: {total_reward:.4f}")
     print(f"Best agent reward during evolution: {best_agent.reward:.4f}")
 
-    if best_agent.reward >= -1.0:
+    if best_agent.reward == 0.0:
         best_agent.info["achieved_max_reward"] = True
         print("Max reward of 0 achieved! Agent truly converged.")
     else:

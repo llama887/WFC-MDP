@@ -125,6 +125,8 @@ class Node:
             action_sequence.append(action)
             if terminated and info.get("achieved_max_reward", False):
                 assert total_reward == 0, f"Total reward is {total_reward} while achieved_max_reward is {info.get("achieved_max_reward", False)}, expected 0 for max reward"
+                assert sim_env.deterministic, "Expected deterministic environment for MCTS simulation"
+                print("Simulation info:", info)
                 return total_reward, action_sequence, True
         
         return total_reward, action_sequence, False
@@ -163,67 +165,84 @@ class MCTS:
         """
         # Simulation
         reward, action_sequence, achieved_max_reward = node.simulate()
-        
+        if achieved_max_reward:
+            assert reward == 0, f"Expected reward to be 0 for max reward, got {reward}"
+            print("Parallel simulations found a complete solution with reward 0")
+
         # Backpropagation
         node.backpropagate(reward)
         
         return reward, action_sequence, achieved_max_reward, node
     
-    def search(self) -> tuple[Action, list[np.ndarray]]:
+    def search(self) -> tuple[Action, list[np.ndarray], bool]:
         """Run the MCTS algorithm and return the best action and sequence
-        
+
         Returns:
             - best_action: The best action to take next
-            - best_action_sequence: The best action sequence found during search
+            - best_action_sequence: The full action sequence (from root → terminal) found during search
+            - found_max: Whether a max-reward (complete) solution was found
         """
         # Determine number of processes to use
         num_processes = min(multiprocessing.cpu_count(), self.config.num_simulations)
-        
-        # Create a list to store simulation results
-        simulation_results = []
-        
 
-
+        # Run simulations in parallel
         with Pool(processes=num_processes) as pool:
-            # Create nodes for parallel processing
-            nodes = []
-            for _ in range(self.config.num_simulations):
-                node = self.select_node()
-                nodes.append(node)
-            
-            # Run simulations in parallel
-            simulation_results = pool.map(
-                self._run_simulation,
-                nodes
-            )
-        
-        found_max_reward = False
+            nodes = [self.select_node() for _ in range(self.config.num_simulations)]
+            simulation_results = pool.map(self._run_simulation, nodes)
+
         # Process results
-        for reward, action_sequence, achieved_max_reward, _ in simulation_results:
-            # Early stop if we found a solution that achieves maximum reward
+        for reward, rollout_sequence, achieved_max_reward, node in simulation_results:
             if achieved_max_reward:
-                found_max_reward = True
-                self.best_action_sequence = action_sequence
+                # We expect reward == 0 for a complete solution
+                assert reward == 0, f"Expected reward to be 0 for max reward, got {reward}"
+
+                # 1) Reconstruct the prefix (actions from root → this node)
+                prefix_actions: list[np.ndarray] = []
+                n = node
+                while n.parent is not None:
+                    # Each node.action_taken.action_logits is the array that transitioned from parent→n
+                    prefix_actions.append(n.action_taken.action_logits)
+                    n = n.parent
+                prefix_actions.reverse()  # now in order from root to the parent of 'node'
+
+                # 2) Concatenate the prefix + rollout to form the full sequence
+                full_sequence = prefix_actions + rollout_sequence
+
+                # 3) Record the best sequence and return
+                self.best_action_sequence = full_sequence
                 self.best_reward = reward
-                # Find the child that corresponds to this action sequence
+
+                # Identify which immediate child of root corresponds to full_sequence[0]
                 for child in self.root.children:
-                    if (child.action_taken and np.array_equal(child.action_taken.action_logits, action_sequence[0])):
-                        return child.action_taken, action_sequence, found_max_reward
-            
-            # Track best action sequence found so far
+                    if (
+                        child.action_taken
+                        and np.array_equal(child.action_taken.action_logits, full_sequence[0])
+                    ):
+                        return child.action_taken, full_sequence, True
+
+            # If this rollout's reward is better than our current best, update best_action_sequence
             if reward > self.best_reward:
                 self.best_reward = reward
-                self.best_action_sequence = action_sequence
-                                                                                                                                                                                                                                     
-        # Return the action with the most visits                                                                                                                                                                                     
-        if not self.root.children:                                                                                                                                                                                                   
-            # If no children, return a random action                                                                                                                                                                                 
-            action_logits = self.env.action_space.sample()                                                                                                                                                                           
-            return Action(action_logits=action_logits), self.best_action_sequence                                                                                                                                                           
-                                                                                                                                                                                                                                     
-        best_child = max(self.root.children, key=lambda child: child.visits)                                                                                                                                                         
-        return best_child.action_taken, self.best_action_sequence, found_max_reward
-    
+
+                # Reconstruct prefix for this node (same as above)
+                prefix_actions: list[np.ndarray] = []
+                n = node
+                while n.parent is not None:
+                    prefix_actions.append(n.action_taken.action_logits)
+                    n = n.parent
+                prefix_actions.reverse()
+
+                self.best_action_sequence = prefix_actions + rollout_sequence
+
+        # If no children were ever expanded, pick a random action
+        if not self.root.children:
+            action_logits = self.env.action_space.sample()
+            return Action(action_logits=action_logits), self.best_action_sequence, False
+
+        # Otherwise, choose the child with the highest visit count
+        best_child = max(self.root.children, key=lambda c: c.visits)
+        return best_child.action_taken, self.best_action_sequence, False
+   
     def select_node(self) -> Node:
         """Select a node to expand using UCT"""
         node = self.root
@@ -298,6 +317,72 @@ def render_action_sequence(env: WFCWrapper, action_sequence: list[np.ndarray], t
         if terminate or truncate:
             break
 
+                                                                                                                                                                                                                 
+                                                                                                                                                                                                                                     
+# Function to run MCTS until we have a complete solution
+def run_mcts_until_complete(env: WFCWrapper, mcts: MCTS, max_iterations:int=1000):
+    """
+    Run MCTS search repeatedly until we have a complete solution or reach max iterations
+    
+    Args:
+        env: The WFC environment
+        mcts: The MCTS instance
+        max_iterations: Maximum number of MCTS search iterations
+        
+    Returns:
+        best_action_sequence: The best action sequence found
+        total_reward: The total reward of the best sequence
+    """
+    best_action_sequence = []
+    total_reward = 0
+    
+    # Clone the environment to avoid modifying the original
+    test_env = deepcopy(env)
+    assert test_env.deterministic, "Expected deterministic environment for MCTS search"
+    
+    for i in tqdm(range(max_iterations), desc="MCTS Iterations"):
+        # Run the search
+        _, action_sequence, found_max = mcts.search()
+        
+        # If we found a solution with early stopping, return it
+        if found_max:
+            assert len(action_sequence) > 0, "Action sequence should not be empty"
+            # Test the action sequence
+            info = {}   
+            test_env.reset()
+            current_reward = 0
+            for action in action_sequence:
+                _, reward, terminated, truncated, info = test_env.step(action)
+                current_reward += reward
+                if terminated or truncated:
+                    print(f"Reached terminal/truncated state after {len(action_sequence)} actions")
+                    break
+            if not info.get("achieved_max_reward", False):
+                print(f"WARNING: Expected max reward but not achieved. Final state: terminated={terminated}, achieved_max={info.get('achieved_max_reward', False)}")
+                import ipdb
+                ipdb.set_trace()
+            
+            # Debugging:
+            print(f"Testing best action sequence (found_max={found_max})")
+            print(f"  Total reward: {current_reward}")
+            print(f"  Info: {info}")
+            # Validate reward consistency
+            if terminated and info.get("achieved_max_reward", False):
+                if current_reward != 0:
+                    print(f"WARNING: Max reward achieved but total reward is {current_reward} (expected 0)")
+                    print("This indicates a potential bug in the reward calculation or environment logic")
+                else:
+                    print(f"Found complete solution with reward {current_reward}")
+                return action_sequence, current_reward
+            else:
+                print(f"WARNING: Expected max reward but not achieved. Final state: terminated={terminated}, achieved_max={info.get('achieved_max_reward', False)}")
+        
+        # If we didn't find a complete solution, reset and try again
+        mcts = MCTS(env)
+    
+    print(f"Failed to find complete solution after {max_iterations} iterations")
+    return best_action_sequence, total_reward
+
 # Define environment parameters
 MAP_LENGTH = 15
 MAP_WIDTH = 20
@@ -321,70 +406,9 @@ env = WFCWrapper(
 env.reset()                                                                                                                                                                                                                          
                                                                                                                                                                                                                                      
 # Create MCTS instance                                                                                                                                                                                                               
-mcts = MCTS(env)                                                                                                                                                                                                                     
-                                                                                                                                                                                                                                     
-# Function to run MCTS until we have a complete solution
-def run_mcts_until_complete(env: WFCWrapper, mcts: MCTS, max_iterations:int=1000):
-    """
-    Run MCTS search repeatedly until we have a complete solution or reach max iterations
-    
-    Args:
-        env: The WFC environment
-        mcts: The MCTS instance
-        max_iterations: Maximum number of MCTS search iterations
-        
-    Returns:
-        best_action_sequence: The best action sequence found
-        total_reward: The total reward of the best sequence
-    """
-    best_action_sequence = []
-    total_reward = 0
-    
-    # Clone the environment to avoid modifying the original
-    test_env = deepcopy(env)
-    
-    for i in tqdm(range(max_iterations), desc="MCTS Iterations"):
-        
-        # Run the search
-        _, action_sequence, found_max = mcts.search()
-        
-        # If we found a solution with early stopping, return it
-        if found_max:
-            assert len(action_sequence) > 0, "Action sequence should not be empty"
-            # Test the action sequence
-            test_env.reset()
-            current_reward = 0
-            step_rewards = []  # Track individual step rewards
-            step_info = []     # Track info from each step
-            for action in action_sequence:
-                _, reward, terminated, truncated, info = test_env.step(action)
-                current_reward += reward
-                step_rewards.append(reward)
-                step_info.append(info)
-                if terminated or truncated:
-                    break
-            
-            # Debugging: Print step-by-step rewards and info
-            print(f"Testing action sequence (found_max={found_max})")
-            for i, (r, info) in enumerate(zip(step_rewards, step_info)):
-                print(f"  Step {i}: reward={r}, terminated={info.get('terminated', False)}, truncated={info.get('truncated', False)}, achieved_max={info.get('achieved_max_reward', False)}")
-            
-            # Validate reward consistency
-            if terminated and info.get("achieved_max_reward", False):
-                if current_reward != 0:
-                    print(f"WARNING: Max reward achieved but total reward is {current_reward} (expected 0)")
-                    print("This indicates a potential bug in the reward calculation or environment logic")
-                else:
-                    print(f"Found complete solution with reward {current_reward}")
-                return action_sequence, current_reward
-            else:
-                print(f"WARNING: Expected max reward but not achieved. Final state: terminated={terminated}, achieved_max={info.get('achieved_max_reward', False)}")
-        
-        # If we didn't find a complete solution, reset and try again
-        mcts = MCTS(env)
-    
-    print(f"Failed to find complete solution after {max_iterations} iterations")
-    return best_action_sequence, total_reward
+mcts = MCTS(env)    
+
+env.reset() 
 
 # Run MCTS until we have a complete solution
 best_action_sequence, total_reward = run_mcts_until_complete(env, mcts)
