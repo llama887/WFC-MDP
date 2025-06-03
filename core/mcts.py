@@ -126,7 +126,6 @@ class Node:
             if terminated and info.get("achieved_max_reward", False):
                 assert total_reward == 0, f"Total reward is {total_reward} while achieved_max_reward is {info.get("achieved_max_reward", False)}, expected 0 for max reward"
                 assert sim_env.deterministic, "Expected deterministic environment for MCTS simulation"
-                print("Simulation info:", info)
                 return total_reward, action_sequence, True
         
         return total_reward, action_sequence, False
@@ -167,7 +166,6 @@ class MCTS:
         reward, action_sequence, achieved_max_reward = node.simulate()
         if achieved_max_reward:
             assert reward == 0, f"Expected reward to be 0 for max reward, got {reward}"
-            print("Parallel simulations found a complete solution with reward 0")
 
         # Backpropagation
         node.backpropagate(reward)
@@ -263,11 +261,9 @@ class MCTS:
 def render_action_sequence(env: WFCWrapper, action_sequence: list[np.ndarray], tile_images, filename: str) -> None:
     """Render the final state of an action sequence and save to file"""
     env = deepcopy(env)  # Ensure we don't modify the original environment
-    print("trying to initialize pygame...")
     os.environ['SDL_VIDEODRIVER'] = 'dummy'                                                                                                                                      
     pygame.init()                                                                                                                                                                
-    pygame.display.set_mode((1, 1))  # Minimal display buffer   
-    print("Rendering action sequence...")
+    pygame.display.set_mode((1, 1))  # Minimal display buffer
     SCREEN_WIDTH = env.map_width * 32
     SCREEN_HEIGHT = env.map_length * 32
     
@@ -275,7 +271,6 @@ def render_action_sequence(env: WFCWrapper, action_sequence: list[np.ndarray], t
     final_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
 
     env.reset()
-    print("Running action sequence...")
 
     # Run the entire action sequence
     for action in action_sequence:
@@ -306,7 +301,7 @@ def render_action_sequence(env: WFCWrapper, action_sequence: list[np.ndarray], t
     os.makedirs("mcts_output", exist_ok=True)
     output_path = os.path.join("mcts_output", filename)
     pygame.image.save(final_surface, output_path)
-    print(f"Saved final map to {output_path}")
+    pygame.quit()
 
                                                                                                                                                                                                                  
                                                                                                                                                                                                                                      
@@ -346,32 +341,15 @@ def run_mcts_until_complete(env: WFCWrapper, mcts: MCTS, max_iterations:int=1000
                 _, reward, terminated, truncated, info = test_env.step(action)
                 current_reward += reward
                 if terminated or truncated:
-                    print(f"Reached terminal/truncated state after {len(action_sequence)} actions")
                     break
-            if not info.get("achieved_max_reward", False):
-                print(f"WARNING: Expected max reward but not achieved. Final state: terminated={terminated}, achieved_max={info.get('achieved_max_reward', False)}")
-                import ipdb
-                ipdb.set_trace()
-            
-            # Debugging:
-            print(f"Testing best action sequence (found_max={found_max})")
-            print(f"  Total reward: {current_reward}")
-            print(f"  Info: {info}")
-            # Validate reward consistency
             if terminated and info.get("achieved_max_reward", False):
                 if current_reward != 0:
                     print(f"WARNING: Max reward achieved but total reward is {current_reward} (expected 0)")
-                    print("This indicates a potential bug in the reward calculation or environment logic")
-                else:
-                    print(f"Found complete solution with reward {current_reward}")
                 return action_sequence, current_reward, i
-            else:
-                print(f"WARNING: Expected max reward but not achieved. Final state: terminated={terminated}, achieved_max={info.get('achieved_max_reward', False)}")
         
         # If we didn't find a complete solution, reset and try again
         mcts = MCTS(env)
     
-    print(f"Failed to find complete solution after {max_iterations} iterations")
     return best_action_sequence, total_reward, None
 
 # Define environment parameters
@@ -410,10 +388,7 @@ tile_images = load_tile_images()
 
 # Save the best action sequence if we found one
 if best_action_sequence:
-    print(f"Saving best solution with reward {total_reward} found at iteration {iterations}")
     filename = f"mcts_solution_{iterations}.png"
     render_action_sequence(env, best_action_sequence, tile_images, filename)
-else:
-    print("No complete solution found")
 
 
