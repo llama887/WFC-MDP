@@ -25,10 +25,10 @@ import yaml
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.stats import truncnorm
 from tqdm import tqdm
-from .wfc import (  # We might not need render_wfc_grid if we keep console rendering
+from wfc import (  # We might not need render_wfc_grid if we keep console rendering
     load_tile_images,
 )
-from .wfc_env import CombinedReward, WFCWrapper
+from wfc_env import CombinedReward, WFCWrapper
 from wfc import (  # We might not need render_wfc_grid if we keep console rendering
     load_tile_images,
 )

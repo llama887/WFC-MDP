@@ -315,6 +315,7 @@ def render_action_sequence(env: WFCWrapper, action_sequence: list[np.ndarray], t
 
         # Capture final frame if this is the last step
         if terminate or truncate:
+            pygame.time.delay(5000)
             break
 
                                                                                                                                                                                                                  
@@ -332,6 +333,7 @@ def run_mcts_until_complete(env: WFCWrapper, mcts: MCTS, max_iterations:int=1000
     Returns:
         best_action_sequence: The best action sequence found
         total_reward: The total reward of the best sequence
+        iteration: The iteration at which the best sequence was found. None if no complete solution was found
     """
     best_action_sequence = []
     total_reward = 0
@@ -339,7 +341,6 @@ def run_mcts_until_complete(env: WFCWrapper, mcts: MCTS, max_iterations:int=1000
     # Clone the environment to avoid modifying the original
     test_env = deepcopy(env)
     assert test_env.deterministic, "Expected deterministic environment for MCTS search"
-    
     for i in tqdm(range(max_iterations), desc="MCTS Iterations"):
         # Run the search
         _, action_sequence, found_max = mcts.search()
@@ -373,7 +374,7 @@ def run_mcts_until_complete(env: WFCWrapper, mcts: MCTS, max_iterations:int=1000
                     print("This indicates a potential bug in the reward calculation or environment logic")
                 else:
                     print(f"Found complete solution with reward {current_reward}")
-                return action_sequence, current_reward
+                return action_sequence, current_reward, i
             else:
                 print(f"WARNING: Expected max reward but not achieved. Final state: terminated={terminated}, achieved_max={info.get('achieved_max_reward', False)}")
         
@@ -381,7 +382,7 @@ def run_mcts_until_complete(env: WFCWrapper, mcts: MCTS, max_iterations:int=1000
         mcts = MCTS(env)
     
     print(f"Failed to find complete solution after {max_iterations} iterations")
-    return best_action_sequence, total_reward
+    return best_action_sequence, total_reward, None
 
 # Define environment parameters
 MAP_LENGTH = 15
@@ -411,7 +412,7 @@ mcts = MCTS(env)
 env.reset() 
 
 # Run MCTS until we have a complete solution
-best_action_sequence, total_reward = run_mcts_until_complete(env, mcts)
+best_action_sequence, total_reward, iterations = run_mcts_until_complete(env, mcts)
 
 # Load tile images for visualization
 from assets.biome_adjacency_rules import load_tile_images
@@ -419,7 +420,7 @@ tile_images = load_tile_images()
 
 # Render the best action sequence if we found one
 if best_action_sequence:
-    print(f"Rendering best solution with reward {total_reward}")
+    print(f"Rendering best solution with reward {total_reward} found at iteration {iterations}")
     render_action_sequence(env, best_action_sequence, tile_images)
 else:
     print("No complete solution found")
