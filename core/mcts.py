@@ -263,7 +263,11 @@ class MCTS:
 def render_action_sequence(env: WFCWrapper, action_sequence: list[np.ndarray], tile_images, filename: str) -> None:
     """Render the final state of an action sequence and save to file"""
     env = deepcopy(env)  # Ensure we don't modify the original environment
-    pygame.init()
+    print("trying to initialize pygame...")
+    os.environ['SDL_VIDEODRIVER'] = 'dummy'                                                                                                                                      
+    pygame.init()                                                                                                                                                                
+    pygame.display.set_mode((1, 1))  # Minimal display buffer   
+    print("Rendering action sequence...")
     SCREEN_WIDTH = env.map_width * 32
     SCREEN_HEIGHT = env.map_length * 32
     
