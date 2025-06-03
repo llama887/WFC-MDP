@@ -260,63 +260,49 @@ class MCTS:
         
         return node
 
-def render_action_sequence(env: WFCWrapper, action_sequence: list[np.ndarray], tile_images) -> None:
+def render_action_sequence(env: WFCWrapper, action_sequence: list[np.ndarray], tile_images, filename: str) -> None:
+    """Render the final state of an action sequence and save to file"""
     env = deepcopy(env)  # Ensure we don't modify the original environment
     pygame.init()
     SCREEN_WIDTH = env.map_width * 32
     SCREEN_HEIGHT = env.map_length * 32
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption("Best Map")
-
-    # Create a surface for saving the final map
+    
+    # Create a surface for the final map
     final_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
 
     env.reset()
-    total_reward = 0
-    print("Rendering action sequence...")
+    print("Running action sequence...")
 
-    for action in tqdm(action_sequence, desc="Rendering Steps"):
-        _, reward, terminate, truncate, _ = env.step(action)
-        total_reward += reward
-
-        # Clear screen
-        screen.fill((0, 0, 0))
-        final_surface.fill((0, 0, 0))  # Also clear the final surface
-
-        # Render the current state to both surfaces
-        for y in range(env.map_length):
-            for x in range(env.map_width):
-                cell_set = env.grid[y][x]
-                if len(cell_set) == 1:  # Collapsed cell
-                    tile_name = next(iter(cell_set))
-                    if tile_name in tile_images:
-                        screen.blit(tile_images[tile_name], (x * 32, y * 32))
-                        final_surface.blit(tile_images[tile_name], (x * 32, y * 32))
-                    else:
-                        # Fallback for missing tiles
-                        pygame.draw.rect(
-                            screen, (255, 0, 255), (x * 32, y * 32, 32, 32)
-                        )
-                        pygame.draw.rect(
-                            final_surface, (255, 0, 255), (x * 32, y * 32, 32, 32)
-                        )
-                elif len(cell_set) == 0:  # Contradiction
-                    pygame.draw.rect(screen, (255, 0, 0), (x * 32, y * 32, 32, 32))
-                    pygame.draw.rect(
-                        final_surface, (255, 0, 0), (x * 32, y * 32, 32, 32)
-                    )
-                else:  # Superposition
-                    pygame.draw.rect(screen, (100, 100, 100), (x * 32, y * 32, 32, 32))
-                    pygame.draw.rect(
-                        final_surface, (100, 100, 100), (x * 32, y * 32, 32, 32)
-                    )
-
-        pygame.display.flip()
-
-        # Capture final frame if this is the last step
+    # Run the entire action sequence
+    for action in action_sequence:
+        _, _, terminate, truncate, _ = env.step(action)
         if terminate or truncate:
-            pygame.time.delay(5000)
             break
+
+    # Render the final state
+    final_surface.fill((0, 0, 0))
+    for y in range(env.map_length):
+        for x in range(env.map_width):
+            cell_set = env.grid[y][x]
+            if len(cell_set) == 1:  # Collapsed cell
+                tile_name = next(iter(cell_set))
+                if tile_name in tile_images:
+                    final_surface.blit(tile_images[tile_name], (x * 32, y * 32))
+                else:
+                    # Fallback for missing tiles
+                    pygame.draw.rect(
+                        final_surface, (255, 0, 255), (x * 32, y * 32, 32, 32)
+                    )
+            elif len(cell_set) == 0:  # Contradiction
+                pygame.draw.rect(final_surface, (255, 0, 0), (x * 32, y * 32, 32, 32))
+            else:  # Superposition
+                pygame.draw.rect(final_surface, (100, 100, 100), (x * 32, y * 32, 32, 32))
+
+    # Save the final image
+    os.makedirs("mcts_output", exist_ok=True)
+    output_path = os.path.join("mcts_output", filename)
+    pygame.image.save(final_surface, output_path)
+    print(f"Saved final map to {output_path}")
 
                                                                                                                                                                                                                  
                                                                                                                                                                                                                                      
@@ -418,10 +404,11 @@ best_action_sequence, total_reward, iterations = run_mcts_until_complete(env, mc
 from assets.biome_adjacency_rules import load_tile_images
 tile_images = load_tile_images()
 
-# Render the best action sequence if we found one
+# Save the best action sequence if we found one
 if best_action_sequence:
-    print(f"Rendering best solution with reward {total_reward} found at iteration {iterations}")
-    render_action_sequence(env, best_action_sequence, tile_images)
+    print(f"Saving best solution with reward {total_reward} found at iteration {iterations}")
+    filename = f"mcts_solution_{iterations}.png"
+    render_action_sequence(env, best_action_sequence, tile_images, filename)
 else:
     print("No complete solution found")
 
