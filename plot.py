@@ -2,7 +2,6 @@ import argparse
 import os
 from typing import Any, Callable, Literal
 import time
-from datetime import datetime
 
 import matplotlib
 import numpy as np
@@ -26,10 +25,12 @@ from tasks.grass_task import grass_reward
 from tasks.pond_task import pond_reward
 from tasks.river_task import river_reward
 
-from core.mcts import MCTS, MCTSConfig, run_mcts_until_complete
+from core.mcts import MCTS, run_mcts_until_complete
 
 FIGURES_DIRECTORY = "figures"
+DEBUG_DIRECTORY = os.path.join(FIGURES_DIRECTORY, "debug")
 os.makedirs(FIGURES_DIRECTORY, exist_ok=True)
+os.makedirs(DEBUG_DIRECTORY, exist_ok=True)
 
 
 def _generic_convergence_collector(
@@ -198,7 +199,6 @@ def plot_average_biome_convergence_from_csv(csv_file_path: str, output_png_path:
 def collect_mcts_binary_convergence(
     sample_size: int,
     use_hard_variant: bool = False,
-    genotype_dimensions: Literal[1, 2] = 1,
 ) -> str:
     """
     Collect MCTS convergence data for binary path length task
@@ -257,7 +257,6 @@ def collect_mcts_combo_convergence(
     sample_size: int,
     second_task: str,
     use_hard_variant: bool = False,
-    genotype_dimensions: Literal[1, 2] = 1,
 ) -> str:
     """
     Collect MCTS convergence data for combo tasks (binary + other biome)
@@ -327,7 +326,6 @@ def collect_mcts_combo_convergence(
 def collect_mcts_biome_convergence(
     sample_size: int,
     biome_task: str,
-    genotype_dimensions: Literal[1, 2] = 1,
 ) -> str:
     """
     Collect MCTS convergence data for biome-only tasks
