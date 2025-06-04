@@ -18,6 +18,9 @@ import yaml
 from assets.biome_adjacency_rules import create_adjacency_matrix
 from core.evolution import evolve
 from core.wfc_env import CombinedReward, WFCWrapper
+from assets.biome_adjacency_rules import create_adjacency_matrix
+from core.evolution import evolve
+from core.wfc_env import CombinedReward, WFCWrapper
 from tasks.binary_task import binary_percent_water, binary_reward
 from tasks.grass_task import grass_reward
 from tasks.pond_task import pond_reward
@@ -168,29 +171,25 @@ def collect_combo_convergence(
     Run combined binary+biome experiments, dump raw generations-to-converge per run+path
     into a CSV, and return the CSV file path.
     """
-    minimum_path_length = 10
-    maximum_path_length = 100
-    step_size = 10
-    map_length = 15
-    map_width = 20
+    AGENT_DIR = f"agents_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    os.makedirs(AGENT_DIR, exist_ok=True)
+    MIN_PATH_LENGTH = 10
+    MAX_PATH_LENGTH = 100
+    STEP = 10
+    MAX_GENERATIONS = 100
+    MAP_LENGTH = 15
+    MAP_WIDTH = 20
 
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     path_lengths = np.arange(minimum_path_length, maximum_path_length + 1, step_size)
 
-    biome_reward_map = {
-        "river": river_reward,
-        "pond": pond_reward,
-        "grass": grass_reward,
-    }
-    second_reward = biome_reward_map[second_task]
+    task_rewards = {"river": river_reward, "pond": pond_reward, "grass": grass_reward}
+    second_reward = task_rewards.get(second_task)
 
-    data_rows: list[dict[str, Any]] = []
-    for path_index, desired_path_length in enumerate(path_lengths):
-        for run_index in range(sample_size):
-            print(
-                f"[COMBO] Path {desired_path_length}, Run {run_index + 1}/{sample_size}"
-            )
-            reward_callable = CombinedReward(
+    for idx, path_length in enumerate(path_lengths):
+        for sample_idx in range(sample_size):
+            print(f"[COMBO] Path {path_length}, Run {sample_idx + 1}/{sample_size}")
+            reward_fn = CombinedReward(
                 [
                     partial(
                         binary_reward,
@@ -357,131 +356,81 @@ def plot_binary_convergence_from_csv(
     hR, lR = ax_right.get_legend_handles_labels()
     ax_left.legend(hL + hR, lL + lR, loc="upper left")
 
-    fig.tight_layout()
-    if output_png_path is None:
-        prefix = f"{'qd_' if use_quality_diversity else ''}{'hard_' if use_hard_variant else ''}{genotype_dimensions}d_"
-        output_png_path = os.path.join(FIGURES_DIRECTORY, f"{prefix}binary_convergence_over_path.png")
-    fig.savefig(output_png_path)
-    plt.close(fig)
-    print(f"Saved binary convergence plot to {output_png_path}")
+    plt.tight_layout()
+    plt.savefig(
+        f"{FIGURES_DIRECTORY}/{qd_prefix}{hard_prefix}{second_task}_combo_convergence_over_path.png"
+    )
+    plt.close()
 
 
-def plot_combo_convergence_from_csv(
-    csv_file_path: str,
-    use_quality_diversity: bool,
-    second_task: str,
-    use_hard_variant: bool = False,
-    output_png_path: str | None = None,
-    genotype_dimensions: Literal[1, 2] = 1,
-) -> None:
-    data_frame = pd.read_csv(csv_file_path)
-    valid_frame = data_frame.dropna(subset=["generations_to_converge"])
-    statistics = (
-        valid_frame
-        .groupby("desired_path_length")["generations_to_converge"]
-        .agg(
-            mean_generation="mean",
-            standard_deviation="std",
-            count="count"
+def collect_convergence_data(task_name: str, reward_fn, hyperparams, qd=False, runs=20):
+    adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
+    num_tiles = len(tile_symbols)
+
+    MAP_LENGTH = 15
+    MAP_WIDTH = 20
+    generations_list = []
+
+    for i in range(runs):
+        print(f"[{task_name}] Run {i + 1}/{runs}")
+        env = WFCWrapper(
+            map_length=MAP_LENGTH,
+            map_width=MAP_WIDTH,
+            tile_symbols=tile_symbols,
+            adjacency_bool=adjacency_bool,
+            num_tiles=num_tiles,
+            tile_to_index=tile_to_index,
+            reward=reward_fn,
+            deterministic=True,
+            qd_function=binary_percent_water if qd else None,
         )
-        .reset_index()
-    )
-    statistics["standard_error"] = statistics["standard_deviation"] / np.sqrt(statistics["count"])
-    total_runs = int(data_frame["run_index"].max())
-    statistics["fraction_converged"] = statistics["count"] / total_runs
 
-    fig, ax_left = plt.subplots(figsize=(8, 5))
-    ax_right = ax_left.twinx()
-
-    # constants
-    X_MIN, X_MAX, STEP = 0, 100, 10
-    BAR_WIDTH = STEP * 0.8
-
-    ax_left.errorbar(
-        statistics["desired_path_length"],
-        statistics["mean_generation"],
-        yerr=statistics["standard_error"],
-        fmt="o-",
-        capsize=4,
-        label="Mean generations to converge"
-    )
-
-    # annotate means
-    for x, y in zip(statistics["desired_path_length"], statistics["mean_generation"]):
-        ax_left.text(x, y, f"{y:.1f}", ha="center", va="bottom")
-
-    ax_right.bar(
-        statistics["desired_path_length"],
-        statistics["fraction_converged"],
-        width=BAR_WIDTH,
-        alpha=0.3,
-        label="Fraction converged",
-        align="center"
-    )
-
-    ax_left.set_xticks(np.arange(X_MIN, X_MAX + 1, STEP))
-    ax_left.set_xlim(X_MIN, X_MAX)
-    ax_right.set_ylim(0, 1)
-
-    ax_left.set_xlabel("Desired Path Length")
-    ax_left.set_ylabel("Mean Generations to Converge")
-    ax_right.set_ylabel("Fraction of Runs Converged")
-
-    title = f"Combined Binary + {second_task.capitalize()} Convergence vs Desired Path Length"
-    if use_quality_diversity: title += " (QD)"
-    if use_hard_variant:       title += " HARD"
-    ax_left.set_title(title)
-
-    hL, lL = ax_left.get_legend_handles_labels()
-    hR, lR = ax_right.get_legend_handles_labels()
-    ax_left.legend(hL + hR, lL + lR, loc="upper left")
-
-    fig.tight_layout()
-    if output_png_path is None:
-        prefix = f"{'qd_' if use_quality_diversity else ''}{'hard_' if use_hard_variant else ''}{genotype_dimensions}d_{second_task}_combo_"
-        output_png_path = os.path.join(FIGURES_DIRECTORY, f"{prefix}convergence_over_path.png")
-    fig.savefig(output_png_path)
-    plt.close(fig)
-    print(f"Saved combo convergence plot to {output_png_path}")
-
-
-def plot_average_biome_convergence_from_csv(
-    csv_file_path: str,
-    output_png_path: str | None = None,
-) -> None:
-    """
-    Load biome-average convergence CSV, compute mean+SEM, and plot bar chart.
-    """
-    data_frame = pd.read_csv(csv_file_path)
-    statistics = (
-        data_frame.groupby("biome")["generations_to_converge"]
-        .agg(mean_generation="mean", standard_deviation="std", count="count")
-        .reset_index()
-    )
-    statistics["standard_error"] = statistics["standard_deviation"] / np.sqrt(
-        statistics["count"]
-    )
-
-    figure, axis = plt.subplots(figsize=(10, 5))
-    axis.bar(
-        statistics["biome"],
-        statistics["mean_generation"],
-        yerr=statistics["standard_error"],
-        capsize=5,
-        alpha=0.7,
-    )
-    axis.set_title("Average Generations to Converge per Biome")
-    axis.set_xlabel("Biome")
-    axis.set_ylabel("Average Generations to Converge")
-
-    figure.tight_layout()
-    if output_png_path is None:
-        output_png_path = os.path.join(
-            FIGURES_DIRECTORY, "biome_average_convergence.png"
+        _, best_agent, generations, _, _ = evolve(
+            env=env,
+            generations=100,
+            population_size=hyperparams["population_size"],
+            number_of_actions_mutated_mean=hyperparams[
+                "number_of_actions_mutated_mean"
+            ],
+            number_of_actions_mutated_standard_deviation=hyperparams[
+                "number_of_actions_mutated_standard_deviation"
+            ],
+            action_noise_standard_deviation=hyperparams[
+                "action_noise_standard_deviation"
+            ],
+            survival_rate=hyperparams["survival_rate"],
         )
-    figure.savefig(output_png_path)
-    plt.close(figure)
-    print(f"Saved biome average convergence plot to {output_png_path}")
+
+        if best_agent.info.get("achieved_max_reward", False):
+            generations_list.append(generations)
+
+    return generations_list
+
+
+def plot_avg_task_convergence(hyperparams, qd=False):
+    task_info = {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}
+
+    means = []
+    errors = []
+    labels = []
+
+    for label, reward_fn in task_info.items():
+        gens = collect_convergence_data(label, reward_fn, hyperparams, qd=qd)
+        if gens:
+            labels.append(label)
+            means.append(np.mean(gens))
+            errors.append(np.std(gens) / np.sqrt(len(gens)))
+        else:
+            print(f"[WARNING] No converged runs for {label}.")
+
+    plt.figure(figsize=(10, 5))
+    plt.bar(labels, means, yerr=errors, capsize=5, color="mediumpurple")
+    plt.title("Mean Generations to Converge per Biome (20 runs)")
+    plt.ylabel("Avg. Generations")
+    plt.xlabel("Biome")
+    plt.tight_layout()
+    plt.savefig(f"{FIGURES_DIRECTORY}/mean_convergence_bar_chart.png")
+    plt.close()
 
 
 if __name__ == "__main__":
@@ -505,8 +454,7 @@ if __name__ == "__main__":
         "--combo",
         type=str,
         choices=["easy", "hard"],
-        default="easy",
-        help="For non-binary tasks, whether to use the hard binary variant",
+        help="means that the task will run in combo with binary, specifies easy or hard",
     )
     parser.add_argument(
         "--quality-diversity",
@@ -547,43 +495,69 @@ if __name__ == "__main__":
         )
 
     elif args.task == "binary_hard":
-        csv_path = collect_binary_convergence(
-            sample_size=20,
-            evolution_hyperparameters=evolution_hyperparameters,
-            use_quality_diversity=args.quality_diversity,
-            use_hard_variant=True,
-            genotype_dimensions=args.genotype_dimensions,
-        )
-        plot_binary_convergence_from_csv(
-            csv_file_path=csv_path,
-            use_quality_diversity=args.quality_diversity,
-            use_hard_variant=True,
-            genotype_dimensions=args.genotype_dimensions,
-        )
-    elif args.task == "biomes":
-        # Always also produce the summary bar chart
-        summary_csv = collect_average_biome_convergence_data(
-            evolution_hyperparameters=evolution_hyperparameters,
-            use_quality_diversity=args.quality_diversity,
-            runs=20,
-            genotype_dimensions=args.genotype_dimensions,
-        )
-        plot_average_biome_convergence_from_csv(csv_file_path=summary_csv)
-    else:
-        # river, pond, or grass combo
-        use_hard = args.combo == "hard"
-        csv_path = collect_combo_convergence(
-            sample_size=20,
-            evolution_hyperparameters=evolution_hyperparameters,
-            use_quality_diversity=args.quality_diversity,
-            second_task=args.task,
-            use_hard_variant=use_hard,
-            genotype_dimensions=args.genotype_dimensions,
-        )
-        plot_combo_convergence_from_csv(
-            csv_file_path=csv_path,
-            use_quality_diversity=args.quality_diversity,
-            second_task=args.task,
-            use_hard_variant=use_hard,
-            genotype_dimensions=args.genotype_dimensions,
-        )
+        start_time = time.time()
+        binary_convergence_over_path_lengths(20, hyperparams, args.qd, True)
+        elapsed = time.time() - start_time
+        print(f"Plotting finished in {elapsed:.2f} seconds.")
+    elif args.task == "river" and args.combo == "easy":
+        start_time = time.time()
+        combo_convergence_over_path_lengths(20, hyperparams, args.qd, "river")
+        print(f"[river] Plotting finished in {time.time() - start_time:.2f} seconds.")
+    elif args.task == "river" and args.combo == "hard":
+        start_time = time.time()
+        combo_convergence_over_path_lengths(20, hyperparams, args.qd, "river", True)
+        print(f"[river] Plotting finished in {time.time() - start_time:.2f} seconds.")
+    elif args.task == "pond" and args.combo == "easy":
+        start_time = time.time()
+        combo_convergence_over_path_lengths(20, hyperparams, args.qd, "pond")
+        print(f"[pond] Plotting finished in {time.time() - start_time:.2f} seconds.")
+    elif args.task == "pond" and args.combo == "hard":
+        start_time = time.time()
+        combo_convergence_over_path_lengths(20, hyperparams, args.qd, "pond", True)
+        print(f"[pond] Plotting finished in {time.time() - start_time:.2f} seconds.")
+    elif args.task == "grass" and args.combo == "easy":
+        start_time = time.time()
+        combo_convergence_over_path_lengths(20, hyperparams, args.qd, "grass")
+        print(f"[grass] Plotting finished in {time.time() - start_time:.2f} seconds.")
+    elif args.task == "grass" and args.combo == "hard":
+        start_time = time.time()
+        combo_convergence_over_path_lengths(20, hyperparams, args.qd, "grass", True)
+        print(f"[grass] Plotting finished in {time.time() - start_time:.2f} seconds.")
+
+    # ---- COMBO ----
+    # start_time = time.time()
+    # combo_convergence_over_path_lengths(20, hyperparams, second_task="pond", qd=args.qd)
+    # print(f"[pond] Plotting finished in {time.time() - start_time:.2f} seconds.")
+
+    # start_time = time.time()
+    # combo_convergence_over_path_lengths(
+    #     20, hyperparams, second_task="pond", qd=args.qd, hard=True
+    # )
+    # print(f"[pond] Plotting finished in {time.time() - start_time:.2f} seconds.")
+
+    # start_time = time.time()
+    # combo_convergence_over_path_lengths(
+    #     20, hyperparams, second_task="river", qd=args.qd
+    # )
+    # print(f"[river] Plotting finished in {time.time() - start_time:.2f} seconds.")
+
+    # start_time = time.time()
+    # combo_convergence_over_path_lengths(
+    #     20, hyperparams, second_task="river", qd=args.qd, hard=True
+    # )
+    # print(f"[river] Plotting finished in {time.time() - start_time:.2f} seconds.")
+
+    # start_time = time.time()
+    # combo_convergence_over_path_lengths(
+    #     20, hyperparams, second_task="grass", qd=args.qd
+    # )
+    # print(f"[grass] Plotting finished in {time.time() - start_time:.2f} seconds.")
+
+    # start_time = time.time()
+    # combo_convergence_over_path_lengths(
+    #     20, hyperparams, second_task="grass", qd=args.qd, hard=True
+    # )
+    # print(f"[grass] Plotting finished in {time.time() - start_time:.2f} seconds.")
+
+    # ---- SUMMARY BAR CHART ----
+    plot_avg_task_convergence(hyperparams, args.qd)
