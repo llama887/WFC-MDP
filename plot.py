@@ -2,7 +2,6 @@ import argparse
 import os
 from typing import Any, Callable, Literal
 import time
-from datetime import datetime
 
 import matplotlib
 import numpy as np
@@ -26,7 +25,7 @@ from tasks.grass_task import grass_reward
 from tasks.pond_task import pond_reward
 from tasks.river_task import river_reward
 
-from core.mcts import MCTS, MCTSConfig, run_mcts_until_complete
+from core.mcts import MCTS, run_mcts_until_complete
 
 FIGURES_DIRECTORY = "figures"
 os.makedirs(FIGURES_DIRECTORY, exist_ok=True)
