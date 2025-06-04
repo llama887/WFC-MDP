@@ -15,11 +15,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import yaml
-from functools import partial
 
 from assets.biome_adjacency_rules import create_adjacency_matrix
-from core.evolution import evolve, CrossOverMethod
+from core.evolution import evolve
 from core.wfc_env import CombinedReward, WFCWrapper
+from assets.biome_adjacency_rules import create_adjacency_matrix
+from core.evolution import evolve, CrossOverMethod
 from tasks.binary_task import binary_percent_water, binary_reward
 from tasks.grass_task import grass_reward
 from tasks.pond_task import pond_reward
@@ -28,9 +29,7 @@ from tasks.river_task import river_reward
 from core.mcts import MCTS, MCTSConfig, run_mcts_until_complete
 
 FIGURES_DIRECTORY = "figures"
-DEBUG_DIRECTORY = os.path.join(FIGURES_DIRECTORY, "debug")
 os.makedirs(FIGURES_DIRECTORY, exist_ok=True)
-os.makedirs(DEBUG_DIRECTORY, exist_ok=True)
 
 
 def _generic_convergence_collector(
@@ -80,9 +79,15 @@ def _generic_convergence_collector(
                 env=env,
                 generations=evolution_hyperparameters.get("generations", 100),
                 population_size=evolution_hyperparameters["population_size"],
-                number_of_actions_mutated_mean=evolution_hyperparameters["number_of_actions_mutated_mean"],
-                number_of_actions_mutated_standard_deviation=evolution_hyperparameters["number_of_actions_mutated_standard_deviation"],
-                action_noise_standard_deviation=evolution_hyperparameters["action_noise_standard_deviation"],
+                number_of_actions_mutated_mean=evolution_hyperparameters[
+                    "number_of_actions_mutated_mean"
+                ],
+                number_of_actions_mutated_standard_deviation=evolution_hyperparameters[
+                    "number_of_actions_mutated_standard_deviation"
+                ],
+                action_noise_standard_deviation=evolution_hyperparameters[
+                    "action_noise_standard_deviation"
+                ],
                 survival_rate=evolution_hyperparameters["survival_rate"],
                 cross_over_method=xover,
                 patience=patience,
