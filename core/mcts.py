@@ -367,7 +367,7 @@ env = WFCWrapper(
     adjacency_bool=adjacency_bool,
     num_tiles=num_tiles,
     tile_to_index=tile_to_index,
-    reward=partial(binary_reward, target_path_length=20, hard=True),
+    reward=partial(binary_reward, target_path_length=80, hard=True),
     deterministic=True,
     # qd_function=binary_percent_water if args.qd else None,
 )
