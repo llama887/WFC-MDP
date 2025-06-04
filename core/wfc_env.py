@@ -356,11 +356,4 @@ class WFCWrapper(gym.Env):
     def close(self):
         """Cleans up any resources used by the environment."""
         if hasattr(self, "screen"):
-<<<<<<< HEAD
             pygame.quit()
-=======
-            pygame.quit()
-        if hasattr(self, "screen"):
-            pygame.quit()
-            pygame.quit()
->>>>>>> main
