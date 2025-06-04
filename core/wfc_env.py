@@ -232,6 +232,8 @@ class WFCWrapper(gym.Env):
                 )
             if reward == self.max_reward:
                 info["achieved_max_reward"] = True
+            else:
+                info["achieved_max_reward"] = False
             if self.qd_function is not None:
                 qd_score = self.qd_function(self.grid)
                 info["qd_score"] = qd_score
@@ -354,7 +356,4 @@ class WFCWrapper(gym.Env):
     def close(self):
         """Cleans up any resources used by the environment."""
         if hasattr(self, "screen"):
-            pygame.quit()
-        if hasattr(self, "screen"):
-            pygame.quit()
             pygame.quit()

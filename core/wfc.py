@@ -96,10 +96,8 @@ def collapse_cell(
         if best_tile is not None and max_prob > 0.0:
             chosen_tile = best_tile
         else:
-            for tile in tile_symbols:
-                if tile in possible_tiles:
-                    chosen_tile = tile
-                    break
+            # If all action probabilities are zero or negative, return None to signal failure
+            return None
 
     else:
         # — stochastic path (unchanged) —

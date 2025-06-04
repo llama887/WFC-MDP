@@ -1,23 +1,31 @@
 import argparse
 import os
-import time
 from typing import Any, Callable, Literal
+import time
 
 import matplotlib
+import numpy as np
+import pandas as pd
+
 matplotlib.use("Agg")
+from functools import partial
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import yaml
-from functools import partial
 
 from assets.biome_adjacency_rules import create_adjacency_matrix
-from core.evolution import evolve, CrossOverMethod
+from core.evolution import evolve
 from core.wfc_env import CombinedReward, WFCWrapper
+from assets.biome_adjacency_rules import create_adjacency_matrix
+from core.evolution import evolve, CrossOverMethod
 from tasks.binary_task import binary_percent_water, binary_reward
 from tasks.grass_task import grass_reward
 from tasks.pond_task import pond_reward
 from tasks.river_task import river_reward
+
+from core.mcts import MCTS, run_mcts_until_complete
 
 FIGURES_DIRECTORY = "figures"
 DEBUG_DIRECTORY = os.path.join(FIGURES_DIRECTORY, "debug")
@@ -72,9 +80,15 @@ def _generic_convergence_collector(
                 env=env,
                 generations=evolution_hyperparameters.get("generations", 100),
                 population_size=evolution_hyperparameters["population_size"],
-                number_of_actions_mutated_mean=evolution_hyperparameters["number_of_actions_mutated_mean"],
-                number_of_actions_mutated_standard_deviation=evolution_hyperparameters["number_of_actions_mutated_standard_deviation"],
-                action_noise_standard_deviation=evolution_hyperparameters["action_noise_standard_deviation"],
+                number_of_actions_mutated_mean=evolution_hyperparameters[
+                    "number_of_actions_mutated_mean"
+                ],
+                number_of_actions_mutated_standard_deviation=evolution_hyperparameters[
+                    "number_of_actions_mutated_standard_deviation"
+                ],
+                action_noise_standard_deviation=evolution_hyperparameters[
+                    "action_noise_standard_deviation"
+                ],
                 survival_rate=evolution_hyperparameters["survival_rate"],
                 cross_over_method=xover,
                 patience=patience,
@@ -182,8 +196,309 @@ def plot_average_biome_convergence_from_csv(csv_file_path: str, output_png_path:
     print(f"Saved biome convergence plot to {output_png_path}")
 
 
+def collect_mcts_binary_convergence(
+    sample_size: int,
+    use_hard_variant: bool = False,
+) -> str:
+    """
+    Collect MCTS convergence data for binary path length task
+    """
+    MIN_PATH_LENGTH = 10
+    MAX_PATH_LENGTH = 100
+    STEP = 10
+    MAP_LENGTH = 15
+    MAP_WIDTH = 20
+    MAX_ITERATIONS = 1000
+
+    adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
+    path_lengths = np.arange(MIN_PATH_LENGTH, MAX_PATH_LENGTH + 1, STEP)
+
+    data_rows = []
+    for path_length in path_lengths:
+        for run_idx in range(sample_size):
+            print(f"[MCTS] Path {path_length}, Run {run_idx+1}/{sample_size}")
+            start_time = time.time()
+            
+            # Create environment
+            env = WFCWrapper(
+                map_length=MAP_LENGTH,
+                map_width=MAP_WIDTH,
+                tile_symbols=tile_symbols,
+                adjacency_bool=adjacency_bool,
+                num_tiles=len(tile_symbols),
+                tile_to_index=tile_to_index,
+                reward=partial(binary_reward, target_path_length=path_length, hard=use_hard_variant),
+                deterministic=True,
+            )
+            
+            # Create MCTS instance
+            mcts = MCTS(env)
+            env.reset()
+            
+            # Run MCTS
+            _, _, iterations = run_mcts_until_complete(env, mcts, MAX_ITERATIONS)
+            
+            elapsed = time.time() - start_time
+            print(f"Completed in {elapsed:.2f}s, iterations: {iterations if iterations else 'N/A'}")
+            
+            data_rows.append({
+                "desired_path_length": path_length,
+                "run_index": run_idx + 1,
+                "iterations_to_converge": iterations if iterations else float('nan')
+            })
+
+    prefix = f"mcts_{'hard_' if use_hard_variant else ''}"
+    csv_filename = f"{prefix}binary_convergence_over_path.csv"
+    csv_path = os.path.join(FIGURES_DIRECTORY, csv_filename)
+    pd.DataFrame(data_rows).to_csv(csv_path, index=False)
+    return csv_path
+
+def collect_mcts_combo_convergence(
+    sample_size: int,
+    second_task: str,
+    use_hard_variant: bool = False,
+) -> str:
+    """
+    Collect MCTS convergence data for combo tasks (binary + other biome)
+    """
+    MIN_PATH_LENGTH = 10
+    MAX_PATH_LENGTH = 100
+    STEP = 10
+    MAP_LENGTH = 15
+    MAP_WIDTH = 20
+    MAX_ITERATIONS = 1000
+
+    adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
+    path_lengths = np.arange(MIN_PATH_LENGTH, MAX_PATH_LENGTH + 1, STEP)
+    biome_reward_map = {
+        "river": river_reward,
+        "pond": pond_reward,
+        "grass": grass_reward
+    }
+    second_reward = biome_reward_map[second_task]
+
+    data_rows = []
+    for path_length in path_lengths:
+        for run_idx in range(sample_size):
+            print(f"[MCTS] Combo {second_task}, Path {path_length}, Run {run_idx+1}/{sample_size}")
+            start_time = time.time()
+            
+            # Create combined reward function
+            reward_fn = CombinedReward([
+                partial(binary_reward, target_path_length=path_length, hard=use_hard_variant),
+                second_reward
+            ])
+            
+            # Create environment
+            env = WFCWrapper(
+                map_length=MAP_LENGTH,
+                map_width=MAP_WIDTH,
+                tile_symbols=tile_symbols,
+                adjacency_bool=adjacency_bool,
+                num_tiles=len(tile_symbols),
+                tile_to_index=tile_to_index,
+                reward=reward_fn,
+                deterministic=True,
+            )
+            
+            # Create MCTS instance
+            mcts = MCTS(env)
+            env.reset()
+            
+            # Run MCTS
+            _, _, iterations = run_mcts_until_complete(env, mcts, MAX_ITERATIONS)
+            
+            elapsed = time.time() - start_time
+            print(f"Completed in {elapsed:.2f}s, iterations: {iterations if iterations else 'N/A'}")
+            
+            data_rows.append({
+                "desired_path_length": path_length,
+                "run_index": run_idx + 1,
+                "iterations_to_converge": iterations if iterations else float('nan')
+            })
+
+    prefix = f"mcts_{'hard_' if use_hard_variant else ''}{second_task}_combo_"
+    csv_filename = f"{prefix}convergence.csv"
+    csv_path = os.path.join(FIGURES_DIRECTORY, csv_filename)
+    pd.DataFrame(data_rows).to_csv(csv_path, index=False)
+    return csv_path
+
+def collect_mcts_biome_convergence(
+    sample_size: int,
+    biome_task: str,
+) -> str:
+    """
+    Collect MCTS convergence data for biome-only tasks
+    """
+    MAP_LENGTH = 15
+    MAP_WIDTH = 20
+    MAX_ITERATIONS = 1000
+
+    adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
+    biome_reward_map = {
+        "river": river_reward,
+        "pond": pond_reward,
+        "grass": grass_reward
+    }
+    reward_fn = biome_reward_map[biome_task]
+
+    data_rows = []
+    for run_idx in range(sample_size):
+        print(f"[MCTS] Biome {biome_task}, Run {run_idx+1}/{sample_size}")
+        start_time = time.time()
+        
+        # Create environment
+        env = WFCWrapper(
+            map_length=MAP_LENGTH,
+            map_width=MAP_WIDTH,
+            tile_symbols=tile_symbols,
+            adjacency_bool=adjacency_bool,
+            num_tiles=len(tile_symbols),
+            tile_to_index=tile_to_index,
+            reward=reward_fn,
+            deterministic=True,
+        )
+        
+        # Create MCTS instance
+        mcts = MCTS(env)
+        env.reset()
+        
+        # Run MCTS
+        _, _, iterations = run_mcts_until_complete(env, mcts, MAX_ITERATIONS)
+        
+        elapsed = time.time() - start_time
+        print(f"Completed in {elapsed:.2f}s, iterations: {iterations if iterations else 'N/A'}")
+        
+        data_rows.append({
+            "biome": biome_task,
+            "run_index": run_idx + 1,
+            "iterations_to_converge": iterations if iterations else float('nan')
+        })
+    
+    prefix = f"mcts_{biome_task}_biome_"
+    csv_filename = f"{prefix}convergence.csv"
+    csv_path = os.path.join(FIGURES_DIRECTORY, csv_filename)
+    pd.DataFrame(data_rows).to_csv(csv_path, index=False)
+    return csv_path
+
+def plot_mcts_convergence_from_csv(
+    csv_file_path: str,
+    use_hard_variant: bool = False,
+    second_task: str = None,
+    output_png_path: str | None = None,
+) -> None:
+    """
+    Plot MCTS convergence data from CSV
+    """
+    MIN_PATH_LENGTH = 10
+    MAX_PATH_LENGTH = 100
+    STEP = 10
+    
+    data_frame = pd.read_csv(csv_file_path)
+    valid_frame = data_frame.dropna(subset=["iterations_to_converge"])
+    
+    # Calculate statistics
+    statistics = (
+        valid_frame
+        .groupby("desired_path_length")["iterations_to_converge"]
+        .agg(
+            mean_iterations="mean",
+            standard_deviation="std",
+            count="count"
+        )
+        .reset_index()
+    )
+    
+    total_runs = int(data_frame["run_index"].max())
+    statistics["fraction_converged"] = statistics["count"] / total_runs
+    statistics["standard_error"] = statistics["standard_deviation"] / np.sqrt(statistics["count"])
+
+    # Create plot
+    fig, ax_left = plt.subplots(figsize=(10, 6))
+    ax_right = ax_left.twinx()
+    
+    # Line plot for mean iterations
+    ax_left.errorbar(
+        statistics["desired_path_length"],
+        statistics["mean_iterations"],
+        yerr=statistics["standard_error"],
+        fmt='o-',
+        color='b',
+        capsize=5,
+        label="Mean Iterations"
+    )
+    
+    # Bar plot for convergence rate
+    ax_right.bar(
+        statistics["desired_path_length"],
+        statistics["fraction_converged"],
+        width=STEP * 0.8,
+        alpha=0.3,
+        color='g',
+        label="Convergence Rate"
+    )
+    
+    # Configure axes
+    ax_left.set_xlabel("Desired Path Length")
+    ax_left.set_ylabel("Mean MCTS Iterations", color='b')
+    ax_right.set_ylabel("Convergence Rate", color='g')
+    ax_left.tick_params(axis='y', colors='b')
+    ax_right.tick_params(axis='y', colors='g')
+    
+    # Set titles and limits
+    title = "MCTS Convergence Behavior vs Path Length"
+    if second_task:
+        title += f" ({second_task} combo)"
+    if use_hard_variant:
+        title += " (Hard)"
+    ax_left.set_title(title)
+    ax_left.set_xticks(np.arange(MIN_PATH_LENGTH, MAX_PATH_LENGTH + 1, STEP))
+    ax_left.set_xlim(MIN_PATH_LENGTH - STEP/2, MAX_PATH_LENGTH + STEP/2)
+    ax_right.set_ylim(0, 1.1)
+    
+    # Combine legends
+    lines, labels = ax_left.get_legend_handles_labels()
+    bars, bar_labels = ax_right.get_legend_handles_labels()
+    ax_left.legend(lines + bars, labels + bar_labels, loc="upper left")
+    
+    # Save plot
+    if not output_png_path:
+        hard_suffix = "_hard" if use_hard_variant else ""
+        second_suffix = f"_{second_task}" if second_task else ""
+        output_png_path = os.path.join(FIGURES_DIRECTORY, f"mcts_convergence{second_suffix}{hard_suffix}.png")
+    
+    plt.tight_layout()
+    plt.savefig(output_png_path)
+    plt.close()
+    print(f"Saved MCTS convergence plot to {output_png_path}")
+
+def plot_mcts_biome_convergence_from_csv(csv_file_path: str, output_png_path: str = None):
+    """
+    Plot MCTS biome-only convergence data from CSV
+    """
+    df = pd.read_csv(csv_file_path)
+    stats = df.groupby("biome")["iterations_to_converge"].agg(["mean", "std", "count"]).reset_index()
+    stats["stderr"] = stats["std"] / np.sqrt(stats["count"])
+    
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.bar(stats["biome"], stats["mean"], yerr=stats["stderr"], capsize=4, alpha=0.7)
+    ax.set_xlabel("Biome")
+    ax.set_ylabel("Mean MCTS Iterations")
+    ax.set_title("MCTS Biome Convergence")
+    
+    if not output_png_path:
+        filename = os.path.basename(csv_file_path).replace(".csv", ".png")
+        output_png_path = os.path.join(FIGURES_DIRECTORY, filename)
+    
+    plt.tight_layout()
+    plt.savefig(output_png_path)
+    plt.close()
+    print(f"Saved MCTS biome convergence plot to {output_png_path}")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Collect and plot WFC convergence data")
+    # Add new argument
+    parser.add_argument("--method", type=str, choices=["evolution", "mcts"], default="evolution", help="Method to use for convergence testing")
     parser.add_argument("--load-hyperparameters", type=str, required=True, help="YAML file with evolution hyperparameters")
     parser.add_argument("--task", type=str, choices=["binary_easy", "binary_hard", "river", "pond", "grass", "biomes"], required=True)
     parser.add_argument("--combo", type=str, choices=["easy", "hard"], default="easy")
@@ -199,17 +514,69 @@ if __name__ == "__main__":
     with open(args.load_hyperparameters, "r") as f:
         hyperparams = yaml.safe_load(f)
 
-    if args.task == "binary_easy":
-        csv_path = collect_binary_convergence(20, hyperparams, args.quality_diversity, False, args.genotype_dimensions, debug=args.debug)
-        plot_convergence_from_csv(csv_path, title="Binary Convergence", xlabel="desired_path_length")
-    elif args.task == "binary_hard":
-        csv_path = collect_binary_convergence(20, hyperparams, args.quality_diversity, True, args.genotype_dimensions, debug=args.debug)
-        plot_convergence_from_csv(csv_path, title="Binary Convergence (HARD)", xlabel="desired_path_length")
-    elif args.task == "biomes":
-        csv_path = collect_average_biome_convergence_data(hyperparams, args.quality_diversity, 20, args.genotype_dimensions, debug=args.debug)
-        plot_average_biome_convergence_from_csv(csv_path)
+    # Dispatch based on method
+    if args.method == "mcts":
+        if args.task == "binary_easy":
+            csv_path = collect_mcts_binary_convergence(
+                sample_size=20,
+                use_hard_variant=False,
+            )
+            plot_mcts_convergence_from_csv(csv_path)
+        
+        elif args.task == "binary_hard":
+            csv_path = collect_mcts_binary_convergence(
+                sample_size=20,
+                use_hard_variant=True,
+            )
+            plot_mcts_convergence_from_csv(csv_path, use_hard_variant=True)
+        
+        elif args.task in ["river", "pond", "grass"]:
+            if args.task == "biomes":
+                # For "biomes" task, collect all biome data separately
+                for biome in ["river", "pond", "grass"]:
+                    csv_path = collect_mcts_biome_convergence(
+                        sample_size=20,
+                        biome_task=biome,
+                    )
+                    plot_mcts_biome_convergence_from_csv(csv_path)
+            else:
+                if args.combo == "hard" or args.combo == "easy":
+                    use_hard = args.combo == "hard"
+                    # Handle combo task
+                    csv_path = collect_mcts_combo_convergence(
+                        sample_size=20,
+                        second_task=args.task,
+                        use_hard_variant=use_hard,
+                    )
+                    plot_mcts_convergence_from_csv(
+                        csv_path, 
+                        use_hard_variant=use_hard,
+                        second_task=args.task
+                    )
+                else:
+                    # Biome-only task
+                    csv_path = collect_mcts_biome_convergence(
+                        sample_size=20,
+                        biome_task=args.task,
+                    )
+                    plot_mcts_biome_convergence_from_csv(csv_path)
+        
+        else:
+            print(f"MCTS task not supported: {args.task}")
+    
     else:
-        use_hard = args.combo == "hard"
-        csv_path = collect_combo_convergence(20, hyperparams, args.quality_diversity, args.task, use_hard, args.genotype_dimensions, debug=args.debug)
-        title = f"Combo Convergence: {args.task.capitalize()}" + (" HARD" if use_hard else "")
-        plot_convergence_from_csv(csv_path, title=title, xlabel="desired_path_length")
+        # Existing evolution code
+        if args.task == "binary_easy":
+            csv_path = collect_binary_convergence(20, hyperparams, args.quality_diversity, False, args.genotype_dimensions, debug=args.debug)
+            plot_convergence_from_csv(csv_path, title="Binary Convergence", xlabel="desired_path_length")
+        elif args.task == "binary_hard":
+            csv_path = collect_binary_convergence(20, hyperparams, args.quality_diversity, True, args.genotype_dimensions, debug=args.debug)
+            plot_convergence_from_csv(csv_path, title="Binary Convergence (HARD)", xlabel="desired_path_length")
+        elif args.task == "biomes":
+            csv_path = collect_average_biome_convergence_data(hyperparams, args.quality_diversity, 20, args.genotype_dimensions, debug=args.debug)
+            plot_average_biome_convergence_from_csv(csv_path)
+        else:
+            use_hard = args.combo == "hard"
+            csv_path = collect_combo_convergence(20, hyperparams, args.quality_diversity, args.task, use_hard, args.genotype_dimensions, debug=args.debug)
+            title = f"Combo Convergence: {args.task.capitalize()}" + (" HARD" if use_hard else "")
+            plot_convergence_from_csv(csv_path, title=title, xlabel="desired_path_length")

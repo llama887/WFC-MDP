@@ -181,7 +181,9 @@ wfc_reward_img
 pcgrl.txt
 
 *.pkl
-*.png
+figures/
+agents*
+
 *.s
 output
 *.err
