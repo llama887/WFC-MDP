@@ -129,6 +129,8 @@ class PopulationMember:
         parent2: "PopulationMember",
         method: CrossOverMethod = CrossOverMethod.ONE_POINT,
     ) -> tuple["PopulationMember", "PopulationMember"]:
+        if isinstance(method, int):
+            method = CrossOverMethod(method)
         seq1 = parent1.action_sequence
         seq2 = parent2.action_sequence
         length = len(seq1)
@@ -202,93 +204,116 @@ def evolve(
     patience: int = 10,
     qd: bool = False,
     genotype_representation: Literal["1d", "2d"] = "1d",
-) -> tuple[list[PopulationMember], PopulationMember, int, list[float], list[float]]:
+) -> tuple[
+    list[PopulationMember],  # final population
+    PopulationMember,        # global best agent
+    int,                     # generation at which we stopped
+    list[float],             # best‐agent reward history
+    list[float]              # mean‐elite reward history
+]:
     """
     Standard EA if qd=False; QD selection + global reproduction if qd=True.
+    Early stopping now depends on the *mean of the elites* (the survivors), not the mean
+    of all individuals. Returns:
+      1) final population (list of PopulationMember)
+      2) global best agent (PopulationMember)
+      3) the generation at which we stopped (int)
+      4) list of best‐agent rewards by generation (list[float])
+      5) list of mean‐elite rewards by generation  (list[float])
     """
-    # --- Initialization ---
-    population = [PopulationMember(env, genotype_representation=genotype_representation) for _ in range(population_size)]
+
+    # --- 1) Initialization ---
+    population = [
+        PopulationMember(env, genotype_representation=genotype_representation)
+        for _ in range(population_size)
+    ]
     best_agent: PopulationMember | None = None
     best_agent_rewards: list[float] = []
-    median_agent_rewards: list[float] = []
+    mean_elite_rewards: list[float] = []
     patience_counter = 0
 
+    # Track the best mean‐elite reward seen so far:
+    best_mean_elite: float | None = None
+
     for gen in tqdm(range(1, generations + 1), desc="Generations"):
-        # 1) Evaluate entire pop
+        # --- 2) Evaluate entire population (in parallel) ---
         with Pool(min(cpu_count() * 2, len(population))) as pool:
             population = pool.map(run_member, population)
 
-        # 2) Gather scores & stats
-        #    - fitness-based reward for standard EA
-        #    - qd_score for QD clustering
+        # --- 3) Gather fitnesses and track best individual ---
         fitnesses = np.array([m.reward for m in population])
         best_idx = int(np.argmax(fitnesses))
-        median_val = float(np.median(fitnesses))
+        best_reward = float(fitnesses[best_idx])
 
-        best_agent_rewards.append(population[best_idx].reward)
-        median_agent_rewards.append(median_val)
+        # Record the best-agent reward for this generation
+        best_agent_rewards.append(best_reward)
 
-        # Track global best & early stopping
-        if best_agent is None or population[best_idx].reward > best_agent.reward:
+        # --- 4) Track global best‐agent (based on max reward) ---
+        if best_agent is None or best_reward > best_agent.reward:
             best_agent = copy.deepcopy(population[best_idx])
-            patience_counter = 0
-        else:
-            patience_counter += 1
 
-        if (
-            population[best_idx].info.get("achieved_max_reward", False)
-            or patience_counter >= patience
-        ):
-            print(f"[DEBUG] Converged at generation {gen}")
-            print(f"[DEBUG] Best agent reward: {best_agent.reward}")
-            print(f"[DEBUG] Median agent reward: {median_val}")
-            print(f"[DEBUG] Patience counter: {patience_counter}")
-            task_str = getattr(env.reward, "__name__", type(env.reward).__name__)
-            with open("convergence_summary.csv", "a") as f:
-                f.write(f"{task_str},{gen}\n")
-
-            return population, best_agent, gen, best_agent_rewards, median_agent_rewards
-
-        # 3) Selection
+        # --- 5) Selection step (fitness‐based or QD‐based) ---
         if not qd:
-            # Standard: top‐N by fitness
+            # Standard EA: pick top‐N by reward
             sorted_pop = sorted(population, key=lambda m: m.reward, reverse=True)
             number_of_surviving_members = max(2, int(population_size * survival_rate))
             survivors = sorted_pop[:number_of_surviving_members]
         else:
-            # QD: cluster on qd_score
+            # QD selection: cluster on “qd_score”
             scores = np.array([m.info["qd_score"] for m in population])
             Z = linkage(scores.reshape(-1, 1), method="ward")
             cutoff = np.median(Z[:, 2])
             labels = fcluster(Z, t=cutoff, criterion="distance")
 
-            # pick survivors within each cluster
             survivors = []
             for cluster in np.unique(labels):
                 members = [
                     population[i] for i, lbl in enumerate(labels) if lbl == cluster
                 ]
                 members.sort(
-                    key=lambda m: m.info.get("qd_score", m.reward), reverse=True
+                    key=lambda m: m.info.get("qd_score", m.reward),
+                    reverse=True
                 )
-                number_of_cluster_survivors = max(1, int(len(members) * survival_rate))
-                survivors.extend(members[:number_of_cluster_survivors])
+                num_in_cluster = max(1, int(len(members) * survival_rate))
+                survivors.extend(members[:num_in_cluster])
 
-            # ensure at least two survivors overall
+            # Ensure at least two survivors overall
             if len(survivors) < 2:
-                # fallback to best two by fitness
                 pop_by_fit = sorted(population, key=lambda m: m.reward, reverse=True)
                 survivors = pop_by_fit[:2]
 
-        # 4) Reproduction 
+        # Compute mean reward over the elites (survivors)
+        elite_rewards = [m.reward for m in survivors]
+        mean_elite_val = float(np.mean(elite_rewards))
+        mean_elite_rewards.append(mean_elite_val)
+
+        # --- 6) Early stopping on *mean‐elite* reward ---
+        if best_mean_elite is None or mean_elite_val > best_mean_elite:
+            best_mean_elite = mean_elite_val
+            patience_counter = 0
+        else:
+            patience_counter += 1
+
+        # If someone hit “achieved_max_reward,” stop immediately:
+        achieved_max = population[best_idx].info.get("achieved_max_reward", False)
+        if achieved_max or patience_counter >= patience:
+            print(f"[DEBUG] Converged at generation {gen}")
+            print(f"[DEBUG] Best agent reward: {best_agent.reward}")
+            print(f"[DEBUG] Mean‐elite reward: {best_mean_elite}")
+            print(f"[DEBUG] Patience counter: {patience_counter}")
+            return population, best_agent, gen, best_agent_rewards, mean_elite_rewards
+
+        # --- 7) Reproduction step ---
         number_of_surviving_members = len(survivors)
         n_offspring = population_size - number_of_surviving_members
         n_pairs = math.ceil(n_offspring / 2)
+
         pairs_args = []
         for _ in range(n_pairs):
             if len(survivors) >= 2:
                 p1, p2 = random.sample(survivors, 2)
             else:
+                # If only one survivor, mate it with itself
                 p1 = p2 = survivors[0]
             pairs_args.append(
                 (
@@ -304,14 +329,14 @@ def evolve(
         with Pool(min(cpu_count() * 2, len(pairs_args))) as pool:
             results = pool.map(reproduce_pair, pairs_args)
 
-        # flatten and trim
+        # Flatten offspring list and trim to exactly n_offspring
         offspring = [child for pair in results for child in pair][:n_offspring]
 
-        # 5) Form next gen
+        # --- 8) Form next generation ---
         population = survivors + offspring
 
-    # end for
-    return population, best_agent, generations, best_agent_rewards, median_agent_rewards
+    # If we exhaust all generations without early stopping:
+    return population, best_agent, generations, best_agent_rewards, mean_elite_rewards
 
 
 # --- Optuna Objective Function ---
@@ -744,7 +769,7 @@ if __name__ == "__main__":
             exit(1)
 
         start_time = time.time()
-        _, best_agent, generations, best_agent_rewards, median_agent_rewards = evolve(
+        _, best_agent, generations, best_agent_rewards, mean_agent_rewards = evolve(
             env=env,
             generations=args.generations,
             population_size=hyperparams["population_size"],
@@ -766,12 +791,12 @@ if __name__ == "__main__":
         end_time = time.time()
         print(f"Evolution finished in {end_time - start_time:.2f} seconds.")
         print(f"Evolved for a total of {generations} generations")
-        assert len(best_agent_rewards) == len(median_agent_rewards)
+        assert len(best_agent_rewards) == len(mean_agent_rewards)
         task_str = "_".join(args.task)  # Combine task names
 
-        x_axis = np.arange(1, len(median_agent_rewards) + 1)
+        x_axis = np.arange(1, len(mean_agent_rewards) + 1)
         plt.plot(x_axis, best_agent_rewards, label="Best Agent Per Generation")
-        plt.plot(x_axis, median_agent_rewards, label="Median Agent Per Generation")
+        plt.plot(x_axis, mean_agent_rewards, label="Median Agent Per Generation")
         plt.legend()
         plt.title(f"Performance Over Generations: {task_str}")
         plt.xlabel("Generations")

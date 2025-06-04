@@ -13,7 +13,7 @@ import pygame
 from gymnasium import spaces
 
 # Import functions from biome_wfc instead of fast_wfc
-from wfc import (  # We might not need render_wfc_grid if we keep console rendering
+from .wfc import (  # We might not need render_wfc_grid if we keep console rendering
     biome_wfc_step,
     find_lowest_entropy_cell,
     initialize_wfc_grid,
@@ -356,4 +356,11 @@ class WFCWrapper(gym.Env):
     def close(self):
         """Cleans up any resources used by the environment."""
         if hasattr(self, "screen"):
+<<<<<<< HEAD
             pygame.quit()
+=======
+            pygame.quit()
+        if hasattr(self, "screen"):
+            pygame.quit()
+            pygame.quit()
+>>>>>>> main
