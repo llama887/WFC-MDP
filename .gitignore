@@ -184,7 +184,6 @@ pcgrl.txt
 figures/
 agents*
 
-*.s
 output
 *.err
 *.out
