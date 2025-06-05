@@ -78,7 +78,7 @@ def _generic_convergence_collector(
 
             pop, best_agent, generations, best_agent_rewards, mean_agent_rewards = evolve(
                 env=env,
-                generations=evolution_hyperparameters.get("generations", 100),
+                generations=evolution_hyperparameters.get("generations", 1000),
                 population_size=evolution_hyperparameters["population_size"],
                 number_of_actions_mutated_mean=evolution_hyperparameters[
                     "number_of_actions_mutated_mean"

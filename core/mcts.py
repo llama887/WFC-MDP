@@ -31,7 +31,7 @@ class Action(BaseModel):
 class MCTSConfig(BaseModel):
     """Configuration for the MCTS algorithm"""
     exploration_weight: float = Field(default=1.0, description="Exploration weight for UCT calculation")
-    num_simulations: int = Field(default=20, description="Number of simulations to run")
+    num_simulations: int = Field(default=96, description="Number of simulations to run")
 
 class Node:
     """A node in the MCTS tree"""
