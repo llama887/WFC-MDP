@@ -470,7 +470,7 @@ def objective(
 def render_best_agent(
     env: WFCWrapper, best_agent: PopulationMember, tile_images, task_name: str = ""
 ):
-    """Renders the action sequence of the best agent and saves the final map."""
+    """Renders the action sequence of the best agent with fallback to manual rendering."""
     if not best_agent:
         print("No best agent found to render.")
         return
@@ -489,60 +489,52 @@ def render_best_agent(
     print("Info:", best_agent.info)
     print("Rendering best agent's action sequence...")
 
+    def manual_render():
+        """Fallback manual rendering when env.render() fails"""
+        for y in range(env.map_length):
+            for x in range(env.map_width):
+                cell_set = env.grid[y][x]
+                if len(cell_set) == 1:  # Collapsed cell
+                    tile_name = next(iter(cell_set))
+                    if tile_name in tile_images:
+                        screen.blit(tile_images[tile_name], (x * 32, y * 32))
+                        final_surface.blit(tile_images[tile_name], (x * 32, y * 32))
+                    else:
+                        # Fallback for missing tiles
+                        pygame.draw.rect(screen, (255, 0, 255), (x * 32, y * 32, 32, 32))
+                        pygame.draw.rect(final_surface, (255, 0, 255), (x * 32, y * 32, 32, 32))
+                elif len(cell_set) == 0:  # Contradiction
+                    pygame.draw.rect(screen, (255, 0, 0), (x * 32, y * 32, 32, 32))
+                    pygame.draw.rect(final_surface, (255, 0, 0), (x * 32, y * 32, 32, 32))
+                else:  # Superposition
+                    pygame.draw.rect(screen, (100, 100, 100), (x * 32, y * 32, 32, 32))
+                    pygame.draw.rect(final_surface, (100, 100, 100), (x * 32, y * 32, 32, 32))
+
     for action in tqdm(best_agent.action_sequence, desc="Rendering Steps"):
         _, reward, terminate, truncate, _ = env.step(action)
         total_reward += reward
 
         # Clear screen
         screen.fill((0, 0, 0))
-        final_surface.fill((0, 0, 0))  # Also clear the final surface
+        final_surface.fill((0, 0, 0))
 
-        # Try to use env.render(), fall back to manual rendering if it returns None
+        # Try to use env.render(), fall back to manual if it fails
         rendered_surface = env.render()
         if rendered_surface is not None:
             screen.blit(rendered_surface, (0, 0))
             final_surface.blit(rendered_surface, (0, 0))
         else:
-            # Fallback to manual rendering
-            for y in range(env.map_length):
-                for x in range(env.map_width):
-                    cell_set = env.grid[y][x]
-                    if len(cell_set) == 1:  # Collapsed cell
-                        tile_name = next(iter(cell_set))
-                        if tile_name in tile_images:
-                            screen.blit(tile_images[tile_name], (x * 32, y * 32))
-                            final_surface.blit(tile_images[tile_name], (x * 32, y * 32))
-                        else:
-                            # Fallback for missing tiles
-                            pygame.draw.rect(
-                                screen, (255, 0, 255), (x * 32, y * 32, 32, 32)
-                            )
-                            pygame.draw.rect(
-                                final_surface, (255, 0, 255), (x * 32, y * 32, 32, 32)
-                            )
-                    elif len(cell_set) == 0:  # Contradiction
-                        pygame.draw.rect(screen, (255, 0, 0), (x * 32, y * 32, 32, 32))
-                        pygame.draw.rect(
-                            final_surface, (255, 0, 0), (x * 32, y * 32, 32, 32)
-                        )
-                    else:  # Superposition
-                        pygame.draw.rect(screen, (100, 100, 100), (x * 32, y * 32, 32, 32))
-                        pygame.draw.rect(
-                            final_surface, (100, 100, 100), (x * 32, y * 32, 32, 32)
-                        )
+            manual_render()
 
         pygame.display.flip()
 
-        # Capture final frame if this is the last step
         if terminate or truncate:
             break
 
-    # --- Draw the path with smooth curves ---
-    if hasattr(best_agent.info, "get") and "longest_path" in best_agent.info:
+    # Draw the path if it exists in the agent's info
+    if "longest_path" in best_agent.info:
         path_indices = best_agent.info["longest_path"]
         if path_indices and len(path_indices) > 1:
-            print(f"Found path with {len(path_indices)} points")
-
             # Convert indices to Pygame coordinates (center of each tile)
             path_points = []
             for idx in path_indices:
@@ -552,63 +544,13 @@ def render_best_agent(
                     center_y = y * 32 + 16
                     path_points.append((center_x, center_y))
 
-            # Draw smooth path using bezier curves if we have enough points
-            if len(path_points) >= 3:
-                # Create a list of points for smooth curve
-                smooth_points = []
-
-                # Add the first point
-                smooth_points.append(path_points[0])
-
-                # Add intermediate points with smoothing
-                for i in range(1, len(path_points) - 1):
-                    prev = path_points[i - 1]
-                    curr = path_points[i]
-                    next_p = path_points[i + 1]
-
-                    # Calculate control points for bezier curve
-                    ctrl1 = ((prev[0] + curr[0]) / 2, (prev[1] + curr[1]) / 2)
-                    ctrl2 = ((curr[0] + next_p[0]) / 2, (curr[1] + next_p[1]) / 2)
-
-                    # Generate points along the bezier curve
-                    t_values = np.linspace(0, 1, 10)
-                    for t in t_values:
-                        x = (
-                            (1 - t) ** 2 * ctrl1[0]
-                            + 2 * (1 - t) * t * curr[0]
-                            + t**2 * ctrl2[0]
-                        )
-                        y = (
-                            (1 - t) ** 2 * ctrl1[1]
-                            + 2 * (1 - t) * t * curr[1]
-                            + t**2 * ctrl2[1]
-                        )
-                        smooth_points.append((x, y))
-
-                # Add the last point
-                smooth_points.append(path_points[-1])
-
-                # Draw the smooth path on both surfaces
-                if len(smooth_points) > 1:
-                    pygame.draw.lines(screen, (255, 0, 0), False, smooth_points, 3)
-                    pygame.draw.lines(
-                        final_surface, (255, 0, 0), False, smooth_points, 3
-                    )
-
-                    # Draw circles at the original path points
-                    for point in path_points:
-                        pygame.draw.circle(screen, (255, 0, 0), point, 4)
-                        pygame.draw.circle(final_surface, (255, 0, 0), point, 4)
-            elif len(path_points) > 1:
-                # Fallback to straight lines if not enough points for bezier
+            if len(path_points) >= 2:
                 pygame.draw.lines(screen, (255, 0, 0), False, path_points, 3)
                 pygame.draw.lines(final_surface, (255, 0, 0), False, path_points, 3)
-
                 for point in path_points:
                     pygame.draw.circle(screen, (255, 0, 0), point, 4)
                     pygame.draw.circle(final_surface, (255, 0, 0), point, 4)
-
-            pygame.display.flip()
+                pygame.display.flip()
 
     # Save the final rendered map
     if task_name:

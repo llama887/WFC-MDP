@@ -258,18 +258,16 @@ class MCTS:
         
         return node
 
-def render_action_sequence(env: WFCWrapper, action_sequence: list[np.ndarray], tile_images, filename: str) -> None:
-    """Render the final state of an action sequence and save to file"""
+def render_action_sequence(env: WFCWrapper, action_sequence: list[np.ndarray], filename: str, tile_images: dict) -> None:
+    """Render the final state of an action sequence using tile images and save to file"""
     env = deepcopy(env)  # Ensure we don't modify the original environment
-    os.environ['SDL_VIDEODRIVER'] = 'dummy'                                                                                                                                      
-    pygame.init()                                                                                                                                                                
-    pygame.display.set_mode((1, 1))  # Minimal display buffer
-    SCREEN_WIDTH = env.map_width * 32
-    SCREEN_HEIGHT = env.map_length * 32
     
-    # Create a surface for the final map
-    final_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-
+    # Initialize pygame if not already initialized
+    if not pygame.get_init():
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+    
     env.reset()
 
     # Run the entire action sequence
@@ -278,31 +276,51 @@ def render_action_sequence(env: WFCWrapper, action_sequence: list[np.ndarray], t
         if terminate or truncate:
             break
 
-    # Render the final state
-    final_surface.fill((0, 0, 0))
+    # Create a surface for the final map
+    tile_size = 32  # Assuming 32x32 tiles
+    SCREEN_WIDTH = env.map_width * tile_size
+    SCREEN_HEIGHT = env.map_length * tile_size
+    final_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+    final_surface.fill((0, 0, 0))  # Fill with black background
+
+    # Render each cell using the appropriate tile image
     for y in range(env.map_length):
         for x in range(env.map_width):
             cell_set = env.grid[y][x]
+            
             if len(cell_set) == 1:  # Collapsed cell
                 tile_name = next(iter(cell_set))
                 if tile_name in tile_images:
-                    final_surface.blit(tile_images[tile_name], (x * 32, y * 32))
+                    # Blit the tile image
+                    final_surface.blit(tile_images[tile_name], (x * tile_size, y * tile_size))
                 else:
                     # Fallback for missing tiles
-                    pygame.draw.rect(
-                        final_surface, (255, 0, 255), (x * 32, y * 32, 32, 32)
-                    )
+                    pygame.draw.rect(final_surface, (255, 0, 255), 
+                                   (x * tile_size, y * tile_size, tile_size, tile_size))
+                    
             elif len(cell_set) == 0:  # Contradiction
-                pygame.draw.rect(final_surface, (255, 0, 0), (x * 32, y * 32, 32, 32))
+                # Draw red X for contradictions
+                pygame.draw.rect(final_surface, (255, 0, 0), 
+                               (x * tile_size, y * tile_size, tile_size, tile_size))
+                pygame.draw.line(final_surface, (255, 255, 255), 
+                               (x * tile_size, y * tile_size), 
+                               ((x+1) * tile_size, (y+1) * tile_size), 2)
+                pygame.draw.line(final_surface, (255, 255, 255), 
+                               ((x+1) * tile_size, y * tile_size), 
+                               (x * tile_size, (y+1) * tile_size), 2)
+                               
             else:  # Superposition
-                pygame.draw.rect(final_surface, (100, 100, 100), (x * 32, y * 32, 32, 32))
+                # Draw gray with number of possibilities
+                pygame.draw.rect(final_surface, (100, 100, 100), 
+                               (x * tile_size, y * tile_size, tile_size, tile_size))
+                font = pygame.font.SysFont(None, 20)
+                text = font.render(str(len(cell_set)), True, (255, 255, 255))
+                final_surface.blit(text, (x * tile_size + 10, y * tile_size + 10))
 
     # Save the final image
     os.makedirs("mcts_output", exist_ok=True)
     output_path = os.path.join("mcts_output", filename)
     pygame.image.save(final_surface, output_path)
-    pygame.quit()
-
                                                                                                                                                                                                                  
                                                                                                                                                                                                                                      
 # Function to run MCTS until we have a complete solution
@@ -382,13 +400,11 @@ if __name__ == '__main__':
     # Run MCTS until we have a complete solution
     best_action_sequence, total_reward, iterations = run_mcts_until_complete(env, mcts)
 
-    # Load tile images for visualization
+    # Load tile images
     from assets.biome_adjacency_rules import load_tile_images
     tile_images = load_tile_images()
 
     # Save the best action sequence if we found one
     if best_action_sequence:
         filename = f"mcts_solution_{iterations}.png"
-        render_action_sequence(env, best_action_sequence, tile_images, filename)
-
-
+        render_action_sequence(env, best_action_sequence, filename, tile_images)
