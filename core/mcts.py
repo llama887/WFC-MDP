@@ -124,7 +124,7 @@ class Node:
             total_reward += reward
             action_sequence.append(action)
             if terminated and info.get("achieved_max_reward", False):
-                assert total_reward == 0, f"Total reward is {total_reward} while achieved_max_reward is {info.get("achieved_max_reward", False)}, expected 0 for max reward"
+                assert total_reward == 0, f"Total reward is {total_reward} while achieved_max_reward is {info.get('achieved_max_reward', False)}, expected 0 for max reward"
                 assert sim_env.deterministic, "Expected deterministic environment for MCTS simulation"
                 return total_reward, action_sequence, True
         
@@ -352,43 +352,43 @@ def run_mcts_until_complete(env: WFCWrapper, mcts: MCTS, max_iterations:int=1000
     
     return best_action_sequence, total_reward, None
 
-# Define environment parameters
-MAP_LENGTH = 15
-MAP_WIDTH = 20
+if __name__ == '__main__':
+    # Define environment parameters
+    MAP_LENGTH = 15
+    MAP_WIDTH = 20
 
-adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
-num_tiles = len(tile_symbols)
+    adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
+    num_tiles = len(tile_symbols)
 
-# Create the WFC environment instance
-env = WFCWrapper(
-    map_length=MAP_LENGTH,
-    map_width=MAP_WIDTH,
-    tile_symbols=tile_symbols,
-    adjacency_bool=adjacency_bool,
-    num_tiles=num_tiles,
-    tile_to_index=tile_to_index,
-    reward=partial(binary_reward, target_path_length=80, hard=True),
-    deterministic=True,
-    # qd_function=binary_percent_water if args.qd else None,
-)
-                                                                                                                                                                                                            
-env.reset()                                                                                                                                                                                                                          
+    # Create the WFC environment instance
+    env = WFCWrapper(
+        map_length=MAP_LENGTH,
+        map_width=MAP_WIDTH,
+        tile_symbols=tile_symbols,
+        adjacency_bool=adjacency_bool,
+        num_tiles=num_tiles,
+        tile_to_index=tile_to_index,
+        reward=partial(binary_reward, target_path_length=20, hard=True),
+        deterministic=True,
+    )
+    
+    env.reset()                                                                                                                                                                                                                          
                                                                                                                                                                                                                                      
-# Create MCTS instance                                                                                                                                                                                                               
-mcts = MCTS(env)    
+    # Create MCTS instance                                                                                                                                                                                                               
+    mcts = MCTS(env)    
 
-env.reset() 
+    env.reset() 
 
-# Run MCTS until we have a complete solution
-best_action_sequence, total_reward, iterations = run_mcts_until_complete(env, mcts)
+    # Run MCTS until we have a complete solution
+    best_action_sequence, total_reward, iterations = run_mcts_until_complete(env, mcts)
 
-# Load tile images for visualization
-from assets.biome_adjacency_rules import load_tile_images
-tile_images = load_tile_images()
+    # Load tile images for visualization
+    from assets.biome_adjacency_rules import load_tile_images
+    tile_images = load_tile_images()
 
-# Save the best action sequence if we found one
-if best_action_sequence:
-    filename = f"mcts_solution_{iterations}.png"
-    render_action_sequence(env, best_action_sequence, tile_images, filename)
+    # Save the best action sequence if we found one
+    if best_action_sequence:
+        filename = f"mcts_solution_{iterations}.png"
+        render_action_sequence(env, best_action_sequence, tile_images, filename)
 
 

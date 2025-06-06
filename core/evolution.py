@@ -497,33 +497,39 @@ def render_best_agent(
         screen.fill((0, 0, 0))
         final_surface.fill((0, 0, 0))  # Also clear the final surface
 
-        # Render the current state to both surfaces
-        for y in range(env.map_length):
-            for x in range(env.map_width):
-                cell_set = env.grid[y][x]
-                if len(cell_set) == 1:  # Collapsed cell
-                    tile_name = next(iter(cell_set))
-                    if tile_name in tile_images:
-                        screen.blit(tile_images[tile_name], (x * 32, y * 32))
-                        final_surface.blit(tile_images[tile_name], (x * 32, y * 32))
-                    else:
-                        # Fallback for missing tiles
+        # Try to use env.render(), fall back to manual rendering if it returns None
+        rendered_surface = env.render()
+        if rendered_surface is not None:
+            screen.blit(rendered_surface, (0, 0))
+            final_surface.blit(rendered_surface, (0, 0))
+        else:
+            # Fallback to manual rendering
+            for y in range(env.map_length):
+                for x in range(env.map_width):
+                    cell_set = env.grid[y][x]
+                    if len(cell_set) == 1:  # Collapsed cell
+                        tile_name = next(iter(cell_set))
+                        if tile_name in tile_images:
+                            screen.blit(tile_images[tile_name], (x * 32, y * 32))
+                            final_surface.blit(tile_images[tile_name], (x * 32, y * 32))
+                        else:
+                            # Fallback for missing tiles
+                            pygame.draw.rect(
+                                screen, (255, 0, 255), (x * 32, y * 32, 32, 32)
+                            )
+                            pygame.draw.rect(
+                                final_surface, (255, 0, 255), (x * 32, y * 32, 32, 32)
+                            )
+                    elif len(cell_set) == 0:  # Contradiction
+                        pygame.draw.rect(screen, (255, 0, 0), (x * 32, y * 32, 32, 32))
                         pygame.draw.rect(
-                            screen, (255, 0, 255), (x * 32, y * 32, 32, 32)
+                            final_surface, (255, 0, 0), (x * 32, y * 32, 32, 32)
                         )
+                    else:  # Superposition
+                        pygame.draw.rect(screen, (100, 100, 100), (x * 32, y * 32, 32, 32))
                         pygame.draw.rect(
-                            final_surface, (255, 0, 255), (x * 32, y * 32, 32, 32)
+                            final_surface, (100, 100, 100), (x * 32, y * 32, 32, 32)
                         )
-                elif len(cell_set) == 0:  # Contradiction
-                    pygame.draw.rect(screen, (255, 0, 0), (x * 32, y * 32, 32, 32))
-                    pygame.draw.rect(
-                        final_surface, (255, 0, 0), (x * 32, y * 32, 32, 32)
-                    )
-                else:  # Superposition
-                    pygame.draw.rect(screen, (100, 100, 100), (x * 32, y * 32, 32, 32))
-                    pygame.draw.rect(
-                        final_surface, (100, 100, 100), (x * 32, y * 32, 32, 32)
-                    )
 
         pygame.display.flip()
 
