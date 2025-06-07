@@ -392,35 +392,34 @@ def objective(
         "binary_path_length": trial.suggest_int("binary_path_length", 30, 80),
     }
     
-    # Suggest task combo from extended list
-    # we should not be picking a task combo here. instead the user should be able to somehow pass it in as a cli flag when they are runnning in optuna mode AI!
-    task_combinations = [
-        ["binary_hard"], ["river"], ["pond"], ["grass"], ["hill"],
-        ["binary_hard", "river"], 
-        ["binary_hard", "pond"],
-        ["binary_hard", "grass"],
-        ["binary_hard", "hill"],
-    ]
-    combo_idx = trial.suggest_int("task_combo", 0, len(task_combinations)-1)
-    selected_tasks = task_combinations[combo_idx]
-
-    # Adjust binary reward based on combo
+    # Use CLI-provided tasks instead of Optuna-suggested tasks
     reward_funcs = []
     binary_target = hyperparams["binary_path_length"]
-    
-    if "binary_hard" in selected_tasks:
-        # Use shorter path for combos
-        target_length = 40 if len(selected_tasks) > 1 else binary_target
-        reward_funcs.append(partial(binary_reward, 
-            target_path_length=target_length,
-            hard=True))
-            
-    for task in selected_tasks:
-        if task != "binary_hard":
+
+    # Use global args if available, else fallback to ["binary_hard"]
+    import sys
+    import argparse as _argparse
+    parser = _argparse.ArgumentParser()
+    parser.add_argument("--task", action="append", default=[])
+    known_args, _ = parser.parse_known_args(sys.argv[1:])
+    cli_tasks = known_args.task if known_args.task else ["binary_hard"]
+
+    is_combo = len(cli_tasks) > 1
+
+    for task in cli_tasks:
+        if task.startswith("binary_"):
+            # For binary tasks, adjust path length if in combo
+            target_length = 40 if is_combo else binary_target
+            hard = (task == "binary_hard")
+            reward_funcs.append(partial(binary_reward,
+                target_path_length=target_length,
+                hard=hard))
+        else:
+            # For biome tasks, use their reward functions directly
             reward_funcs.append(globals()[f"{task}_reward"])
 
     # Build final reward function
-    reward_fn = reward_funcs[0] if len(reward_funcs) == 1 else CombinedReward(reward_funcs)
+    reward_fn = CombinedReward(reward_funcs) if len(reward_funcs) > 1 else reward_funcs[0]
 
     # Construct Env
     MAP_LENGTH = 15
@@ -697,7 +696,7 @@ if __name__ == "__main__":
             "binary_and_river", "binary_and_pond",
             "binary_and_grass", "binary_and_hill"
         ],
-        help="Include 'binary_and_X' for combo tasks"
+        help="Task(s) to use. For combo tasks, specify multiple --task flags"
     )
     parser.add_argument(
         "--override-patience",
@@ -820,7 +819,7 @@ if __name__ == "__main__":
         start_time = time.time()
         study.optimize(
             lambda trial: objective(
-                trial, "binary", args.generations_per_trial, args.qd
+                trial, args.generations_per_trial, args.qd
             ),
             n_trials=args.optuna_trials,
         )
