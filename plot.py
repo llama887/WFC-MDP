@@ -554,8 +554,6 @@ if __name__ == "__main__":
         fi2pop_params = convert_to_fi2pop_hyperparams(
             evolution_hyperparameters, MAP_LENGTH, MAP_WIDTH
         )
-        import pandas as pd
-        import time
         data_rows = []
         for key in loop_keys:
             for run_idx in range(sample_size):
@@ -623,10 +621,15 @@ if __name__ == "__main__":
     def collect_fi2pop_biome_convergence(
         hyperparams: dict,
         runs: int = 20,
-        debug: bool = False
+        debug: bool = False,
+        specific_biome: str = None
     ) -> str:
-        biomes = ["Pond", "River", "Grass"]
-        prefix = "fi2pop_biome_average_"
+        if specific_biome:
+            biomes = [specific_biome.capitalize()]
+        else:
+            biomes = ["Pond", "River", "Grass"]
+    
+        prefix = "fi2pop_biome_"
         def make_reward(biome): 
             return {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[biome]
         return _generic_fi2pop_collector(
@@ -651,11 +654,18 @@ if __name__ == "__main__":
             plot_average_biome_convergence_from_csv(csv_path)
         else:
             use_hard = args.combo == "hard"
-            csv_path = collect_fi2pop_combo_convergence(
-                20, hyperparams, args.task, use_hard, args.debug
-            )
-            title = f"FI-2Pop Combo: {args.task.capitalize()}" + (" HARD" if use_hard else "")
-            plot_convergence_from_csv(csv_path, title=title)
+            # For individual biome tasks
+            if args.task in ["river", "pond", "grass"]:
+                csv_path = collect_fi2pop_biome_convergence(
+                    hyperparams, 20, args.debug, specific_biome=args.task
+                )
+                plot_average_biome_convergence_from_csv(csv_path)
+            else:
+                csv_path = collect_fi2pop_combo_convergence(
+                    20, hyperparams, args.task, use_hard, args.debug
+                )
+                title = f"FI-2Pop Combo: {args.task.capitalize()}" + (" HARD" if use_hard else "")
+                plot_convergence_from_csv(csv_path, title=title)
     elif args.method == "mcts":
         if args.task == "binary_easy":
             csv_path = collect_mcts_binary_convergence(

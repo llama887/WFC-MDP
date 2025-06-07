@@ -40,8 +40,7 @@ from .wfc_env import CombinedReward, WFCWrapper
 # ----------------------------------------------------------------------------
 # Prepare figures directory
 # ----------------------------------------------------------------------------
-FIGURES_DIRECTORY = "figures_fi-2pop"
-os.makedirs(FIGURES_DIRECTORY, exist_ok=True)
+# Removed hardcoded figure directory - now handled by plot.py
 
 # ----------------------------------------------------------------------------
 # WFC environment factory
