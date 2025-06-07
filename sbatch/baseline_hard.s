@@ -12,15 +12,19 @@
 #SBATCH --account=pr_100_tandon_priority
 
 ### -------------------- Logging Setup -------------------- ###
-LOG_DIR="/scratch/$USER/optimizing_WFC/output"
-GPU_LOG_FILE="$LOG_DIR/gpu_used_${SLURM_JOB_ID}.txt"
-mkdir -p $LOG_DIR
-log_and_email() {
-    MESSAGE="$1"
-    echo "$MESSAGE" | tee -a "$GPU_LOG_FILE"
-    echo -e "Subject:[Slurm Job: $SLURM_JOB_ID] Status Update\n\n$MESSAGE" | sendmail fyy2003@nyu.edu
-}
-log_and_email "Starting job: $SLURM_JOB_NAME ($SLURM_JOB_ID)"
+ LOG_DIR="${OUTPUT_DIR:-/scratch/$USER/optimizing_WFC/output}"
+ LOG_FILE="$LOG_DIR/baseline_plots_hard_${SLURM_JOB_ID}.log"
+...
+ log_and_email() {
+     MESSAGE="$1"
+    echo "$MESSAGE" | tee -a "$LOG_FILE"
+     echo -e "Subject:[Slurm Job: $SLURM_JOB_ID] Status Update\n\n$MESSAGE" \
+          | sendmail "${MAIL_USER:-fyy2003@nyu.edu}"
+ }
+ 
+# Notify on failure or normal exit
+ trap 'log_and_email "Job FAILED: $SLURM_JOB_NAME ($SLURM_JOB_ID) at $(date)"' ERR
+ trap 'log_and_email "Job COMPLETED: $SLURM_JOB_NAME ($SLURM_JOB_ID) at $(date)"' EXIT
 
 module purge
 cd /scratch/fyy2003/optimizing_WFC
