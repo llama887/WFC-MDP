@@ -330,7 +330,7 @@ def summary_sweep(
             h2, l2 = ax2.get_legend_handles_labels()
             ax1.legend(h1 + h2, l1 + l2, loc="upper left")
 
-            out = f"{FIGURES_DIRECTORY}/{combo_label}_{mode_label}_summary.png".replace(
+            out = f"figures_fi2pop/{combo_label}_{mode_label}_summary.png".replace(
                 "+", "p"
             )
             fig.tight_layout()
@@ -383,7 +383,7 @@ def plot_biome_convergence_bar(
     plt.ylabel("Avg Gens to First Feasible")
     plt.title(f"FI-2Pop Biome Convergence ({'HARD' if hard else 'EASY'})")
     plt.tight_layout()
-    plt.savefig(f"{FIGURES_DIRECTORY}/fi2pop_biome_convergence_bar.png")
+    plt.savefig("figures_fi2pop/fi2pop_biome_convergence_bar.png")
     plt.close()
 
 
