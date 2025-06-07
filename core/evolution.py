@@ -47,6 +47,11 @@ class CrossOverMethod(Enum):
     UNIFORM = 0
     ONE_POINT = 1
 
+def _mutate_clone(args):
+    member, mean, stddev, noise = args
+    member.mutate(mean, stddev, noise)
+    return member
+
 
 class PopulationMember:
     def __init__(self, env: WFCWrapper, genotype_representation: Literal["1d", "2d"]="1d"):
@@ -204,6 +209,8 @@ def evolve(
     patience: int = 30,
     qd: bool = False,
     genotype_representation: Literal["1d", "2d"] = "1d",
+    cross_or_mutate_proportion: float = 0.7,
+    random_offspring_proportion: float = 0.1,
 ) -> tuple[
     list[PopulationMember],  # final population
     PopulationMember,        # global best agent
@@ -306,31 +313,55 @@ def evolve(
         # --- 7) Reproduction step ---
         number_of_surviving_members = len(survivors)
         n_offspring = population_size - number_of_surviving_members
-        n_pairs = math.ceil(n_offspring / 2)
+        offspring = []
 
-        pairs_args = []
-        for _ in range(n_pairs):
-            if len(survivors) >= 2:
-                p1, p2 = random.sample(survivors, 2)
-            else:
-                # If only one survivor, mate it with itself
-                p1 = p2 = survivors[0]
-            pairs_args.append(
-                (
-                    p1,
-                    p2,
-                    number_of_actions_mutated_mean,
-                    number_of_actions_mutated_standard_deviation,
-                    action_noise_standard_deviation,
-                    cross_over_method,
+        # 7a: Generate random agents
+        n_random = max(0, int(round(n_offspring * random_offspring_proportion)))
+        for _ in range(n_random):
+            new_agent = PopulationMember(env, genotype_representation=genotype_representation)
+            offspring.append(new_agent)
+
+        remaining_needed = n_offspring - n_random
+
+        # 7b: Generate crossover and mutation offspring
+        if remaining_needed > 0:
+            n_crossover = int(round(remaining_needed * cross_or_mutate_proportion))
+            n_mutation = remaining_needed - n_crossover
+
+            # Crossover pairs
+            n_pairs = math.ceil(n_crossover / 2)
+            pairs_args = []
+            for _ in range(n_pairs):
+                if len(survivors) >= 2:
+                    p1, p2 = random.sample(survivors, 2)
+                else:
+                    p1 = p2 = survivors[0]
+                pairs_args.append(
+                    (
+                        p1,
+                        p2,
+                        number_of_actions_mutated_mean,
+                        number_of_actions_mutated_standard_deviation,
+                        action_noise_standard_deviation,
+                        cross_over_method,
+                    )
                 )
-            )
+            with Pool(min(cpu_count() * 2, len(pairs_args))) as pool:
+                results = pool.map(reproduce_pair, pairs_args)
+            crossover_children = [child for pair in results for child in pair][:n_crossover]
+            offspring.extend(crossover_children)
 
-        with Pool(min(cpu_count() * 2, len(pairs_args))) as pool:
-            results = pool.map(reproduce_pair, pairs_args)
-
-        # Flatten offspring list and trim to exactly n_offspring
-        offspring = [child for pair in results for child in pair][:n_offspring]
+            # Mutation-only children
+            mutation_args = [
+                (copy.deepcopy(random.choice(survivors)), 
+                 number_of_actions_mutated_mean,
+                 number_of_actions_mutated_standard_deviation,
+                 action_noise_standard_deviation)
+                for _ in range(n_mutation)
+            ]
+            with Pool(min(cpu_count() * 2, len(mutation_args))) as pool:
+                mutated = pool.map(_mutate_clone, mutation_args)
+            offspring.extend(mutated)
 
         # --- 8) Form next generation ---
         population = survivors + offspring
@@ -343,24 +374,53 @@ def evolve(
 
 
 def objective(
-    trial: optuna.Trial, task: str, generations_per_trial: int, qd: bool = False
+    trial: optuna.Trial, generations_per_trial: int, qd: bool = False
 ) -> float:
     """Objective function for Optuna hyperparameter optimization."""
 
-    # Suggest hyperparameters
-    population_size = trial.suggest_int("population_size", 48, 48)
-    number_of_actions_mutated_mean = trial.suggest_int(
-        "number_of_actions_mutated_mean", 1, 200
-    )
-    number_of_actions_mutated_standard_deviation = trial.suggest_float(
-        "number_of_actions_mutated_standard_deviation", 0.0, 200.0
-    )
-    action_noise_standard_deviation = trial.suggest_float(
-        "action_noise_standard_deviation", 0.01, 1.0, log=True
-    )
-    survival_rate = trial.suggest_float("survival_rate", 0.1, 0.8)
-    cross_over_method = trial.suggest_categorical("cross_over_method", [0, 1])
-    patience = trial.suggest_int("patience", 50, 50)
+    # Suggest new hyperparameters
+    hyperparams = {
+        "population_size": trial.suggest_int("population_size", 48, 48),
+        "number_of_actions_mutated_mean": trial.suggest_int("number_of_actions_mutated_mean", 1, 200),
+        "number_of_actions_mutated_standard_deviation": trial.suggest_float("number_of_actions_mutated_standard_deviation", 0.0, 200.0),
+        "action_noise_standard_deviation": trial.suggest_float("action_noise_standard_deviation", 0.01, 1.0, log=True),
+        "survival_rate": trial.suggest_float("survival_rate", 0.1, 0.8),
+        "cross_over_method": trial.suggest_categorical("cross_over_method", [0, 1]),
+        "patience": trial.suggest_int("patience", 50, 50),
+        "cross_or_mutate": trial.suggest_float("cross_or_mutate", 0.0, 1.0),
+        "random_offspring": trial.suggest_float("random_offspring", 0.0, 0.3),
+        "binary_path_length": trial.suggest_int("binary_path_length", 30, 80),
+    }
+    
+    # Suggest task combo from extended list
+    task_combinations = [
+        ["binary_hard"], ["river"], ["pond"], ["grass"], ["hill"],
+        ["binary_hard", "river"], 
+        ["binary_hard", "pond"],
+        ["binary_hard", "grass"],
+        ["binary_hard", "hill"],
+    ]
+    combo_idx = trial.suggest_int("task_combo", 0, len(task_combinations)-1)
+    selected_tasks = task_combinations[combo_idx]
+
+    # Adjust binary reward based on combo
+    reward_funcs = []
+    binary_target = hyperparams["binary_path_length"]
+    
+    if "binary_hard" in selected_tasks:
+        # Use shorter path for combos
+        target_length = 40 if len(selected_tasks) > 1 else binary_target
+        reward_funcs.append(partial(binary_reward, 
+            target_path_length=target_length,
+            hard=True))
+            
+    for task in selected_tasks:
+        if task != "binary_hard":
+            reward_funcs.append(globals()[f"{task}_reward"])
+
+    # Build final reward function
+    reward_fn = reward_funcs[0] if len(reward_funcs) == 1 else CombinedReward(reward_funcs)
+
     # Construct Env
     MAP_LENGTH = 15
     MAP_WIDTH = 20
@@ -372,91 +432,32 @@ def objective(
     NUMBER_OF_SAMPLES = 10
     start_time = time.time()
     for i in range(NUMBER_OF_SAMPLES):
-        match task:
-            case "binary":
-                target_path_length = 80  # only focus on the harder problems
-                # Create the WFC environment instance
-                base_env = WFCWrapper(
-                    map_length=MAP_LENGTH,
-                    map_width=MAP_WIDTH,
-                    tile_symbols=tile_symbols,
-                    adjacency_bool=adjacency_bool,
-                    num_tiles=num_tiles,
-                    tile_to_index=tile_to_index,
-                    reward=partial(
-                        binary_reward, target_path_length=target_path_length, hard=True
-                    ),
-                    deterministic=True,
-                    qd_function=binary_percent_water if qd else None,
-                )
-                # print(f"Target Path Length: {target_path_length}")
-            case "river":
-                base_env = WFCWrapper(
-                    map_length=MAP_LENGTH,
-                    map_width=MAP_WIDTH,
-                    tile_symbols=tile_symbols,
-                    adjacency_bool=adjacency_bool,
-                    num_tiles=num_tiles,
-                    tile_to_index=tile_to_index,
-                    reward=river_reward,
-                    deterministic=True,
-                    qd_function=None,  # Add QD function if needed
-                )
-                print("Running river task")
-            case "pond":
-                base_env = WFCWrapper(
-                    map_length=MAP_LENGTH,
-                    map_width=MAP_WIDTH,
-                    tile_symbols=tile_symbols,
-                    adjacency_bool=adjacency_bool,
-                    num_tiles=num_tiles,
-                    tile_to_index=tile_to_index,
-                    reward=pond_reward,
-                    deterministic=True,
-                    qd_function=None,  # Add QD function if needed
-                )
-                print("Running pond task")
-            case "grass":
-                base_env = WFCWrapper(
-                    map_length=MAP_LENGTH,
-                    map_width=MAP_WIDTH,
-                    tile_symbols=tile_symbols,
-                    adjacency_bool=adjacency_bool,
-                    num_tiles=num_tiles,
-                    tile_to_index=tile_to_index,
-                    reward=grass_reward,
-                    deterministic=True,
-                    qd_function=None,  # Add QD function if needed
-                )
-                print("Running pond task")
-            case "hill":
-                base_env = WFCWrapper(
-                    map_length=MAP_LENGTH,
-                    map_width=MAP_WIDTH,
-                    tile_symbols=tile_symbols,
-                    adjacency_bool=adjacency_bool,
-                    num_tiles=num_tiles,
-                    tile_to_index=tile_to_index,
-                    reward=hill_reward,
-                    deterministic=True,
-                    qd_function=None,  # Add QD function if needed
-                )
-                print("Running pond task")
-            case _:
-                raise ValueError(f"{task} is not a defined task")
+        base_env = WFCWrapper(
+            map_length=MAP_LENGTH,
+            map_width=MAP_WIDTH,
+            tile_symbols=tile_symbols,
+            adjacency_bool=adjacency_bool,
+            num_tiles=num_tiles,
+            tile_to_index=tile_to_index,
+            reward=reward_fn,
+            deterministic=True,
+            qd_function=binary_percent_water if qd else None,
+        )
 
         # Run evolution with suggested hyperparameters
         _, best_agent, _, _, _ = evolve(
             env=base_env,
             generations=generations_per_trial,  # Use fewer generations for faster trials
-            population_size=population_size,
-            number_of_actions_mutated_mean=number_of_actions_mutated_mean,
-            number_of_actions_mutated_standard_deviation=number_of_actions_mutated_standard_deviation,
-            action_noise_standard_deviation=action_noise_standard_deviation,
-            survival_rate=survival_rate,
-            cross_over_method=CrossOverMethod(cross_over_method),
-            patience=patience,
+            population_size=hyperparams["population_size"],
+            number_of_actions_mutated_mean=hyperparams["number_of_actions_mutated_mean"],
+            number_of_actions_mutated_standard_deviation=hyperparams["number_of_actions_mutated_standard_deviation"],
+            action_noise_standard_deviation=hyperparams["action_noise_standard_deviation"],
+            survival_rate=hyperparams["survival_rate"],
+            cross_over_method=CrossOverMethod(hyperparams["cross_over_method"]),
+            patience=hyperparams["patience"],
             qd=qd,
+            cross_or_mutate_proportion=hyperparams["cross_or_mutate"],
+            random_offspring_proportion=hyperparams["random_offspring"],
         )
         print(f"Best reward at sample {i + 1}/{NUMBER_OF_SAMPLES}: {best_agent.reward}")
         total_reward += best_agent.reward
@@ -689,8 +690,13 @@ if __name__ == "__main__":
         "--task",
         action="append",
         default=[],
-        choices=["binary_easy", "binary_hard", "river", "pond", "grass", "hill"],
-        help="The task being optimized. Used to pick reward. Pick from: binary_easy, binary_hard, river, pond ect. Specify one or more --task flags to combine tasks.",
+        choices=[
+            "binary_easy", "binary_hard", 
+            "river", "pond", "grass", "hill",
+            "binary_and_river", "binary_and_pond",
+            "binary_and_grass", "binary_and_hill"
+        ],
+        help="Include 'binary_and_X' for combo tasks"
     )
     parser.add_argument(
         "--override-patience",
