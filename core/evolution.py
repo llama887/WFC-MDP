@@ -390,14 +390,9 @@ def objective(
 ) -> float:
     """Objective function for Optuna hyperparameter optimization."""
 
-    if tasks_list is None:
-        # Fallback to CLI --task flags if not provided
-        import sys
-        import argparse as _argparse
-        parser = _argparse.ArgumentParser()
-        parser.add_argument("--task", action="append", default=[])
-        known_args, _ = parser.parse_known_args(sys.argv[1:])
-        tasks_list = known_args.task if known_args.task else ["binary_hard"]
+    # Set default task list if not provided
+    if not tasks_list:
+        tasks_list = ["binary_hard"]
 
     # Suggest new hyperparameters
     hyperparams = {
