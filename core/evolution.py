@@ -363,6 +363,15 @@ def evolve(
                 mutated = pool.map(_mutate_clone, mutation_args)
             offspring.extend(mutated)
 
+    # Ensure exact population size
+    if len(offspring) < n_offspring:
+        for _ in range(n_offspring - len(offspring)):
+            extra = copy.deepcopy(random.choice(survivors))
+            extra.mutate(number_of_actions_mutated_mean,
+                         number_of_actions_mutated_standard_deviation,
+                         action_noise_standard_deviation)
+            offspring.append(extra)
+
         # --- 8) Form next generation ---
         population = survivors + offspring
 
