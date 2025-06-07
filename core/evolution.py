@@ -393,6 +393,7 @@ def objective(
     }
     
     # Suggest task combo from extended list
+    # we should not be picking a task combo here. instead the user should be able to somehow pass it in as a cli flag when they are runnning in optuna mode AI!
     task_combinations = [
         ["binary_hard"], ["river"], ["pond"], ["grass"], ["hill"],
         ["binary_hard", "river"], 
