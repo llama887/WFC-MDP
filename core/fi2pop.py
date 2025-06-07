@@ -19,7 +19,6 @@ matplotlib.use("Agg")
 import sys
 
 import matplotlib.pyplot as plt
-import yaml
 
 _here = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(_here, "vendor"))
