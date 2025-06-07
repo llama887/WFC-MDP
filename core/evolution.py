@@ -690,12 +690,7 @@ if __name__ == "__main__":
         "--task",
         action="append",
         default=[],
-        choices=[
-            "binary_easy", "binary_hard", 
-            "river", "pond", "grass", "hill",
-            "binary_and_river", "binary_and_pond",
-            "binary_and_grass", "binary_and_hill"
-        ],
+        choices=["binary_easy", "binary_hard", "river", "pond", "grass", "hill"],
         help="Task(s) to use. For combo tasks, specify multiple --task flags"
     )
     parser.add_argument(
