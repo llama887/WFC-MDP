@@ -79,7 +79,7 @@ def _generic_convergence_collector(
             pop, best_agent, generations, best_agent_rewards, mean_agent_rewards = evolve(
                 env=env,
                 generations=evolution_hyperparameters.get("generations", 1000),
-                population_size=evolution_hyperparameters["population_size"],
+                population_size=48,  # Fixed population size
                 number_of_actions_mutated_mean=evolution_hyperparameters[
                     "number_of_actions_mutated_mean"
                 ],
@@ -91,7 +91,7 @@ def _generic_convergence_collector(
                 ],
                 survival_rate=evolution_hyperparameters["survival_rate"],
                 cross_over_method=xover,
-                patience=patience,
+                patience=50,  # Fixed patience
                 qd=use_quality_diversity,
                 genotype_representation=f"{genotype_dimensions}d",
             )

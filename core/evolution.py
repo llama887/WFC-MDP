@@ -394,38 +394,35 @@ def objective(
     if not tasks_list:
         tasks_list = ["binary_hard"]
 
-    # Suggest new hyperparameters
+    # Suggest new hyperparameters (fixed population_size=48, patience=50)
     hyperparams = {
-        "population_size": trial.suggest_int("population_size", 48, 48),
         "number_of_actions_mutated_mean": trial.suggest_int("number_of_actions_mutated_mean", 1, 200),
         "number_of_actions_mutated_standard_deviation": trial.suggest_float("number_of_actions_mutated_standard_deviation", 0.0, 200.0),
         "action_noise_standard_deviation": trial.suggest_float("action_noise_standard_deviation", 0.01, 1.0, log=True),
         "survival_rate": trial.suggest_float("survival_rate", 0.1, 0.8),
         "cross_over_method": trial.suggest_categorical("cross_over_method", [0, 1]),
-        "patience": trial.suggest_int("patience", 50, 50),
         "cross_or_mutate": trial.suggest_float("cross_or_mutate", 0.0, 1.0),
         "random_offspring": trial.suggest_float("random_offspring", 0.0, 0.3),
-        "binary_path_length": trial.suggest_int("binary_path_length", 30, 80),
     }
+    # Fixed parameters
+    population_size = 48
+    patience = 50
 
-    # Adjust binary reward based on combo
+    # Build reward function with fixed path lengths
     reward_funcs = []
-    binary_target = hyperparams["binary_path_length"]
     is_combo = len(tasks_list) > 1
 
     for task in tasks_list:
         if task.startswith("binary_"):
-            # For binary tasks, adjust path length if in combo
-            target_length = 40 if is_combo else binary_target
+            # Use fixed path lengths: 80 for standalone, 40 for combos
+            target_length = 40 if is_combo else 80
             hard = (task == "binary_hard")
             reward_funcs.append(partial(binary_reward,
                 target_path_length=target_length,
                 hard=hard))
         else:
-            # For biome tasks, use their reward functions directly
             reward_funcs.append(globals()[f"{task}_reward"])
 
-    # Build final reward function
     reward_fn = CombinedReward(reward_funcs) if len(reward_funcs) > 1 else reward_funcs[0]
 
     # Construct Env
@@ -454,14 +451,14 @@ def objective(
         # Run evolution with suggested hyperparameters
         _, best_agent, _, _, _ = evolve(
             env=base_env,
-            generations=generations_per_trial,  # Use fewer generations for faster trials
-            population_size=hyperparams["population_size"],
+            generations=generations_per_trial,
+            population_size=population_size,  # Fixed 48
             number_of_actions_mutated_mean=hyperparams["number_of_actions_mutated_mean"],
             number_of_actions_mutated_standard_deviation=hyperparams["number_of_actions_mutated_standard_deviation"],
             action_noise_standard_deviation=hyperparams["action_noise_standard_deviation"],
             survival_rate=hyperparams["survival_rate"],
             cross_over_method=CrossOverMethod(hyperparams["cross_over_method"]),
-            patience=hyperparams["patience"],
+            patience=patience,  # Fixed 50
             qd=qd,
             cross_or_mutate_proportion=hyperparams["cross_or_mutate"],
             random_offspring_proportion=hyperparams["random_offspring"],
@@ -780,7 +777,7 @@ if __name__ == "__main__":
         _, best_agent, generations, best_agent_rewards, mean_agent_rewards = evolve(
             env=env,
             generations=args.generations,
-            population_size=hyperparams["population_size"],
+            population_size=48,  # Fixed population size
             number_of_actions_mutated_mean=hyperparams[
                 "number_of_actions_mutated_mean"
             ],
@@ -792,7 +789,7 @@ if __name__ == "__main__":
             ],
             survival_rate=hyperparams["survival_rate"],
             cross_over_method=CrossOverMethod(hyperparams["cross_over_method"]),
-            patience=hyperparams["patience"],
+            patience=50,  # Fixed patience
             qd=args.qd,
             genotype_representation=str(args.genotype_dimensions) + "d",
         )
