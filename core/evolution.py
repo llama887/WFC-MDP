@@ -201,7 +201,7 @@ def evolve(
     action_noise_standard_deviation: float = 0.1,
     survival_rate: float = 0.2,
     cross_over_method: CrossOverMethod = CrossOverMethod.ONE_POINT,
-    patience: int = 10,
+    patience: int = 30,
     qd: bool = False,
     genotype_representation: Literal["1d", "2d"] = "1d",
 ) -> tuple[
@@ -348,19 +348,19 @@ def objective(
     """Objective function for Optuna hyperparameter optimization."""
 
     # Suggest hyperparameters
-    population_size = trial.suggest_int("population_size", 30, 100)
+    population_size = trial.suggest_int("population_size", 48, 48)
     number_of_actions_mutated_mean = trial.suggest_int(
-        "number_of_actions_mutated_mean", 1, 100
+        "number_of_actions_mutated_mean", 1, 200
     )
     number_of_actions_mutated_standard_deviation = trial.suggest_float(
-        "number_of_actions_mutated_standard_deviation", 0.0, 100.0
+        "number_of_actions_mutated_standard_deviation", 0.0, 200.0
     )
     action_noise_standard_deviation = trial.suggest_float(
         "action_noise_standard_deviation", 0.01, 1.0, log=True
     )
     survival_rate = trial.suggest_float("survival_rate", 0.1, 0.8)
     cross_over_method = trial.suggest_categorical("cross_over_method", [0, 1])
-    patience = trial.suggest_int("patience", 30, 30)
+    patience = trial.suggest_int("patience", 50, 50)
     # Construct Env
     MAP_LENGTH = 15
     MAP_WIDTH = 20
