@@ -31,7 +31,7 @@ class Action(BaseModel):
 class MCTSConfig(BaseModel):
     """Configuration for the MCTS algorithm"""
     exploration_weight: float = Field(default=1.0, description="Exploration weight for UCT calculation")
-    num_simulations: int = Field(default=20, description="Number of simulations to run")
+    num_simulations: int = Field(default=96, description="Number of simulations to run")
 
 class Node:
     """A node in the MCTS tree"""
@@ -258,69 +258,71 @@ class MCTS:
         
         return node
 
-def render_action_sequence(env: WFCWrapper, action_sequence: list[np.ndarray], filename: str, tile_images: dict) -> None:
-    """Render the final state of an action sequence using tile images and save to file"""
-    env = deepcopy(env)  # Ensure we don't modify the original environment
+def render_action_sequence(env: WFCWrapper, action_sequence: list[np.ndarray], tile_images, filename: str) -> None:
+    """Render the final state with path visualization"""
+    # Create a copy of the environment to avoid modifying the original
+    env_copy = deepcopy(env)
+    os.makedirs("mcts_output", exist_ok=True)
     
-    # Initialize pygame if not already initialized
-    if not pygame.get_init():
-        os.environ['SDL_VIDEODRIVER'] = 'dummy'
-        pygame.init()
-        pygame.display.set_mode((1, 1))
-    
-    env.reset()
+    # Initialize pygame
+    os.environ['SDL_VIDEODRIVER'] = 'dummy'
+    pygame.init()
+    pygame.display.set_mode((1, 1))
 
-    # Run the entire action sequence
+    # Execute actions to reach final state and capture info
+    env_copy.reset()
+    path_info = None
     for action in action_sequence:
-        _, _, terminate, truncate, _ = env.step(action)
+        _, _, terminate, truncate, info = env_copy.step(action)
+        if 'longest_path' in info:
+            path_info = info['longest_path']
         if terminate or truncate:
             break
 
-    # Create a surface for the final map
-    tile_size = 32  # Assuming 32x32 tiles
-    SCREEN_WIDTH = env.map_width * tile_size
-    SCREEN_HEIGHT = env.map_length * tile_size
-    final_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-    final_surface.fill((0, 0, 0))  # Fill with black background
-
-    # Render each cell using the appropriate tile image
-    for y in range(env.map_length):
-        for x in range(env.map_width):
-            cell_set = env.grid[y][x]
-            
+    # Create surface and draw tiles manually since render() doesn't accept tile_images
+    SCREEN_WIDTH = env_copy.map_width * 32
+    SCREEN_HEIGHT = env_copy.map_length * 32
+    surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+    surface.fill((0, 0, 0))  # Black background
+    
+    # Draw all tiles manually
+    for y in range(env_copy.map_length):
+        for x in range(env_copy.map_width):
+            cell_set = env_copy.grid[y][x]
             if len(cell_set) == 1:  # Collapsed cell
                 tile_name = next(iter(cell_set))
                 if tile_name in tile_images:
-                    # Blit the tile image
-                    final_surface.blit(tile_images[tile_name], (x * tile_size, y * tile_size))
+                    surface.blit(tile_images[tile_name], (x * 32, y * 32))
                 else:
-                    # Fallback for missing tiles
-                    pygame.draw.rect(final_surface, (255, 0, 255), 
-                                   (x * tile_size, y * tile_size, tile_size, tile_size))
-                    
+                    pygame.draw.rect(surface, (255, 0, 255), (x * 32, y * 32, 32, 32))  # Purple for missing tiles
             elif len(cell_set) == 0:  # Contradiction
-                # Draw red X for contradictions
-                pygame.draw.rect(final_surface, (255, 0, 0), 
-                               (x * tile_size, y * tile_size, tile_size, tile_size))
-                pygame.draw.line(final_surface, (255, 255, 255), 
-                               (x * tile_size, y * tile_size), 
-                               ((x+1) * tile_size, (y+1) * tile_size), 2)
-                pygame.draw.line(final_surface, (255, 255, 255), 
-                               ((x+1) * tile_size, y * tile_size), 
-                               (x * tile_size, (y+1) * tile_size), 2)
-                               
+                pygame.draw.rect(surface, (255, 0, 0), (x * 32, y * 32, 32, 32))  # Red for contradictions
             else:  # Superposition
-                # Draw gray with number of possibilities
-                pygame.draw.rect(final_surface, (100, 100, 100), 
-                               (x * tile_size, y * tile_size, tile_size, tile_size))
-                font = pygame.font.SysFont(None, 20)
-                text = font.render(str(len(cell_set)), True, (255, 255, 255))
-                final_surface.blit(text, (x * tile_size + 10, y * tile_size + 10))
+                pygame.draw.rect(surface, (100, 100, 100), (x * 32, y * 32, 32, 32))  # Gray for superpositions
+
+    # Draw the path if we captured it
+    if path_info and len(path_info) > 1:
+        # Convert indices to Pygame coordinates (center of each tile)
+        path_points = []
+        for idx in path_info:
+            if isinstance(idx, (list, tuple, np.ndarray)) and len(idx) >= 2:
+                y, x = idx[0], idx[1]  # Assuming (y, x) format
+                center_x = x * 32 + 16  # Center of the tile
+                center_y = y * 32 + 16
+                path_points.append((center_x, center_y))
+
+        if len(path_points) >= 2:
+            # Draw the path line (thick red)
+            pygame.draw.lines(surface, (255, 0, 0), False, path_points, 3)
+            # Draw red circles at each path point
+            for point in path_points:
+                pygame.draw.circle(surface, (255, 0, 0), point, 4)
 
     # Save the final image
-    os.makedirs("mcts_output", exist_ok=True)
     output_path = os.path.join("mcts_output", filename)
-    pygame.image.save(final_surface, output_path)
+    pygame.image.save(surface, output_path)
+    pygame.quit()
+    print(f"Saved final map with path to {output_path}")
                                                                                                                                                                                                                  
                                                                                                                                                                                                                                      
 # Function to run MCTS until we have a complete solution
@@ -370,7 +372,7 @@ def run_mcts_until_complete(env: WFCWrapper, mcts: MCTS, max_iterations:int=1000
     
     return best_action_sequence, total_reward, None
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Define environment parameters
     MAP_LENGTH = 15
     MAP_WIDTH = 20
@@ -388,10 +390,11 @@ if __name__ == '__main__':
         tile_to_index=tile_to_index,
         reward=partial(binary_reward, target_path_length=20, hard=True),
         deterministic=True,
+        # qd_function=binary_percent_water if args.qd else None,
     )
-    
+                                                                                                                                                                                                                
     env.reset()                                                                                                                                                                                                                          
-                                                                                                                                                                                                                                     
+                                                                                                                                                                                                                                        
     # Create MCTS instance                                                                                                                                                                                                               
     mcts = MCTS(env)    
 
@@ -400,11 +403,12 @@ if __name__ == '__main__':
     # Run MCTS until we have a complete solution
     best_action_sequence, total_reward, iterations = run_mcts_until_complete(env, mcts)
 
-    # Load tile images
+    # Load tile images for visualization
     from assets.biome_adjacency_rules import load_tile_images
     tile_images = load_tile_images()
 
     # Save the best action sequence if we found one
     if best_action_sequence:
         filename = f"mcts_solution_{iterations}.png"
-        render_action_sequence(env, best_action_sequence, filename, tile_images)
+        render_action_sequence(env, best_action_sequence, tile_images, filename)
+
