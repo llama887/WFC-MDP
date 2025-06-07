@@ -19,7 +19,6 @@ matplotlib.use("Agg")
 import sys
 
 import matplotlib.pyplot as plt
-import yaml
 
 _here = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(_here, "vendor"))
@@ -40,8 +39,7 @@ from .wfc_env import CombinedReward, WFCWrapper
 # ----------------------------------------------------------------------------
 # Prepare figures directory
 # ----------------------------------------------------------------------------
-FIGURES_DIRECTORY = "figures_fi-2pop"
-os.makedirs(FIGURES_DIRECTORY, exist_ok=True)
+# Removed hardcoded figure directory - now handled by plot.py
 
 # ----------------------------------------------------------------------------
 # WFC environment factory
@@ -331,7 +329,7 @@ def summary_sweep(
             h2, l2 = ax2.get_legend_handles_labels()
             ax1.legend(h1 + h2, l1 + l2, loc="upper left")
 
-            out = f"{FIGURES_DIRECTORY}/{combo_label}_{mode_label}_summary.png".replace(
+            out = f"figures_fi2pop/{combo_label}_{mode_label}_summary.png".replace(
                 "+", "p"
             )
             fig.tight_layout()
@@ -384,7 +382,7 @@ def plot_biome_convergence_bar(
     plt.ylabel("Avg Gens to First Feasible")
     plt.title(f"FI-2Pop Biome Convergence ({'HARD' if hard else 'EASY'})")
     plt.tight_layout()
-    plt.savefig(f"{FIGURES_DIRECTORY}/fi2pop_biome_convergence_bar.png")
+    plt.savefig("figures_fi2pop/fi2pop_biome_convergence_bar.png")
     plt.close()
 
 
@@ -429,6 +427,10 @@ def main():
         "--bar-graph", action="store_true", help="Green biome-only bar graph"
     )
 
+    # Add hyperparameter tuning option
+    parser.add_argument("--tune", action="store_true", help="Run hyperparameter tuning")
+    parser.add_argument("--optuna-trials", type=int, default=30, help="Number of Optuna trials for tuning")
+
     args = parser.parse_args()
 
     # default mode hard
@@ -449,6 +451,20 @@ def main():
         args.binary_grass = args.binary_hill = True
         args.bar_graph = True
 
+    if args.tune:
+        import optuna
+        study = optuna.create_study(direction="minimize")
+        study.optimize(
+            lambda trial: objective(trial, args.runs, hard_flag),
+            n_trials=args.optuna_trials
+        )
+        print("Best params:", study.best_params)
+        import yaml
+        with open("best_fi2pop_hyperparams.yaml", "w") as f:
+            yaml.dump(study.best_params, f)
+        print("Saved best params to best_fi2pop_hyperparams.yaml")
+        return
+
     with open(args.load_hyperparameters) as f:
         hyperparams = yaml.safe_load(f)
 
@@ -466,6 +482,27 @@ def main():
 
     print("Done. All plots in 'figures/'")
 
+
+# --- Optuna objective for tuning ---
+def objective(trial, runs, hard):
+    from functools import partial
+    import numpy as np
+    params = {
+        "pop_size": trial.suggest_categorical("pop_size", [24, 48, 96]),
+        "mutation_rate": trial.suggest_float("mutation_rate", 0.01, 0.2),
+        "tournament_k": trial.suggest_int("tournament_k", 2, 5),
+        "generations": trial.suggest_int("generations", 50, 200)
+    }
+    gens = []
+    for _ in range(runs):
+        _, _, first_gen, _, _ = evolve_fi2pop(
+            partial(binary_reward, target_path_length=80, hard=hard),
+            {},
+            **params,
+            return_first_gen=True
+        )
+        gens.append(first_gen if first_gen is not None else float('inf'))
+    return np.nanmean(gens)
 
 if __name__ == "__main__":
     main()

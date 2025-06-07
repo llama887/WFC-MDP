@@ -27,10 +27,12 @@ from tasks.river_task import river_reward
 
 from core.mcts import MCTS, run_mcts_until_complete
 
-FIGURES_DIRECTORY = "figures"
-DEBUG_DIRECTORY = os.path.join(FIGURES_DIRECTORY, "debug")
-os.makedirs(FIGURES_DIRECTORY, exist_ok=True)
-os.makedirs(DEBUG_DIRECTORY, exist_ok=True)
+def get_figure_directory(method: str) -> str:
+    return {
+        "evolution": "figures_evolution",
+        "mcts": "figures_mcts",
+        "fi2pop": "figures_fi2pop"
+    }[method]
 
 
 def _generic_convergence_collector(
@@ -497,8 +499,7 @@ def plot_mcts_biome_convergence_from_csv(csv_file_path: str, output_png_path: st
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Collect and plot WFC convergence data")
-    # Add new argument
-    parser.add_argument("--method", type=str, choices=["evolution", "mcts"], default="evolution", help="Method to use for convergence testing")
+    parser.add_argument("--method", type=str, choices=["evolution", "mcts", "fi2pop"], default="evolution", help="Method to use for convergence testing")
     parser.add_argument("--load-hyperparameters", type=str, required=True, help="YAML file with evolution hyperparameters")
     parser.add_argument("--task", type=str, choices=["binary_easy", "binary_hard", "river", "pond", "grass", "biomes"], required=True)
     parser.add_argument("--combo", type=str, choices=["easy", "hard"], default="easy")
@@ -507,6 +508,13 @@ if __name__ == "__main__":
     parser.add_argument("--debug", action="store_true", help="Save per-run debug plots")
     args = parser.parse_args()
 
+    # Set up directories based on method
+    global FIGURES_DIRECTORY, DEBUG_DIRECTORY
+    FIGURES_DIRECTORY = get_figure_directory(args.method)
+    DEBUG_DIRECTORY = os.path.join(FIGURES_DIRECTORY, "debug")
+    os.makedirs(FIGURES_DIRECTORY, exist_ok=True)
+    os.makedirs(DEBUG_DIRECTORY, exist_ok=True)
+
     if not os.path.exists(args.load_hyperparameters):
         print(f"Hyperparameters file not found: {args.load_hyperparameters}")
         exit(1)
@@ -514,8 +522,151 @@ if __name__ == "__main__":
     with open(args.load_hyperparameters, "r") as f:
         hyperparams = yaml.safe_load(f)
 
-    # Dispatch based on method
-    if args.method == "mcts":
+    # --- FI-2Pop integration ---
+    def convert_to_fi2pop_hyperparams(evolution_params: dict, map_length: int, map_width: int) -> dict:
+        """Convert evolution-style hyperparameters to FI-2Pop format"""
+        return {
+            "pop_size": evolution_params.get("population_size", 48),
+            "mutation_rate": evolution_params["number_of_actions_mutated_mean"] / (map_length * map_width),
+            "tournament_k": evolution_params.get("tournament_k", 3),
+            "generations": evolution_params.get("generations", 100)
+        }
+
+    # --- FI-2Pop collection functions ---
+    from core.fi2pop import evolve_fi2pop
+    from tasks.binary_task import binary_reward
+    from tasks.grass_task import grass_reward
+    from tasks.pond_task import pond_reward
+    from tasks.river_task import river_reward
+
+    MAP_LENGTH = 15
+    MAP_WIDTH = 20
+
+    def _generic_fi2pop_collector(
+        loop_keys: list,
+        make_reward_fn: callable,
+        evolution_hyperparameters: dict,
+        output_csv_prefix: str,
+        is_biome_only: bool,
+        sample_size: int,
+        debug: bool
+    ) -> str:
+        fi2pop_params = convert_to_fi2pop_hyperparams(
+            evolution_hyperparameters, MAP_LENGTH, MAP_WIDTH
+        )
+        data_rows = []
+        for key in loop_keys:
+            for run_idx in range(sample_size):
+                start_time = time.time()
+                reward_callable = make_reward_fn(key)
+                _, _, first_gen, _, _ = evolve_fi2pop(
+                    reward_callable,
+                    {},
+                    generations=fi2pop_params["generations"],
+                    pop_size=fi2pop_params["pop_size"],
+                    mutation_rate=fi2pop_params["mutation_rate"],
+                    tournament_k=fi2pop_params["tournament_k"],
+                    return_first_gen=True
+                )
+                elapsed = time.time() - start_time
+                if debug:
+                    print(f"[FI2POP] Key={key}, Run={run_idx}: Converged at gen {first_gen} in {elapsed:.2f}s")
+                row = {
+                    "run_index": run_idx + 1,
+                    "generations_to_converge": first_gen if first_gen is not None else float('nan')
+                }
+                row["biome" if is_biome_only else "desired_path_length"] = key
+                data_rows.append(row)
+        csv_filename = f"{output_csv_prefix}convergence.csv"
+        csv_path = os.path.join(FIGURES_DIRECTORY, csv_filename)
+        pd.DataFrame(data_rows).to_csv(csv_path, index=False)
+        return csv_path
+
+    def collect_fi2pop_binary_convergence(
+        sample_size: int,
+        hyperparams: dict,
+        use_hard_variant: bool = False,
+        debug: bool = False
+    ) -> str:
+        path_lengths = list(np.arange(10, 101, 10))
+        prefix = f"fi2pop_{'hard_' if use_hard_variant else ''}binary_"
+        def make_reward(path_len): 
+            return partial(binary_reward, target_path_length=path_len, hard=use_hard_variant)
+        return _generic_fi2pop_collector(
+            path_lengths, make_reward, hyperparams, prefix, 
+            is_biome_only=False, sample_size=sample_size, debug=debug
+        )
+
+    def collect_fi2pop_combo_convergence(
+        sample_size: int,
+        hyperparams: dict,
+        second_task: str,
+        use_hard_variant: bool = False,
+        debug: bool = False
+    ) -> str:
+        path_lengths = list(np.arange(10, 101, 10))
+        prefix = f"fi2pop_{'hard_' if use_hard_variant else ''}{second_task}_combo_"
+        biome_reward_map = {"river": river_reward, "pond": pond_reward, "grass": grass_reward}
+        second_reward = biome_reward_map[second_task]
+        def make_reward(path_len): 
+            return CombinedReward([
+                partial(binary_reward, target_path_length=path_len, hard=use_hard_variant),
+                second_reward
+            ])
+        return _generic_fi2pop_collector(
+            path_lengths, make_reward, hyperparams, prefix, 
+            is_biome_only=False, sample_size=sample_size, debug=debug
+        )
+
+    def collect_fi2pop_biome_convergence(
+        hyperparams: dict,
+        runs: int = 20,
+        debug: bool = False,
+        specific_biome: str = None
+    ) -> str:
+        if specific_biome:
+            biomes = [specific_biome.capitalize()]
+        else:
+            biomes = ["Pond", "River", "Grass"]
+    
+        prefix = "fi2pop_biome_"
+        def make_reward(biome): 
+            return {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[biome]
+        return _generic_fi2pop_collector(
+            biomes, make_reward, hyperparams, prefix, 
+            is_biome_only=True, sample_size=runs, debug=debug
+        )
+
+    # --- Main dispatcher ---
+    if args.method == "fi2pop":
+        if args.task == "binary_easy":
+            csv_path = collect_fi2pop_binary_convergence(
+                20, hyperparams, False, args.debug
+            )
+            plot_convergence_from_csv(csv_path, title="FI-2Pop Binary Convergence")
+        elif args.task == "binary_hard":
+            csv_path = collect_fi2pop_binary_convergence(
+                20, hyperparams, True, args.debug
+            )
+            plot_convergence_from_csv(csv_path, title="FI-2Pop Binary Convergence (HARD)")
+        elif args.task == "biomes":
+            csv_path = collect_fi2pop_biome_convergence(hyperparams, 20, args.debug)
+            plot_average_biome_convergence_from_csv(csv_path)
+        else:
+            use_hard = args.combo == "hard"
+            # For individual biome tasks
+            if args.task in ["river", "pond", "grass"]:
+                csv_path = collect_fi2pop_biome_convergence(
+                    hyperparams, 20, args.debug, specific_biome=args.task
+                )
+                plot_average_biome_convergence_from_csv(csv_path)
+            else:
+                csv_path = collect_fi2pop_combo_convergence(
+                    20, hyperparams, args.task, use_hard, args.debug
+                )
+                title = f"FI-2Pop Combo: {args.task.capitalize()}" + (" HARD" if use_hard else "")
+                plot_convergence_from_csv(csv_path, title=title)
+    elif args.method == "mcts":
         if args.task == "binary_easy":
             csv_path = collect_mcts_binary_convergence(
                 sample_size=20,

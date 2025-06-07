@@ -304,7 +304,7 @@ def evolve(
         # If someone hit “achieved_max_reward,” stop immediately:
         achieved_max = population[best_idx].info.get("achieved_max_reward", False)
         if achieved_max or patience_counter >= patience:
-            print(f"[DEBUG] Converged at generation {gen}")
+            print(f"[DEBUG] Converged at generation {gen}" if achieved_max else f"[DEBUG] Stopping early at generation {gen} due to patience.")
             print(f"[DEBUG] Best agent reward: {best_agent.reward}")
             print(f"[DEBUG] Mean‐elite reward: {best_mean_elite}")
             print(f"[DEBUG] Patience counter: {patience_counter}")
@@ -363,17 +363,18 @@ def evolve(
                 mutated = pool.map(_mutate_clone, mutation_args)
             offspring.extend(mutated)
 
-    # Ensure exact population size
-    if len(offspring) < n_offspring:
-        for _ in range(n_offspring - len(offspring)):
-            extra = copy.deepcopy(random.choice(survivors))
-            extra.mutate(number_of_actions_mutated_mean,
-                         number_of_actions_mutated_standard_deviation,
-                         action_noise_standard_deviation)
-            offspring.append(extra)
+        # Ensure exact population size
+        if len(offspring) < n_offspring:
+            for _ in range(n_offspring - len(offspring)):
+                extra = copy.deepcopy(random.choice(survivors))
+                extra.mutate(number_of_actions_mutated_mean,
+                             number_of_actions_mutated_standard_deviation,
+                             action_noise_standard_deviation)
+                offspring.append(extra)
 
         # --- 8) Form next generation ---
         population = survivors + offspring
+
 
     # If we exhaust all generations without early stopping:
     return population, best_agent, generations, best_agent_rewards, mean_elite_rewards
