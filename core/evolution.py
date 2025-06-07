@@ -346,9 +346,13 @@ def evolve(
                         cross_over_method,
                     )
                 )
-            with Pool(min(cpu_count() * 2, len(pairs_args))) as pool:
-                results = pool.map(reproduce_pair, pairs_args)
-            crossover_children = [child for pair in results for child in pair][:n_crossover]
+            if pairs_args:
+                n_procs = min(cpu_count() * 2, len(pairs_args))
+                with Pool(n_procs) as pool:
+                    results = pool.map(reproduce_pair, pairs_args)
+                crossover_children = [child for pair in results for child in pair][:n_crossover]
+            else:
+                crossover_children = []
             offspring.extend(crossover_children)
 
             # Mutation-only children
@@ -359,8 +363,12 @@ def evolve(
                  action_noise_standard_deviation)
                 for _ in range(n_mutation)
             ]
-            with Pool(min(cpu_count() * 2, len(mutation_args))) as pool:
-                mutated = pool.map(_mutate_clone, mutation_args)
+            if mutation_args:
+                n_procs = min(cpu_count() * 2, len(mutation_args))
+                with Pool(n_procs) as pool:
+                    mutated = pool.map(_mutate_clone, mutation_args)
+            else:
+                mutated = []
             offspring.extend(mutated)
 
         # Ensure exact population size
