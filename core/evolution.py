@@ -374,9 +374,21 @@ def evolve(
 
 
 def objective(
-    trial: optuna.Trial, generations_per_trial: int, qd: bool = False
+    trial: optuna.Trial, 
+    generations_per_trial: int, 
+    qd: bool = False,
+    tasks_list: list[str] = None
 ) -> float:
     """Objective function for Optuna hyperparameter optimization."""
+
+    if tasks_list is None:
+        # Fallback to CLI --task flags if not provided
+        import sys
+        import argparse as _argparse
+        parser = _argparse.ArgumentParser()
+        parser.add_argument("--task", action="append", default=[])
+        known_args, _ = parser.parse_known_args(sys.argv[1:])
+        tasks_list = known_args.task if known_args.task else ["binary_hard"]
 
     # Suggest new hyperparameters
     hyperparams = {
@@ -391,22 +403,13 @@ def objective(
         "random_offspring": trial.suggest_float("random_offspring", 0.0, 0.3),
         "binary_path_length": trial.suggest_int("binary_path_length", 30, 80),
     }
-    
-    # Use CLI-provided tasks instead of Optuna-suggested tasks
+
+    # Adjust binary reward based on combo
     reward_funcs = []
     binary_target = hyperparams["binary_path_length"]
+    is_combo = len(tasks_list) > 1
 
-    # Use global args if available, else fallback to ["binary_hard"]
-    import sys
-    import argparse as _argparse
-    parser = _argparse.ArgumentParser()
-    parser.add_argument("--task", action="append", default=[])
-    known_args, _ = parser.parse_known_args(sys.argv[1:])
-    cli_tasks = known_args.task if known_args.task else ["binary_hard"]
-
-    is_combo = len(cli_tasks) > 1
-
-    for task in cli_tasks:
+    for task in tasks_list:
         if task.startswith("binary_"):
             # For binary tasks, adjust path length if in combo
             target_length = 40 if is_combo else binary_target
@@ -814,7 +817,7 @@ if __name__ == "__main__":
         start_time = time.time()
         study.optimize(
             lambda trial: objective(
-                trial, args.generations_per_trial, args.qd
+                trial, args.generations_per_trial, args.qd, tasks_list=args.task
             ),
             n_trials=args.optuna_trials,
         )
