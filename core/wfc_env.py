@@ -11,6 +11,7 @@ import gymnasium as gym  # Use Gymnasium
 import numpy as np
 import pygame
 from gymnasium import spaces
+from copy import deepcopy
 
 # Import functions from biome_wfc instead of fast_wfc
 from wfc import (  # We might not need render_wfc_grid if we keep console rendering
@@ -169,6 +170,40 @@ class WFCWrapper(gym.Env):
             except Exception as e:
                 print(f"Failed to initialize pygame display: {e}")
                 self.render_mode = None
+
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        
+        # Copy all attributes except pygame-related ones
+        for k, v in self.__dict__.items():
+            if k not in ['tile_images', 'screen', '_display_initialized']:
+                setattr(result, k, deepcopy(v, memo))
+        
+        # Initialize pygame attributes as None
+        result.tile_images = None
+        result.screen = None
+        result._display_initialized = False
+        
+        return result
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        # Remove pygame-specific attributes before pickling
+        state['tile_images'] = None
+        state['screen'] = None
+        state['_display_initialized'] = False
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        # Reinitialize pygame attributes after unpickling
+        self.tile_images = None
+        self.screen = None
+        self._display_initialized = False
+        if self.render_mode == "human":
+            self._init_display()
 
     def get_observation(self) -> np.ndarray:
         """Constructs the observation array (needs to be float32)."""
