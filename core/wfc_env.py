@@ -122,19 +122,10 @@ class WFCWrapper(gym.Env):
         self.reward = reward
         self.max_reward = max_reward
         self.qd_function = qd_function
+        self.current_path = None
         self.tile_size = tile_size
         self.tile_images = tile_images
         self.render_mode = render_mode
-
-        # Initialize pygame if we have tile images and human rendering
-        if self.tile_images is not None and self.render_mode == "human":
-            pygame.init()
-            self.screen = pygame.display.set_mode(
-                (self.map_width * self.tile_size, self.map_length * self.tile_size)
-            )
-            pygame.display.set_caption("WFC Environment")
-
-        self.grid = initialize_wfc_grid(self.map_width, self.map_length, self.all_tiles)
 
         # Initial grid state using the function from biome_wfc
         # self.grid will hold the current state (list of lists of sets)
@@ -157,6 +148,27 @@ class WFCWrapper(gym.Env):
         self.current_step = 0
         # Set a maximum number of steps to prevent infinite loops if termination fails
         self.max_steps = self.map_length * self.map_width + 10  # Allow some buffer
+
+        # Pygame initialization
+        self._display_initialized = False
+        self.screen = None
+        if self.render_mode == "human":
+            self._init_display()
+
+    def _init_display(self):
+        """Initialize Pygame display if in human mode"""
+        if not self._display_initialized and self.render_mode == "human":
+            try:
+                pygame.init()
+                self.screen = pygame.display.set_mode(
+                    (self.map_width * self.tile_size, 
+                     self.map_length * self.tile_size)
+                )
+                pygame.display.set_caption("WFC Environment")
+                self._display_initialized = True
+            except Exception as e:
+                print(f"Failed to initialize pygame display: {e}")
+                self.render_mode = None
 
     def get_observation(self) -> np.ndarray:
         """Constructs the observation array (needs to be float32)."""
@@ -257,6 +269,9 @@ class WFCWrapper(gym.Env):
         # Ensure reward is float
         reward = float(reward)
 
+        if 'longest_path' in info:
+            self.current_path = info['longest_path']
+            
         return observation, reward, terminated, truncated, info
 
     def reset(self, seed=None, options=None):
@@ -277,13 +292,20 @@ class WFCWrapper(gym.Env):
         """Renders the current grid state to the console."""
         if self.render_mode is None:
             return
+        
+        self._init_display()  # Ensure display is initialized
 
         if self.render_mode == "human":
             if self.tile_images is not None:
-                # Graphical rendering with tile images
-                self.screen.fill((0, 0, 0))  # Clear screen
-                font = pygame.font.SysFont(None, 20)
-
+                # Create a surface to draw on
+                surface = pygame.Surface(
+                    (self.map_width * self.tile_size, 
+                     self.map_length * self.tile_size),
+                    pygame.SRCALPHA
+                )
+                surface.fill((0, 0, 0))  # Black background
+                
+                # Draw the tiles
                 for y in range(self.map_length):
                     for x in range(self.map_width):
                         cell_set = self.grid[y][x]
@@ -293,15 +315,15 @@ class WFCWrapper(gym.Env):
                             # Draw the collapsed tile
                             tile_name = next(iter(cell_set))
                             if tile_name in self.tile_images:
-                                self.screen.blit(
+                                surface.blit(
                                     self.tile_images[tile_name],
                                     (x * self.tile_size, y * self.tile_size),
                                 )
                         elif num_options == 0:
                             # Draw contradiction (red)
                             pygame.draw.rect(
-                                self.screen,
-                                (255, 0, 0),
+                                surface,
+                                (255, 0, 0, 255),
                                 (
                                     x * self.tile_size,
                                     y * self.tile_size,
@@ -310,13 +332,10 @@ class WFCWrapper(gym.Env):
                                 ),
                             )
                         else:
-                            # Draw superposition (gray with number of options)
-                            shade = min(
-                                255, 50 + 205 * (1 - len(cell_set) / self.num_tiles)
-                            )
+                            # Draw superposition (gray)
                             pygame.draw.rect(
-                                self.screen,
-                                (shade, shade, shade),
+                                surface,
+                                (100, 100, 100, 255),
                                 (
                                     x * self.tile_size,
                                     y * self.tile_size,
@@ -324,13 +343,41 @@ class WFCWrapper(gym.Env):
                                     self.tile_size,
                                 ),
                             )
-                            # Display number of remaining options
-                            text = font.render(str(num_options), True, (255, 255, 255))
-                            self.screen.blit(
-                                text, (x * self.tile_size + 5, y * self.tile_size + 5)
+                
+                # Draw the path if it exists
+                if self.current_path and len(self.current_path) > 1:
+                    path_points = []
+                    for point in self.current_path:
+                        if isinstance(point, (tuple, list)) and len(point) >= 2:
+                            y, x = point[0], point[1]  # Assuming (y,x) format
+                            center_x = x * self.tile_size + self.tile_size // 2
+                            center_y = y * self.tile_size + self.tile_size // 2
+                            path_points.append((center_x, center_y))
+                    
+                    if len(path_points) >= 2:
+                        # Draw the path line
+                        pygame.draw.lines(
+                            surface, 
+                            (255, 0, 0, 255),  # Red color with alpha
+                            False,  # Not closed
+                            path_points, 
+                            3  # Line width
+                        )
+                        # Draw circles at path points
+                        for point in path_points:
+                            pygame.draw.circle(
+                                surface,
+                                (255, 0, 0, 255),
+                                point,
+                                4  # Radius
                             )
-
-                pygame.display.flip()
+                
+                # Display the surface if in human mode
+                if self.screen is not None:
+                    self.screen.blit(surface, (0, 0))
+                    pygame.display.flip()
+                
+                return surface
             else:
                 # Fallback to console rendering
                 print(f"--- Step: {self.current_step} ---")
@@ -350,10 +397,19 @@ class WFCWrapper(gym.Env):
                             row_str += f"{len(cell_set)} "
                     print(row_str.strip())
                 print("-" * (self.map_width * 2))
+                return None
         else:
             pass
 
+    def save_render(self, filename: str):
+        """Save the current render to a file"""
+        surface = self.render()
+        if surface:
+            pygame.image.save(surface, filename)
+
     def close(self):
-        """Cleans up any resources used by the environment."""
-        if hasattr(self, "screen"):
+        """Clean up resources"""
+        if self._display_initialized:
             pygame.quit()
+            self._display_initialized = False
+            self.screen = None

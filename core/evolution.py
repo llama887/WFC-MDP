@@ -467,121 +467,6 @@ def objective(
     return total_reward
 
 
-def render_best_agent(
-    env: WFCWrapper, best_agent: PopulationMember, tile_images, task_name: str = ""
-):
-    """Renders the action sequence of the best agent with fallback to manual rendering."""
-    if not best_agent:
-        print("No best agent found to render.")
-        return
-
-    pygame.init()
-    SCREEN_WIDTH = env.map_width * 32
-    SCREEN_HEIGHT = env.map_length * 32
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption(f"Best Evolved WFC Map - {task_name}")
-
-    # Create a surface for saving the final map
-    final_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-
-    env.reset()
-    total_reward = 0
-    print("Info:", best_agent.info)
-    print("Rendering best agent's action sequence...")
-
-    def manual_render():
-        """Fallback manual rendering when env.render() fails"""
-        for y in range(env.map_length):
-            for x in range(env.map_width):
-                cell_set = env.grid[y][x]
-                if len(cell_set) == 1:  # Collapsed cell
-                    tile_name = next(iter(cell_set))
-                    if tile_name in tile_images:
-                        screen.blit(tile_images[tile_name], (x * 32, y * 32))
-                        final_surface.blit(tile_images[tile_name], (x * 32, y * 32))
-                    else:
-                        # Fallback for missing tiles
-                        pygame.draw.rect(screen, (255, 0, 255), (x * 32, y * 32, 32, 32))
-                        pygame.draw.rect(final_surface, (255, 0, 255), (x * 32, y * 32, 32, 32))
-                elif len(cell_set) == 0:  # Contradiction
-                    pygame.draw.rect(screen, (255, 0, 0), (x * 32, y * 32, 32, 32))
-                    pygame.draw.rect(final_surface, (255, 0, 0), (x * 32, y * 32, 32, 32))
-                else:  # Superposition
-                    pygame.draw.rect(screen, (100, 100, 100), (x * 32, y * 32, 32, 32))
-                    pygame.draw.rect(final_surface, (100, 100, 100), (x * 32, y * 32, 32, 32))
-
-    for action in tqdm(best_agent.action_sequence, desc="Rendering Steps"):
-        _, reward, terminate, truncate, _ = env.step(action)
-        total_reward += reward
-
-        # Clear screen
-        screen.fill((0, 0, 0))
-        final_surface.fill((0, 0, 0))
-
-        # Try to use env.render(), fall back to manual if it fails
-        rendered_surface = env.render()
-        if rendered_surface is not None:
-            screen.blit(rendered_surface, (0, 0))
-            final_surface.blit(rendered_surface, (0, 0))
-        else:
-            manual_render()
-
-        pygame.display.flip()
-
-        if terminate or truncate:
-            break
-
-    # Draw the path if it exists in the agent's info
-    if "longest_path" in best_agent.info:
-        path_indices = best_agent.info["longest_path"]
-        if path_indices and len(path_indices) > 1:
-            # Convert indices to Pygame coordinates (center of each tile)
-            path_points = []
-            for idx in path_indices:
-                if isinstance(idx, (list, tuple, np.ndarray)) and len(idx) >= 2:
-                    y, x = idx[0], idx[1]  # Assuming (y, x) format
-                    center_x = x * 32 + 16  # Center of the tile
-                    center_y = y * 32 + 16
-                    path_points.append((center_x, center_y))
-
-            if len(path_points) >= 2:
-                pygame.draw.lines(screen, (255, 0, 0), False, path_points, 3)
-                pygame.draw.lines(final_surface, (255, 0, 0), False, path_points, 3)
-                for point in path_points:
-                    pygame.draw.circle(screen, (255, 0, 0), point, 4)
-                    pygame.draw.circle(final_surface, (255, 0, 0), point, 4)
-                pygame.display.flip()
-
-    # Save the final rendered map
-    if task_name:
-        os.makedirs("wfc_reward_img", exist_ok=True)
-        filename = f"wfc_reward_img/{task_name}_{best_agent.reward:.2f}.png"
-        pygame.image.save(final_surface, filename)
-        print(f"Saved final map to {filename}")
-
-    print(f"Final map reward for the best agent: {total_reward:.4f}")
-    print(f"Best agent reward during evolution: {best_agent.reward:.4f}")
-
-    if best_agent.reward == 0.0:
-        best_agent.info["achieved_max_reward"] = True
-        print("Max reward of 0 achieved! Agent truly converged.")
-    else:
-        best_agent.info["achieved_max_reward"] = False
-        print("Max reward NOT achieved. Agent stopped early without solving the task.")
-
-    # Keep the window open for a bit
-    print("Displaying final map for 5 seconds...")
-    start_time = time.time()
-    while time.time() - start_time < 5:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                return
-        pygame.display.flip()
-
-    pygame.quit()
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Evolve WFC agents with optional hyperparameter tuning."
@@ -797,7 +682,30 @@ if __name__ == "__main__":
         print("\nInitializing Pygame for rendering the best map...")
         pygame.init()
         task_name = "_".join(args.task)
-        render_best_agent(env, best_agent, tile_images, task_name)
+        
+        # Setup environment for rendering
+        env.render_mode = "human"
+        env.tile_images = tile_images
+
+        # Run the best agent's actions
+        observation, _ = env.reset()
+        for action in best_agent.action_sequence:
+            observation, _, terminated, truncated, _ = env.step(action)
+            env.render()
+            if terminated or truncated:
+                break
+
+        # Save the final render
+        env.save_render("final_map.png")
+
+        # Display for a few seconds
+        start_time = time.time()
+        while time.time() - start_time < 5:
+            env.render()
+            pygame.event.pump()  # Keep pygame responsive
+
+        env.close()
+
     else:
         print("\nNo best agent was found during the process.")
 
