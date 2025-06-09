@@ -13,7 +13,7 @@ from multiprocessing import Pool
 from functools import partial
 from tqdm import tqdm
 
-from wfc_env import WFCWrapper
+from .wfc_env import WFCWrapper
 from assets.biome_adjacency_rules import create_adjacency_matrix
 from tasks.binary_task import binary_reward
 import pygame
@@ -31,7 +31,7 @@ class Action(BaseModel):
 class MCTSConfig(BaseModel):
     """Configuration for the MCTS algorithm"""
     exploration_weight: float = Field(default=1.0, description="Exploration weight for UCT calculation")
-    num_simulations: int = Field(default=96, description="Number of simulations to run")
+    num_simulations: int = Field(default=20, description="Number of simulations to run")
 
 class Node:
     """A node in the MCTS tree"""
@@ -124,8 +124,9 @@ class Node:
             total_reward += reward
             action_sequence.append(action)
             if terminated and info.get("achieved_max_reward", False):
-                assert total_reward == 0, f"Total reward is {total_reward} while achieved_max_reward is {info.get("achieved_max_reward", False)}, expected 0 for max reward"
+                assert total_reward == 0, f"Total reward is {total_reward} while achieved_max_reward is {info.get('achieved_max_reward', False)}, expected 0 for max reward"
                 assert sim_env.deterministic, "Expected deterministic environment for MCTS simulation"
+                print("Simulation info:", info)
                 return total_reward, action_sequence, True
         
         return total_reward, action_sequence, False
@@ -166,6 +167,7 @@ class MCTS:
         reward, action_sequence, achieved_max_reward = node.simulate()
         if achieved_max_reward:
             assert reward == 0, f"Expected reward to be 0 for max reward, got {reward}"
+            print("Parallel simulations found a complete solution with reward 0")
 
         # Backpropagation
         node.backpropagate(reward)
@@ -258,50 +260,63 @@ class MCTS:
         
         return node
 
-def render_action_sequence(env: WFCWrapper, action_sequence: list[np.ndarray], tile_images, filename: str) -> None:
-    """Render the final state of an action sequence and save to file"""
+def render_action_sequence(env: WFCWrapper, action_sequence: list[np.ndarray], tile_images) -> None:
     env = deepcopy(env)  # Ensure we don't modify the original environment
-    os.environ['SDL_VIDEODRIVER'] = 'dummy'                                                                                                                                      
-    pygame.init()                                                                                                                                                                
-    pygame.display.set_mode((1, 1))  # Minimal display buffer
+    pygame.init()
     SCREEN_WIDTH = env.map_width * 32
     SCREEN_HEIGHT = env.map_length * 32
-    
-    # Create a surface for the final map
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    pygame.display.set_caption("Best Map")
+
+    # Create a surface for saving the final map
     final_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
 
     env.reset()
+    total_reward = 0
+    print("Rendering action sequence...")
 
-    # Run the entire action sequence
-    for action in action_sequence:
-        _, _, terminate, truncate, _ = env.step(action)
-        if terminate or truncate:
-            break
+    for action in tqdm(action_sequence, desc="Rendering Steps"):
+        _, reward, terminate, truncate, _ = env.step(action)
+        total_reward += reward
 
-    # Render the final state
-    final_surface.fill((0, 0, 0))
-    for y in range(env.map_length):
-        for x in range(env.map_width):
-            cell_set = env.grid[y][x]
-            if len(cell_set) == 1:  # Collapsed cell
-                tile_name = next(iter(cell_set))
-                if tile_name in tile_images:
-                    final_surface.blit(tile_images[tile_name], (x * 32, y * 32))
-                else:
-                    # Fallback for missing tiles
+        # Clear screen
+        screen.fill((0, 0, 0))
+        final_surface.fill((0, 0, 0))  # Also clear the final surface
+
+        # Render the current state to both surfaces
+        for y in range(env.map_length):
+            for x in range(env.map_width):
+                cell_set = env.grid[y][x]
+                if len(cell_set) == 1:  # Collapsed cell
+                    tile_name = next(iter(cell_set))
+                    if tile_name in tile_images:
+                        screen.blit(tile_images[tile_name], (x * 32, y * 32))
+                        final_surface.blit(tile_images[tile_name], (x * 32, y * 32))
+                    else:
+                        # Fallback for missing tiles
+                        pygame.draw.rect(
+                            screen, (255, 0, 255), (x * 32, y * 32, 32, 32)
+                        )
+                        pygame.draw.rect(
+                            final_surface, (255, 0, 255), (x * 32, y * 32, 32, 32)
+                        )
+                elif len(cell_set) == 0:  # Contradiction
+                    pygame.draw.rect(screen, (255, 0, 0), (x * 32, y * 32, 32, 32))
                     pygame.draw.rect(
-                        final_surface, (255, 0, 255), (x * 32, y * 32, 32, 32)
+                        final_surface, (255, 0, 0), (x * 32, y * 32, 32, 32)
                     )
-            elif len(cell_set) == 0:  # Contradiction
-                pygame.draw.rect(final_surface, (255, 0, 0), (x * 32, y * 32, 32, 32))
-            else:  # Superposition
-                pygame.draw.rect(final_surface, (100, 100, 100), (x * 32, y * 32, 32, 32))
+                else:  # Superposition
+                    pygame.draw.rect(screen, (100, 100, 100), (x * 32, y * 32, 32, 32))
+                    pygame.draw.rect(
+                        final_surface, (100, 100, 100), (x * 32, y * 32, 32, 32)
+                    )
 
-    # Save the final image
-    os.makedirs("mcts_output", exist_ok=True)
-    output_path = os.path.join("mcts_output", filename)
-    pygame.image.save(final_surface, output_path)
-    pygame.quit()
+        pygame.display.flip()
+
+        # Capture final frame if this is the last step
+        if terminate or truncate:
+            pygame.time.delay(5000)
+            break
 
                                                                                                                                                                                                                  
                                                                                                                                                                                                                                      
@@ -341,54 +356,72 @@ def run_mcts_until_complete(env: WFCWrapper, mcts: MCTS, max_iterations:int=1000
                 _, reward, terminated, truncated, info = test_env.step(action)
                 current_reward += reward
                 if terminated or truncated:
+                    print(f"Reached terminal/truncated state after {len(action_sequence)} actions")
                     break
+            if not info.get("achieved_max_reward", False):
+                print(f"WARNING: Expected max reward but not achieved. Final state: terminated={terminated}, achieved_max={info.get('achieved_max_reward', False)}")
+                import ipdb
+                ipdb.set_trace()
+            
+            # Debugging:
+            print(f"Testing best action sequence (found_max={found_max})")
+            print(f"  Total reward: {current_reward}")
+            print(f"  Info: {info}")
+            # Validate reward consistency
             if terminated and info.get("achieved_max_reward", False):
                 if current_reward != 0:
                     print(f"WARNING: Max reward achieved but total reward is {current_reward} (expected 0)")
+                    print("This indicates a potential bug in the reward calculation or environment logic")
+                else:
+                    print(f"Found complete solution with reward {current_reward}")
                 return action_sequence, current_reward, i
+            else:
+                print(f"WARNING: Expected max reward but not achieved. Final state: terminated={terminated}, achieved_max={info.get('achieved_max_reward', False)}")
         
         # If we didn't find a complete solution, reset and try again
         mcts = MCTS(env)
     
+    print(f"Failed to find complete solution after {max_iterations} iterations")
     return best_action_sequence, total_reward, None
 
-# Define environment parameters
-MAP_LENGTH = 15
-MAP_WIDTH = 20
+if __name__ == '__main__':
+    # Define environment parameters
+    MAP_LENGTH = 15
+    MAP_WIDTH = 20
 
-adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
-num_tiles = len(tile_symbols)
+    adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
+    num_tiles = len(tile_symbols)
 
-# Create the WFC environment instance
-env = WFCWrapper(
-    map_length=MAP_LENGTH,
-    map_width=MAP_WIDTH,
-    tile_symbols=tile_symbols,
-    adjacency_bool=adjacency_bool,
-    num_tiles=num_tiles,
-    tile_to_index=tile_to_index,
-    reward=partial(binary_reward, target_path_length=80, hard=True),
-    deterministic=True,
-    # qd_function=binary_percent_water if args.qd else None,
-)
-                                                                                                                                                                                                            
-env.reset()                                                                                                                                                                                                                          
-                                                                                                                                                                                                                                     
-# Create MCTS instance                                                                                                                                                                                                               
-mcts = MCTS(env)    
+    # Create the WFC environment instance
+    env = WFCWrapper(
+        map_length=MAP_LENGTH,
+        map_width=MAP_WIDTH,
+        tile_symbols=tile_symbols,
+        adjacency_bool=adjacency_bool,
+        num_tiles=num_tiles,
+        tile_to_index=tile_to_index,
+        reward=partial(binary_reward, target_path_length=20, hard=True),
+        deterministic=True,
+        # qd_function=binary_percent_water if args.qd else None,
+    )
+                                                                                                                                                                                                                
+    env.reset()                                                                                                                                                                                                                          
+                                                                                                                                                                                                                                        
+    # Create MCTS instance                                                                                                                                                                                                               
+    mcts = MCTS(env)    
 
-env.reset() 
+    env.reset() 
 
-# Run MCTS until we have a complete solution
-best_action_sequence, total_reward, iterations = run_mcts_until_complete(env, mcts)
+    # Run MCTS until we have a complete solution
+    best_action_sequence, total_reward, iterations = run_mcts_until_complete(env, mcts)
 
-# Load tile images for visualization
-from assets.biome_adjacency_rules import load_tile_images
-tile_images = load_tile_images()
+    # Load tile images for visualization
+    from assets.biome_adjacency_rules import load_tile_images
+    tile_images = load_tile_images()
 
-# Save the best action sequence if we found one
-if best_action_sequence:
-    filename = f"mcts_solution_{iterations}.png"
-    render_action_sequence(env, best_action_sequence, tile_images, filename)
-
-
+    # Render the best action sequence if we found one
+    if best_action_sequence:
+        print(f"Rendering best solution with reward {total_reward} found at iteration {iterations}")
+        render_action_sequence(env, best_action_sequence, tile_images)
+    else:
+        print("No complete solution found")

@@ -5,3 +5,4 @@ matplotlib==3.10.1
 pygame==2.6.1
 pillow==11.2.1
 pandas==2.2.3
+pydantic

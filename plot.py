@@ -499,8 +499,14 @@ def plot_mcts_biome_convergence_from_csv(csv_file_path: str, output_png_path: st
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Collect and plot WFC convergence data")
+<<<<<<< HEAD
     parser.add_argument("--method", type=str, choices=["evolution", "mcts", "fi2pop"], default="evolution", help="Method to use for convergence testing")
     parser.add_argument("--load-hyperparameters", type=str, required=True, help="YAML file with evolution hyperparameters")
+=======
+    # Add new argument
+    parser.add_argument("--method", type=str, choices=["evolution", "mcts"], default="evolution", help="Method to use for convergence testing")
+    parser.add_argument("--load-hyperparameters", type=str, help="YAML file with evolution hyperparameters")
+>>>>>>> 22c627e (sbatch file change)
     parser.add_argument("--task", type=str, choices=["binary_easy", "binary_hard", "river", "pond", "grass", "biomes"], required=True)
     parser.add_argument("--combo", type=str, choices=["easy", "hard"], default="easy")
     parser.add_argument("--quality-diversity", action="store_true", help="Use the QD variant")
@@ -508,6 +514,7 @@ if __name__ == "__main__":
     parser.add_argument("--debug", action="store_true", help="Save per-run debug plots")
     args = parser.parse_args()
 
+<<<<<<< HEAD
     # Set up directories based on method
     global FIGURES_DIRECTORY, DEBUG_DIRECTORY
     FIGURES_DIRECTORY = get_figure_directory(args.method)
@@ -521,6 +528,15 @@ if __name__ == "__main__":
 
     with open(args.load_hyperparameters, "r") as f:
         hyperparams = yaml.safe_load(f)
+=======
+    if args.load_hyperparameters:
+        if not os.path.exists(args.load_hyperparameters):
+            print(f"Hyperparameters file not found: {args.load_hyperparameters}")
+            exit(1)
+        else:
+            with open(args.load_hyperparameters, "r") as f:
+                hyperparams = yaml.safe_load(f)
+>>>>>>> 22c627e (sbatch file change)
 
     # --- FI-2Pop integration ---
     def convert_to_fi2pop_hyperparams(evolution_params: dict, map_length: int, map_width: int) -> dict:
@@ -669,14 +685,14 @@ if __name__ == "__main__":
     elif args.method == "mcts":
         if args.task == "binary_easy":
             csv_path = collect_mcts_binary_convergence(
-                sample_size=20,
+                sample_size=10,
                 use_hard_variant=False,
             )
             plot_mcts_convergence_from_csv(csv_path)
         
         elif args.task == "binary_hard":
             csv_path = collect_mcts_binary_convergence(
-                sample_size=20,
+                sample_size=10,
                 use_hard_variant=True,
             )
             plot_mcts_convergence_from_csv(csv_path, use_hard_variant=True)
@@ -686,7 +702,7 @@ if __name__ == "__main__":
                 # For "biomes" task, collect all biome data separately
                 for biome in ["river", "pond", "grass"]:
                     csv_path = collect_mcts_biome_convergence(
-                        sample_size=20,
+                        sample_size=10,
                         biome_task=biome,
                     )
                     plot_mcts_biome_convergence_from_csv(csv_path)
@@ -695,7 +711,7 @@ if __name__ == "__main__":
                     use_hard = args.combo == "hard"
                     # Handle combo task
                     csv_path = collect_mcts_combo_convergence(
-                        sample_size=20,
+                        sample_size=10,
                         second_task=args.task,
                         use_hard_variant=use_hard,
                     )
@@ -707,7 +723,7 @@ if __name__ == "__main__":
                 else:
                     # Biome-only task
                     csv_path = collect_mcts_biome_convergence(
-                        sample_size=20,
+                        sample_size=10,
                         biome_task=args.task,
                     )
                     plot_mcts_biome_convergence_from_csv(csv_path)
