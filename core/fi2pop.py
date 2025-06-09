@@ -205,7 +205,6 @@ def objective(
 
     # Suggest new hyperparameters
     hyperparams = {
-        "pop_size": trial.suggest_categorical("pop_size", [24, 48, 96]),
         "tournament_k": trial.suggest_int("tournament_k", 2, 5),
         "number_of_actions_mutated_mean": trial.suggest_int(
             "number_of_actions_mutated_mean", 1, 200
@@ -240,7 +239,7 @@ def objective(
             reward_fn=reward_fn,
             task_args={},
             generations=generations_per_trial,
-            pop_size=hyperparams["pop_size"],
+            population_size=48,
             number_of_actions_mutated_mean=hyperparams["number_of_actions_mutated_mean"],
             number_of_actions_mutated_standard_deviation=hyperparams[
                 "number_of_actions_mutated_standard_deviation"
@@ -264,7 +263,7 @@ def evolve_fi2pop(
     reward_fn: Any,
     task_args: Dict[str, Any],
     generations: int = 100,
-    pop_size: int = 48,
+    population_size: int = 48,
     number_of_actions_mutated_mean: int = 10,
     number_of_actions_mutated_standard_deviation: float = 10.0,
     action_noise_standard_deviation: float = 0.1,
@@ -278,7 +277,7 @@ def evolve_fi2pop(
     best_mean_elite: float | None = None
     patience_counter = 0
 
-    combined = [Genome(make_env(reward_callable)) for _ in range(pop_size * 2)]
+    combined = [Genome(make_env(reward_callable)) for _ in range(population_size * 2)]
     with Pool(min(cpu_count(), len(combined))) as P:
         combined = P.map(_parallel_eval, combined)
 
@@ -346,7 +345,7 @@ def evolve_fi2pop(
             if not pool:
                 return []
             fit = [getattr(g, key) for g in pool]
-            parents = tournament_select(pool, fit, tournament_k, pop_size)
+            parents = tournament_select(pool, fit, tournament_k, population_size)
             kids: List[Genome] = []
             for i in range(0, len(parents), 2):
                 p1 = parents[i]
@@ -380,8 +379,8 @@ def evolve_fi2pop(
         for g in offspring:
             (feasible if g.violation == 0 else infeasible).append(g)
 
-        feasible = sorted(feasible, key=lambda g: g.reward, reverse=True)[:pop_size]
-        infeasible = sorted(infeasible, key=lambda g: g.violation)[:pop_size]
+        feasible = sorted(feasible, key=lambda g: g.reward, reverse=True)[:population_size]
+        infeasible = sorted(infeasible, key=lambda g: g.violation)[:population_size]
 
         best_reward_str = f"{feasible[0].reward:.3f}" if feasible else "N/A"
         print(
@@ -568,7 +567,7 @@ def main():
             reward_fn=selected_reward,
             task_args={},
             generations=args.generations,
-            pop_size=hyperparams.get("pop_size", 48),
+            population_size=hyperparams.get("population_size", 48),
             number_of_actions_mutated_mean=hyperparams[
                 "number_of_actions_mutated_mean"
             ],
@@ -633,27 +632,6 @@ def main():
 
     print("Script finished.")
 
-
-# --- Optuna objective for tuning ---
-def objective(trial, runs, hard):
-    from functools import partial
-    import numpy as np
-    params = {
-        "pop_size": trial.suggest_categorical("pop_size", [24, 48, 96]),
-        "mutation_rate": trial.suggest_float("mutation_rate", 0.01, 0.2),
-        "tournament_k": trial.suggest_int("tournament_k", 2, 5),
-        "generations": trial.suggest_int("generations", 50, 200)
-    }
-    gens = []
-    for _ in range(runs):
-        _, _, first_gen, _, _ = evolve_fi2pop(
-            partial(binary_reward, target_path_length=80, hard=hard),
-            {},
-            **params,
-            return_first_gen=True
-        )
-        gens.append(first_gen if first_gen is not None else float('inf'))
-    return np.nanmean(gens)
 
 if __name__ == "__main__":
     main()
