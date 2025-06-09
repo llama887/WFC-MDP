@@ -9,6 +9,10 @@ import sys
 import time
 import pickle
 
+# Add the project root to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+
 from functools import partial
 from multiprocessing import Pool, cpu_count
 from typing import Any, Dict, List, Optional, Tuple
@@ -25,8 +29,6 @@ import pygame
 import yaml
 >>>>>>> 5ddada0 (feat: enhance Genome class with info attribute and update evaluation logic)
 
-_here = os.path.dirname(__file__)
-sys.path.insert(0, os.path.join(_here, "vendor"))
 
 # ----------------------------------------------------------------------------
 # Task callbacks
@@ -37,9 +39,9 @@ from tasks.hill_task import hill_reward
 from tasks.pond_task import pond_reward
 from tasks.river_task import river_reward
 
-from ..assets.biome_adjacency_rules import create_adjacency_matrix
-from .wfc import load_tile_images
-from .wfc_env import CombinedReward, WFCWrapper
+from assets.biome_adjacency_rules import create_adjacency_matrix
+from wfc import load_tile_images
+from wfc_env import CombinedReward, WFCWrapper
 
 # ----------------------------------------------------------------------------
 # Prepare figures directory
