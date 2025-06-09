@@ -8,7 +8,7 @@
 #SBATCH --nodes=1                     
 #SBATCH --ntasks-per-node=1           
 #SBATCH --cpus-per-task=48           
-#SBATCH --mem=128G                             
+#SBATCH --mem=180G                             
 #SBATCH --account=pr_100_tandon_priority
 
 ### -------------------- Logging Setup -------------------- ###
@@ -25,7 +25,7 @@ log_and_email "Starting job: $SLURM_JOB_NAME ($SLURM_JOB_ID)"
 module purge
 cd /scratch/fyy2003/optimizing_WFC
 source venv/bin/activate
-python core/evolution.py --generations-per-trial 100 --hyperparameter-dir hyperparameters --output-file binary_hyperparameters.yaml --task binary_hard --task grass --optuna-trials 20
+python core/evolution.py --generations-per-trial 100 --hyperparameter-dir hyperparameters --output-file combo_grass_1d_hyperparameters.yaml --task binary_hard --task grass --optuna-trials 20
 
 
 

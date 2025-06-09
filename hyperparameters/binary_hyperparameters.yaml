@@ -1,7 +1,0 @@
-action_noise_standard_deviation: 0.06531607775180545
-cross_over_method: 0
-number_of_actions_mutated_mean: 46
-number_of_actions_mutated_standard_deviation: 58.16369631414252
-patience: 30
-population_size: 96
-survival_rate: 0.3315054179095511

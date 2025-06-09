@@ -1,14 +1,14 @@
 #!/bin/bash
-#SBATCH --job-name=hyperparams_binary_2d_fi2pop
-#SBATCH --output=hyperparams_binary_2d_fi2pop_%j.out
-#SBATCH --error=hyperparams_binary_2d_fi2pop_%j.err
+#SBATCH --job-name=hyperparams_binary_fi2pop
+#SBATCH --output=hyperparams_binary_fi2pop_%j.out
+#SBATCH --error=hyperparams_binary_fi2pop_%j.err
 #SBATCH --mail-type=START,END,FAIL
 #SBATCH --mail-user=fyy2003@nyu.edu
 #SBATCH --time=48:00:00 
 #SBATCH --nodes=1                     
 #SBATCH --ntasks-per-node=1           
 #SBATCH --cpus-per-task=48           
-#SBATCH --mem=128G                             
+#SBATCH --mem=180G                             
 #SBATCH --account=pr_100_tandon_priority
 
 ### -------------------- Logging Setup -------------------- ###
@@ -25,7 +25,7 @@ log_and_email "Starting job: $SLURM_JOB_NAME ($SLURM_JOB_ID)"
 module purge
 cd /scratch/fyy2003/optimizing_WFC
 source venv/bin/activate
-python core/evolution.py --generations-per-trial 100 --hyperparameter-dir hyperparameters --output-file fi2pop_binary_2d_hyperparameters.yaml --task binary_hard --optuna-trials 20 --genotype-dimensions 2
+python core/fi2pop.py --generations-per-trial 100 --hyperparameter-dir hyperparameters --output-file fi2pop_binary_hyperparameters.yaml --task binary_hard --optuna-trials 20
 
 
 
