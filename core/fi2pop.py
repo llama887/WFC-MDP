@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib
 import numpy as np
+from scipy.stats import truncnorm
 
 matplotlib.use("Agg")
 # ----------------------------------------------------------------------------
@@ -81,10 +82,47 @@ class Genome:
         self.reward: float = float("-inf")
         self.violation: int = 1_000_000
 
-    def mutate(self, rate: float = 0.02):
-        mask = np.random.rand(len(self.action_sequence)) < rate
-        for idx in np.where(mask)[0]:
-            self.action_sequence[idx] = self.env.action_space.sample()
+    def mutate(
+        self,
+        number_of_actions_mutated_mean: int = 10,
+        number_of_actions_mutated_standard_deviation: float = 10,
+        action_noise_standard_deviation: float = 0.1,
+    ):
+        # pick a number of actions to mutate between 0 and len(self.action_sequence) by sampling from normal distribution
+        if number_of_actions_mutated_standard_deviation == 0:
+            number_of_actions_mutated = number_of_actions_mutated_mean
+        else:
+            lower_bound = (
+                0 - number_of_actions_mutated_mean
+            ) / number_of_actions_mutated_standard_deviation
+            upper_bound = (
+                len(self.action_sequence) - number_of_actions_mutated_mean
+            ) / number_of_actions_mutated_standard_deviation
+            number_of_actions_mutated = truncnorm.rvs(
+                lower_bound,
+                upper_bound,
+                loc=number_of_actions_mutated_mean,
+                scale=number_of_actions_mutated_standard_deviation,
+            )
+        number_of_actions_mutated = int(
+            max(0, min(len(self.action_sequence), number_of_actions_mutated))
+        )
+
+        # mutate that number of actions by adding noise sampled from a normal distribution to all values in the action
+        mutating_indices = np.random.choice(
+            len(self.action_sequence), int(number_of_actions_mutated), replace=False
+        )
+        noise = np.random.normal(
+            0,
+            action_noise_standard_deviation,
+            size=self.action_sequence[mutating_indices].shape,
+        )
+        self.action_sequence[mutating_indices] += noise
+
+        # ensure results are between 0 and 1
+        self.action_sequence[mutating_indices] = np.clip(
+            self.action_sequence[mutating_indices], 0, 1
+        )
 
     @staticmethod
     def crossover(p1: Genome, p2: Genome) -> Tuple[Genome, Genome]:
@@ -146,16 +184,48 @@ def tournament_select(
     return winners
 
 
-# ----------------------------------------------------------------------------
-# Mutation rate converter
-# ----------------------------------------------------------------------------
-def _compute_mutation_rate(
-    hp: dict[str, Any], map_length: int, map_width: int
-) -> float:
-    L = map_length * map_width
-    M = hp.get("number_of_actions_mutated_mean", 0)
-    return float(M) / L if L > 0 else 0.0
 
+
+# ----------------------------------------------------------------------------
+# Optuna objective
+# ----------------------------------------------------------------------------
+def objective(trial, runs, hard):
+    # 1) mirror the reference hyperparameter choices
+    hp = {
+        "number_of_actions_mutated_mean": trial.suggest_int(
+            "number_of_actions_mutated_mean", 1, 200
+        ),
+        "number_of_actions_mutated_standard_deviation": trial.suggest_float(
+            "number_of_actions_mutated_standard_deviation", 0.0, 200.0
+        ),
+        "action_noise_standard_deviation": trial.suggest_float(
+            "action_noise_standard_deviation", 0.01, 1.0, log=True
+        ),
+        # existing FI-2Pop parameters
+        "pop_size": trial.suggest_categorical("pop_size", [24, 48, 96]),
+        "tournament_k": trial.suggest_int("tournament_k", 2, 5),
+        "generations": trial.suggest_int("generations", 50, 200),
+    }
+
+    gens_to_conv = []
+    for _ in range(runs):
+        _, _, first_gen, _, _ = evolve_fi2pop(
+            reward_fn=partial(binary_reward, target_path_length=80, hard=hard),
+            task_args={},
+            generations=hp["generations"],
+            pop_size=hp["pop_size"],
+            number_of_actions_mutated_mean=hp["number_of_actions_mutated_mean"],
+            number_of_actions_mutated_standard_deviation=hp[
+                "number_of_actions_mutated_standard_deviation"
+            ],
+            action_noise_standard_deviation=hp["action_noise_standard_deviation"],
+            tournament_k=hp["tournament_k"],
+            return_first_gen=True,
+        )
+        gens_to_conv.append(first_gen if first_gen is not None else float("inf"))
+
+    # we want to minimize number of gens to convergence
+    return float(np.nanmean(gens_to_conv))
 
 # ----------------------------------------------------------------------------
 # FI-2Pop GA: returns best & median histories
@@ -165,7 +235,9 @@ def evolve_fi2pop(
     task_args: Dict[str, Any],
     generations: int = 100,
     pop_size: int = 48,
-    mutation_rate: float = 0.0559,
+    number_of_actions_mutated_mean: int = 10,
+    number_of_actions_mutated_standard_deviation: float = 10.0,
+    action_noise_standard_deviation: float = 0.1,
     tournament_k: int = 3,
     return_first_gen: bool = False,
 ) -> Tuple[List[Genome], List[Genome], Optional[int], List[float], List[float]]:
@@ -218,8 +290,16 @@ def evolve_fi2pop(
             kids: List[Genome] = []
             for i in range(0, len(parents), 2):
                 c1, c2 = Genome.crossover(parents[i], parents[(i + 1) % len(parents)])
-                c1.mutate(mutation_rate)
-                c2.mutate(mutation_rate)
+                c1.mutate(
+                    number_of_actions_mutated_mean,
+                    number_of_actions_mutated_standard_deviation,
+                    action_noise_standard_deviation,
+                )
+                c2.mutate(
+                    number_of_actions_mutated_mean,
+                    number_of_actions_mutated_standard_deviation,
+                    action_noise_standard_deviation,
+                )
                 kids.extend([c1, c2])
             return kids
 
@@ -284,7 +364,6 @@ def summary_sweep(
     MAP_L, MAP_W = MAP_LENGTH, MAP_WIDTH
     MAX_G = hyperparams.get("generations", 100)
     pop_size = hyperparams.get("population_size", 96)
-    mut_rate = _compute_mutation_rate(hyperparams, MAP_L, MAP_W)
     t_k = hyperparams.get("tournament_k", 3)
 
     for combo_label, builder in combos:
@@ -298,7 +377,21 @@ def summary_sweep(
                     )
                     reward_fn = CombinedReward(builder(hard_flag))
                     _, _, first_gen, _, _ = evolve_fi2pop(
-                        reward_fn, {}, MAX_G, pop_size, mut_rate, t_k, True
+                        reward_fn,
+                        {},
+                        MAX_G,
+                        pop_size,
+                        number_of_actions_mutated_mean=hyperparams[
+                            "number_of_actions_mutated_mean"
+                        ],
+                        number_of_actions_mutated_standard_deviation=hyperparams[
+                            "number_of_actions_mutated_standard_deviation"
+                        ],
+                        action_noise_standard_deviation=hyperparams[
+                            "action_noise_standard_deviation"
+                        ],
+                        tournament_k=t_k,
+                        return_first_gen=True,
                     )
                     if first_gen is not None:
                         gens_to_conv[i, run] = first_gen
@@ -351,7 +444,6 @@ def plot_biome_convergence_bar(
     }
     MAP_L, MAP_W = MAP_LENGTH, MAP_WIDTH
     pop_size = hyperparams.get("population_size", 48)
-    mut_rate = _compute_mutation_rate(hyperparams, MAP_L, MAP_W)
     t_k = hyperparams.get("tournament_k", 3)
     MAX_G = hyperparams.get("generations", 100)
 
@@ -365,7 +457,15 @@ def plot_biome_convergence_bar(
                 {},
                 generations=MAX_G,
                 pop_size=pop_size,
-                mutation_rate=mut_rate,
+                number_of_actions_mutated_mean=hyperparams[
+                    "number_of_actions_mutated_mean"
+                ],
+                number_of_actions_mutated_standard_deviation=hyperparams[
+                    "number_of_actions_mutated_standard_deviation"
+                ],
+                action_noise_standard_deviation=hyperparams[
+                    "action_noise_standard_deviation"
+                ],
                 tournament_k=t_k,
                 return_first_gen=True,
             )
@@ -396,7 +496,6 @@ def main():
     parser.add_argument(
         "-l",
         "--load-hyperparameters",
-        required=True,
         help="Path to YAML of GA hyperparameters",
     )
     parser.add_argument(
@@ -411,6 +510,24 @@ def main():
     parser.add_argument(
         "--step", type=int, default=10, help="Step between path-lengths"
     )
+    parser.add_argument(
+        "--optuna-trials",
+        type=int,
+        default=0,
+        help="Number of trials to run for Optuna hyperparameter search.",
+    )
+    parser.add_argument(
+        "--hyperparameter-dir",
+        type=str,
+        default="hyperparameters",
+        help="Directory to save/load hyperparameters.",
+    )
+    parser.add_argument(
+        "--output-file",
+        type=str,
+        default="best_fi2pop_hyperparameters.yaml",
+        help="Filename for the saved hyperparameters YAML.",
+    )
 
     # mutually exclusive easy/hard
     group = parser.add_mutually_exclusive_group()
@@ -418,11 +535,9 @@ def main():
     group.add_argument("--easy", action="store_true", help="Easy/soft mode")
 
     # analysis flags
-    parser.add_argument("--binary", action="store_true", help="Binary alone")
-    parser.add_argument("--binary-pond", action="store_true", help="Binary + Pond")
-    parser.add_argument("--binary-river", action="store_true", help="Binary + River")
-    parser.add_argument("--binary-grass", action="store_true", help="Binary + Grass")
-    parser.add_argument("--binary-hill", action="store_true", help="Binary + Hill")
+    parser.add_argument(
+        "--combo-sweep", action="store_true", help="Run combo sweep analysis"
+    )
     parser.add_argument(
         "--bar-graph", action="store_true", help="Green biome-only bar graph"
     )
@@ -436,20 +551,33 @@ def main():
     # default mode hard
     hard_flag = True if args.hard or not args.easy else False
 
-    # default to all analyses
-    if not any(
-        [
-            args.binary,
-            args.binary_pond,
-            args.binary_river,
-            args.binary_grass,
-            args.binary_hill,
-            args.bar_graph,
-        ]
-    ):
-        args.binary = args.binary_pond = args.binary_river = True
-        args.binary_grass = args.binary_hill = True
-        args.bar_graph = True
+    if args.optuna_trials > 0:
+        import optuna
+
+        study = optuna.create_study(direction="minimize")
+        study.optimize(
+            lambda trial: objective(trial, args.runs, hard_flag),
+            n_trials=args.optuna_trials,
+        )
+        print("Best params:", study.best_params)
+
+        # Ensure the hyperparameters directory exists
+        hyperparam_dir = args.hyperparameter_dir
+        os.makedirs(hyperparam_dir, exist_ok=True)
+        output_path = os.path.join(hyperparam_dir, args.output_file)
+
+        # Save the best hyperparameters
+        print(f"Saving best hyperparameters to: {output_path}")
+        with open(output_path, "w") as f:
+            yaml.dump(study.best_params, f)
+        return
+
+    # default to all analyses if none are specified
+    if not any([args.combo_sweep, args.bar_graph]):
+        args.combo_sweep = args.bar_graph = True
+
+    if not args.load_hyperparameters:
+        parser.error("--load-hyperparameters is required unless using --optuna-trials")
 
     if args.tune:
         import optuna
@@ -471,8 +599,8 @@ def main():
     path_lengths = list(range(args.min_path, args.max_path + 1, args.step))
 
     # run requested combos
-    if args.binary:
-        print("==> Running Binary summary")
+    if args.combo_sweep:
+        print("==> Running Combo summary sweep")
         summary_sweep(hyperparams, args.runs, path_lengths)
 
     # bar graph
@@ -480,7 +608,7 @@ def main():
         print("==> Running Biome bar graph")
         plot_biome_convergence_bar(hyperparams, runs=args.runs, hard=hard_flag)
 
-    print("Done. All plots in 'figures/'")
+    print(f"Done. All plots in '{FIGURES_DIRECTORY}/'")
 
 
 # --- Optuna objective for tuning ---
