@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=hyperparams
-#SBATCH --output=hyperparams_%j.out
-#SBATCH --error=hyperparams_%j.err
+#SBATCH --job-name=hyperparams_combo_grass_2d
+#SBATCH --output=hyperparams_combo_grass_2d_%j.out
+#SBATCH --error=hyperparams_combo_grass_2d_%j.err
 #SBATCH --mail-type=START,END,FAIL
 #SBATCH --mail-user=fyy2003@nyu.edu
 #SBATCH --time=48:00:00 
@@ -25,7 +25,7 @@ log_and_email "Starting job: $SLURM_JOB_NAME ($SLURM_JOB_ID)"
 module purge
 cd /scratch/fyy2003/optimizing_WFC
 source venv/bin/activate
-python evolution.py --generations-per-trial 80 --hyperparameter-dir hyperparameters --output-file binary_hyperparameters.yaml --task binary_hard --optuna-trials 20
+python core/evolution.py --generations-per-trial 100 --hyperparameter-dir hyperparameters --output-file combo_grass_2d_hyperparameters.yaml --task binary_hard --task grass --optuna-trials 20 --genotype-dimensions 2
 
 
 
