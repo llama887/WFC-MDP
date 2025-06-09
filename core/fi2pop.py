@@ -23,11 +23,8 @@ from scipy.stats import truncnorm
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-<<<<<<< HEAD
-=======
 import pygame
 import yaml
->>>>>>> 5ddada0 (feat: enhance Genome class with info attribute and update evaluation logic)
 
 
 # ----------------------------------------------------------------------------
