@@ -592,7 +592,8 @@ def main():
         plt.title(f"FI-2Pop Performance: {task_str}")
         plt.xlabel("Generations")
         plt.ylabel("Reward")
-        plt.savefig(f"{FIGURES_DIRECTORY}/fi2pop_performance_{task_str}.png")
+        os.makedirs("figures", exist_ok=True)
+        plt.savefig(f"figures/fi2pop_performance_{task_str}.png")
         plt.close()
 
     elif args.optuna_trials > 0:
