@@ -196,7 +196,7 @@ def tournament_select(
 # Optuna objective
 # ----------------------------------------------------------------------------
 def objective(
-    trial: "optuna.Trial",
+    trial,
     generations_per_trial: int,
     tasks_list: list[str] = None,
 ) -> float:
