@@ -252,6 +252,7 @@ def objective(
                 "action_noise_standard_deviation"
             ],
             tournament_k=hyperparams["tournament_k"],
+            patience=50,
         )
         reward = best_agent.reward if best_agent else float("-inf")
         print(f"Best reward at sample {i + 1}/{NUMBER_OF_SAMPLES}: {reward}")
@@ -271,11 +272,14 @@ def evolve_fi2pop(
     number_of_actions_mutated_standard_deviation: float = 10.0,
     action_noise_standard_deviation: float = 0.1,
     tournament_k: int = 3,
+    patience: int = 30,
 ) -> Tuple[Optional[Genome], int, List[float], List[float]]:
     reward_callable = partial(reward_fn, **task_args)
     best_hist: List[float] = []
     median_hist: List[float] = []
     best_feasible_agent: Optional[Genome] = None
+    best_mean_elite: float | None = None
+    patience_counter = 0
 
     combined = [Genome(make_env(reward_callable)) for _ in range(pop_size * 2)]
     with Pool(min(cpu_count(), len(combined))) as P:
@@ -314,10 +318,29 @@ def evolve_fi2pop(
         best_hist.append(max(rewards) if rewards else float("-inf"))
         median_hist.append(float(np.median(rewards)) if rewards else float("-inf"))
 
-        if best_feasible_agent and best_feasible_agent.reward >= 0.0:
-            print(
-                f"[EARLY STOP] reached max reward {best_feasible_agent.reward:.3f} at generation {gen}"
-            )
+        # --- Early stopping on mean-elite reward ---
+        if feasible:
+            elite_rewards = [g.reward for g in feasible]
+            mean_elite_val = float(np.mean(elite_rewards))
+        else:
+            mean_elite_val = float("-inf")
+
+        if best_mean_elite is None or mean_elite_val > best_mean_elite:
+            best_mean_elite = mean_elite_val
+            patience_counter = 0
+        else:
+            patience_counter += 1
+
+        achieved_max = best_feasible_agent and best_feasible_agent.reward >= 0.0
+        if achieved_max or patience_counter >= patience:
+            print(f"[DEBUG] Converged at generation {gen}")
+            if achieved_max:
+                print(
+                    f"[DEBUG] Best agent achieved max reward: {best_feasible_agent.reward}"
+                )
+            else:
+                print(f"[DEBUG] Patience counter reached {patience_counter}")
+                print(f"[DEBUG] Best mean-elite reward: {best_mean_elite}")
             final_gen = gen
             break
 
@@ -496,6 +519,12 @@ def main():
         help="Path to a pickled agent to load and render.",
     )
     parser.add_argument(
+        "--override-patience",
+        type=int,
+        default=None,
+        help="Override the patience setting from YAML.",
+    )
+    parser.add_argument(
         "--task",
         action="append",
         default=[],
@@ -528,6 +557,8 @@ def main():
         print(f"Loading hyperparameters from: {args.load_hyperparameters}")
         with open(args.load_hyperparameters, "r") as f:
             hyperparams = yaml.safe_load(f)
+        if args.override_patience is not None:
+            hyperparams["patience"] = args.override_patience
         print("Successfully loaded hyperparameters:", hyperparams)
 
         start_time = time.time()
@@ -551,6 +582,7 @@ def main():
                 "action_noise_standard_deviation"
             ],
             tournament_k=hyperparams.get("tournament_k", 3),
+            patience=hyperparams.get("patience", 50),
         )
         end_time = time.time()
         print(f"Evolution finished in {end_time - start_time:.2f} seconds.")
