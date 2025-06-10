@@ -349,9 +349,14 @@ def main():
 
     if args.optuna_trials > 0:
         import optuna
+
         print(f"Running Optuna search for {args.optuna_trials} trials...")
         study = optuna.create_study(direction="minimize")
-        study.optimize(lambda trial: objective(trial, args.iterations_per_trial, args.task), n_trials=args.optuna_trials, n_jobs=1)
+        study.optimize(
+            lambda trial: objective(trial, args.iterations_per_trial, args.task),
+            n_trials=args.optuna_trials,
+            n_jobs=1,
+        )
         hyperparams = study.best_params
         print("Best hyperparameters found:", hyperparams)
         os.makedirs(args.hyperparameter_dir, exist_ok=True)
@@ -359,33 +364,54 @@ def main():
         with open(output_path, "w") as f:
             yaml.dump(hyperparams, f)
         print(f"Saved best hyperparameters to: {output_path}")
-    elif args.load_hyperparameters:
-        print(f"Loading hyperparameters from: {args.load_hyperparameters}")
-        with open(args.load_hyperparameters, "r") as f:
-            hyperparams = yaml.safe_load(f)
-        exploration_weight = hyperparams["exploration_weight"]
+
+    elif args.best_sequence_pickle:
+        with open(args.best_sequence_pickle, "rb") as f:
+            sequence = pickle.load(f)
+        print(f"Loaded sequence from {args.best_sequence_pickle}")
+        render_action_sequence(
+            env,
+            sequence,
+            tile_images,
+            f"rendered_{os.path.basename(args.best_sequence_pickle)}.png",
+        )
+    else:
+        # Default run mode: execute a search.
+        # Optionally load hyperparameters if the file is provided.
+        exploration_weight = sqrt(2)  # Default value
+        if args.load_hyperparameters:
+            print(f"Loading hyperparameters from: {args.load_hyperparameters}")
+            with open(args.load_hyperparameters, "r") as f:
+                hyperparams = yaml.safe_load(f)
+            exploration_weight = hyperparams["exploration_weight"]
+        else:
+            print(
+                "No hyperparameters file specified. "
+                f"Using default exploration weight: {exploration_weight:.4f}"
+            )
+
         start_time = time.time()
-        sequence, reward, iterations = run_mcts_until_complete(env, exploration_weight, max_iterations=args.max_iterations)
+        sequence, reward, iterations = run_mcts_until_complete(
+            env, exploration_weight, max_iterations=args.max_iterations
+        )
         end_time = time.time()
         print(f"MCTS search finished in {end_time - start_time:.2f} seconds.")
         if sequence:
             print(f"Complete solution found at iteration {iterations} with reward {reward:.4f}")
             AGENT_DIR = "agents"
             os.makedirs(AGENT_DIR, exist_ok=True)
-            filename = f"{AGENT_DIR}/best_mcts_{task_name}_reward_{reward:.2f}_sequence.pkl"
+            filename = (
+                f"{AGENT_DIR}/best_mcts_{task_name}_reward_{reward:.2f}_sequence.pkl"
+            )
             with open(filename, "wb") as f:
                 pickle.dump(sequence, f)
             print(f"Saved best sequence to {filename}")
-            render_action_sequence(env, sequence, tile_images, f"mcts_solution_{task_name}.png")
+            render_action_sequence(
+                env, sequence, tile_images, f"mcts_solution_{task_name}.png"
+            )
         else:
             print("No complete solution found within the maximum iterations.")
-    elif args.best_sequence_pickle:
-        with open(args.best_sequence_pickle, "rb") as f:
-            sequence = pickle.load(f)
-        print(f"Loaded sequence from {args.best_sequence_pickle}")
-        render_action_sequence(env, sequence, tile_images, f"rendered_{os.path.basename(args.best_sequence_pickle)}.png")
-    else:
-        parser.error("Please specify a mode: --optuna-trials, --load-hyperparameters, or --best-sequence-pickle")
+
     print("Script finished.")
 
 
