@@ -79,7 +79,7 @@ def _generic_convergence_collector(
             if debug:
                 start_time = time.time()
 
-            pop, best_agent, generations, best_agent_rewards, mean_agent_rewards = evolve(
+            pop, best_agent, generations, best_agent_rewards, mean_agent_rewards = evolve_standard(
                 env=env,
                 generations=evolution_hyperparameters.get("generations", 1000),
                 population_size=48,  # Fixed population size
@@ -126,7 +126,9 @@ def _generic_convergence_collector(
                 plt.close()
 
     csv_filename = f"{output_csv_prefix}convergence.csv"
-    csv_path = os.path.join(FIGURES_DIRECTORY, csv_filename)
+    fig_dir = get_figure_directory(evolution_hyperparameters.get("method", "evolution"))
+    os.makedirs(fig_dir, exist_ok=True)
+    csv_path = os.path.join(fig_dir, csv_filename)
     pd.DataFrame(data_rows).to_csv(csv_path, index=False)
     print(f"Saved raw data to {csv_path}")
     return csv_path
@@ -250,7 +252,9 @@ def collect_mcts_binary_convergence(
 
     prefix = f"mcts_{'hard_' if use_hard_variant else ''}"
     csv_filename = f"{prefix}binary_convergence_over_path.csv"
-    csv_path = os.path.join(FIGURES_DIRECTORY, csv_filename)
+    fig_dir = get_figure_directory("mcts")
+    os.makedirs(fig_dir, exist_ok=True)
+    csv_path = os.path.join(fig_dir, csv_filename)
     pd.DataFrame(data_rows).to_csv(csv_path, index=False)
     return csv_path
 
@@ -318,7 +322,9 @@ def collect_mcts_combo_convergence(
 
     prefix = f"mcts_{'hard_' if use_hard_variant else ''}{second_task}_combo_"
     csv_filename = f"{prefix}convergence.csv"
-    csv_path = os.path.join(FIGURES_DIRECTORY, csv_filename)
+    fig_dir = get_figure_directory("mcts")
+    os.makedirs(fig_dir, exist_ok=True)
+    csv_path = os.path.join(fig_dir, csv_filename)
     pd.DataFrame(data_rows).to_csv(csv_path, index=False)
     return csv_path
 
@@ -374,7 +380,9 @@ def collect_mcts_biome_convergence(
     
     prefix = f"mcts_{biome_task}_biome_"
     csv_filename = f"{prefix}convergence.csv"
-    csv_path = os.path.join(FIGURES_DIRECTORY, csv_filename)
+    fig_dir = get_figure_directory("mcts")
+    os.makedirs(fig_dir, exist_ok=True)
+    csv_path = os.path.join(fig_dir, csv_filename)
     pd.DataFrame(data_rows).to_csv(csv_path, index=False)
     return csv_path
 
@@ -462,7 +470,9 @@ def plot_mcts_convergence_from_csv(
     if not output_png_path:
         hard_suffix = "_hard" if use_hard_variant else ""
         second_suffix = f"_{second_task}" if second_task else ""
-        output_png_path = os.path.join(FIGURES_DIRECTORY, f"mcts_convergence{second_suffix}{hard_suffix}.png")
+        fig_dir = get_figure_directory("mcts")
+        os.makedirs(fig_dir, exist_ok=True)
+        output_png_path = os.path.join(fig_dir, f"mcts_convergence{second_suffix}{hard_suffix}.png")
     
     plt.tight_layout()
     plt.savefig(output_png_path)
@@ -485,7 +495,9 @@ def plot_mcts_biome_convergence_from_csv(csv_file_path: str, output_png_path: st
     
     if not output_png_path:
         filename = os.path.basename(csv_file_path).replace(".csv", ".png")
-        output_png_path = os.path.join(FIGURES_DIRECTORY, filename)
+        fig_dir = get_figure_directory("mcts")
+        os.makedirs(fig_dir, exist_ok=True)
+        output_png_path = os.path.join(fig_dir, filename)
     
     plt.tight_layout()
     plt.savefig(output_png_path)
@@ -537,6 +549,180 @@ if __name__ == "__main__":
         print("Warning: --load-hyperparameters is ignored for method 'mcts'")
 
     # --- Main Dispatcher ---
+    # --- Constrained EA (FI-2Pop/Baseline) helpers ---
+    def collect_constrained_binary_convergence(
+        mode: EvolutionMode,
+        sample_size: int,
+        hyperparams: dict,
+        use_hard_variant: bool = False,
+        debug: bool = False,
+    ) -> str:
+        from core.fi2pop import evolve as evolve_constrained
+        raw_xover = hyperparams.get("cross_over_method", "ONE_POINT")
+        try:
+            xover = CrossOverMethod(raw_xover)
+        except (ValueError, TypeError):
+            xover = CrossOverMethod(int(raw_xover))
+        path_lengths = list(np.arange(10, 101, 10))
+        prefix = f"{'hard_' if use_hard_variant else ''}binary_"
+        def make_reward(path_len):
+            return partial(binary_reward, target_path_length=path_len, hard=use_hard_variant)
+        data_rows = []
+        fig_dir = get_figure_directory(mode.value)
+        os.makedirs(fig_dir, exist_ok=True)
+        for key in path_lengths:
+            for run_idx in range(1, sample_size + 1):
+                reward_callable = make_reward(key)
+                best_agent, final_gen, _, _ = evolve_constrained(
+                    mode=mode,
+                    reward_fn=reward_callable,
+                    task_args={},
+                    generations=hyperparams.get("generations", 1000),
+                    population_size=48,
+                    number_of_actions_mutated_mean=hyperparams[
+                        "number_of_actions_mutated_mean"
+                    ],
+                    number_of_actions_mutated_standard_deviation=hyperparams[
+                        "number_of_actions_mutated_standard_deviation"
+                    ],
+                    action_noise_standard_deviation=hyperparams[
+                        "action_noise_standard_deviation"
+                    ],
+                    survival_rate=hyperparams["survival_rate"],
+                    cross_over_method=xover,
+                    cross_or_mutate_proportion=hyperparams.get(
+                        "cross_or_mutate_proportion", 0.7
+                    ),
+                    patience=50,
+                )
+                converged = best_agent and best_agent.reward >= 0.0
+                gens_to_converge = final_gen if converged else float("nan")
+                row = {"run_index": run_idx, "generations_to_converge": gens_to_converge}
+                row["desired_path_length"] = key
+                data_rows.append(row)
+        csv_filename = f"{prefix}convergence.csv"
+        csv_path = os.path.join(fig_dir, csv_filename)
+        pd.DataFrame(data_rows).to_csv(csv_path, index=False)
+        print(f"Saved raw data to {csv_path}")
+        return csv_path
+
+    def collect_constrained_combo_convergence(
+        mode: EvolutionMode,
+        sample_size: int,
+        hyperparams: dict,
+        second_task: str,
+        use_hard_variant: bool = False,
+        debug: bool = False,
+    ) -> str:
+        from core.fi2pop import evolve as evolve_constrained
+        raw_xover = hyperparams.get("cross_over_method", "ONE_POINT")
+        try:
+            xover = CrossOverMethod(raw_xover)
+        except (ValueError, TypeError):
+            xover = CrossOverMethod(int(raw_xover))
+        path_lengths = list(np.arange(10, 101, 10))
+        prefix = f"{'hard_' if use_hard_variant else ''}{second_task}_combo_"
+        biome_reward_map = {"river": river_reward, "pond": pond_reward, "grass": grass_reward}
+        second_reward = biome_reward_map[second_task]
+        def make_reward(path_len):
+            return CombinedReward([
+                partial(binary_reward, target_path_length=path_len, hard=use_hard_variant),
+                second_reward
+            ])
+        data_rows = []
+        fig_dir = get_figure_directory(mode.value)
+        os.makedirs(fig_dir, exist_ok=True)
+        for key in path_lengths:
+            for run_idx in range(1, sample_size + 1):
+                reward_callable = make_reward(key)
+                best_agent, final_gen, _, _ = evolve_constrained(
+                    mode=mode,
+                    reward_fn=reward_callable,
+                    task_args={},
+                    generations=hyperparams.get("generations", 1000),
+                    population_size=48,
+                    number_of_actions_mutated_mean=hyperparams[
+                        "number_of_actions_mutated_mean"
+                    ],
+                    number_of_actions_mutated_standard_deviation=hyperparams[
+                        "number_of_actions_mutated_standard_deviation"
+                    ],
+                    action_noise_standard_deviation=hyperparams[
+                        "action_noise_standard_deviation"
+                    ],
+                    survival_rate=hyperparams["survival_rate"],
+                    cross_over_method=xover,
+                    cross_or_mutate_proportion=hyperparams.get(
+                        "cross_or_mutate_proportion", 0.7
+                    ),
+                    patience=50,
+                )
+                converged = best_agent and best_agent.reward >= 0.0
+                gens_to_converge = final_gen if converged else float("nan")
+                row = {"run_index": run_idx, "generations_to_converge": gens_to_converge}
+                row["desired_path_length"] = key
+                data_rows.append(row)
+        csv_filename = f"{prefix}convergence.csv"
+        csv_path = os.path.join(fig_dir, csv_filename)
+        pd.DataFrame(data_rows).to_csv(csv_path, index=False)
+        print(f"Saved raw data to {csv_path}")
+        return csv_path
+
+    def collect_constrained_biome_convergence(
+        mode: EvolutionMode,
+        hyperparams: dict,
+        runs: int = 20,
+        debug: bool = False,
+    ) -> str:
+        from core.fi2pop import evolve as evolve_constrained
+        raw_xover = hyperparams.get("cross_over_method", "ONE_POINT")
+        try:
+            xover = CrossOverMethod(raw_xover)
+        except (ValueError, TypeError):
+            xover = CrossOverMethod(int(raw_xover))
+        biomes = ["Pond", "River", "Grass"]
+        prefix = "biome_"
+        def make_reward(biome):
+            return {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[biome]
+        data_rows = []
+        fig_dir = get_figure_directory(mode.value)
+        os.makedirs(fig_dir, exist_ok=True)
+        for key in biomes:
+            for run_idx in range(1, runs + 1):
+                reward_callable = make_reward(key)
+                best_agent, final_gen, _, _ = evolve_constrained(
+                    mode=mode,
+                    reward_fn=reward_callable,
+                    task_args={},
+                    generations=hyperparams.get("generations", 1000),
+                    population_size=48,
+                    number_of_actions_mutated_mean=hyperparams[
+                        "number_of_actions_mutated_mean"
+                    ],
+                    number_of_actions_mutated_standard_deviation=hyperparams[
+                        "number_of_actions_mutated_standard_deviation"
+                    ],
+                    action_noise_standard_deviation=hyperparams[
+                        "action_noise_standard_deviation"
+                    ],
+                    survival_rate=hyperparams["survival_rate"],
+                    cross_over_method=xover,
+                    cross_or_mutate_proportion=hyperparams.get(
+                        "cross_or_mutate_proportion", 0.7
+                    ),
+                    patience=50,
+                )
+                converged = best_agent and best_agent.reward >= 0.0
+                gens_to_converge = final_gen if converged else float("nan")
+                row = {"run_index": run_idx, "generations_to_converge": gens_to_converge}
+                row["biome"] = key
+                data_rows.append(row)
+        csv_filename = f"{prefix}convergence.csv"
+        csv_path = os.path.join(fig_dir, csv_filename)
+        pd.DataFrame(data_rows).to_csv(csv_path, index=False)
+        print(f"Saved raw data to {csv_path}")
+        return csv_path
+
     if args.method in ["fi2pop", "baseline"]:
         mode = EvolutionMode.FI2POP if args.method == "fi2pop" else EvolutionMode.BASELINE
         if args.task == "binary_easy":
