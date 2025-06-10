@@ -5,23 +5,27 @@ import argparse
 import copy
 import os
 import random
+import sys
+import time
+import pickle
+
+# Add the project root to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+
 from functools import partial
 from multiprocessing import Pool, cpu_count
 from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib
 import numpy as np
+from scipy.stats import truncnorm
 
 matplotlib.use("Agg")
-# ----------------------------------------------------------------------------
-# Ensure vendored packages on PYTHONPATH
-# ----------------------------------------------------------------------------
-import sys
-
 import matplotlib.pyplot as plt
+import pygame
+import yaml
 
-_here = os.path.dirname(__file__)
-sys.path.insert(0, os.path.join(_here, "vendor"))
 
 # ----------------------------------------------------------------------------
 # Task callbacks
@@ -32,9 +36,9 @@ from tasks.hill_task import hill_reward
 from tasks.pond_task import pond_reward
 from tasks.river_task import river_reward
 
-from ..assets.biome_adjacency_rules import create_adjacency_matrix
-from .wfc import load_tile_images
-from .wfc_env import CombinedReward, WFCWrapper
+from assets.biome_adjacency_rules import create_adjacency_matrix
+from wfc import load_tile_images
+from wfc_env import CombinedReward, WFCWrapper
 
 # ----------------------------------------------------------------------------
 # Prepare figures directory
@@ -80,11 +84,49 @@ class Genome:
         )
         self.reward: float = float("-inf")
         self.violation: int = 1_000_000
+        self.info: Dict[str, Any] = {}
 
-    def mutate(self, rate: float = 0.02):
-        mask = np.random.rand(len(self.action_sequence)) < rate
-        for idx in np.where(mask)[0]:
-            self.action_sequence[idx] = self.env.action_space.sample()
+    def mutate(
+        self,
+        number_of_actions_mutated_mean: int = 10,
+        number_of_actions_mutated_standard_deviation: float = 10,
+        action_noise_standard_deviation: float = 0.1,
+    ):
+        # pick a number of actions to mutate between 0 and len(self.action_sequence) by sampling from normal distribution
+        if number_of_actions_mutated_standard_deviation == 0:
+            number_of_actions_mutated = number_of_actions_mutated_mean
+        else:
+            lower_bound = (
+                0 - number_of_actions_mutated_mean
+            ) / number_of_actions_mutated_standard_deviation
+            upper_bound = (
+                len(self.action_sequence) - number_of_actions_mutated_mean
+            ) / number_of_actions_mutated_standard_deviation
+            number_of_actions_mutated = truncnorm.rvs(
+                lower_bound,
+                upper_bound,
+                loc=number_of_actions_mutated_mean,
+                scale=number_of_actions_mutated_standard_deviation,
+            )
+        number_of_actions_mutated = int(
+            max(0, min(len(self.action_sequence), number_of_actions_mutated))
+        )
+
+        # mutate that number of actions by adding noise sampled from a normal distribution to all values in the action
+        mutating_indices = np.random.choice(
+            len(self.action_sequence), int(number_of_actions_mutated), replace=False
+        )
+        noise = np.random.normal(
+            0,
+            action_noise_standard_deviation,
+            size=self.action_sequence[mutating_indices].shape,
+        )
+        self.action_sequence[mutating_indices] += noise
+
+        # ensure results are between 0 and 1
+        self.action_sequence[mutating_indices] = np.clip(
+            self.action_sequence[mutating_indices], 0, 1
+        )
 
     @staticmethod
     def crossover(p1: Genome, p2: Genome) -> Tuple[Genome, Genome]:
@@ -109,9 +151,10 @@ def _count_contradictions(env: WFCWrapper) -> int:
     )
 
 
-def evaluate(env: WFCWrapper, actions: np.ndarray) -> Tuple[float, int]:
+def evaluate(env: WFCWrapper, actions: np.ndarray) -> Tuple[float, int, Dict[str, Any]]:
     total_reward = 0.0
     info: Dict[str, Any] = {}
+    env.reset()
     for a in actions:
         _, r, done, trunc, info = env.step(a)
         total_reward += r
@@ -120,12 +163,12 @@ def evaluate(env: WFCWrapper, actions: np.ndarray) -> Tuple[float, int]:
     violation = info.get("violations", info.get("contradictions"))
     if violation is None:
         violation = _count_contradictions(env)
-    return total_reward, int(violation)
+    return total_reward, int(violation), info
 
 
 def _parallel_eval(gen: Genome) -> Genome:
     e = copy.deepcopy(gen.env)
-    gen.reward, gen.violation = evaluate(e, gen.action_sequence)
+    gen.reward, gen.violation, gen.info = evaluate(e, gen.action_sequence)
     return gen
 
 
@@ -146,16 +189,72 @@ def tournament_select(
     return winners
 
 
-# ----------------------------------------------------------------------------
-# Mutation rate converter
-# ----------------------------------------------------------------------------
-def _compute_mutation_rate(
-    hp: dict[str, Any], map_length: int, map_width: int
-) -> float:
-    L = map_length * map_width
-    M = hp.get("number_of_actions_mutated_mean", 0)
-    return float(M) / L if L > 0 else 0.0
 
+
+# ----------------------------------------------------------------------------
+# Optuna objective
+# ----------------------------------------------------------------------------
+def objective(
+    trial,
+    generations_per_trial: int,
+    tasks_list: list[str] = None,
+) -> float:
+    """Objective function for Optuna hyperparameter optimization."""
+    if not tasks_list:
+        tasks_list = ["binary_hard"]
+
+    # Suggest new hyperparameters
+    hyperparams = {
+        "tournament_k": trial.suggest_int("tournament_k", 2, 5),
+        "number_of_actions_mutated_mean": trial.suggest_int(
+            "number_of_actions_mutated_mean", 1, 200
+        ),
+        "number_of_actions_mutated_standard_deviation": trial.suggest_float(
+            "number_of_actions_mutated_standard_deviation", 0.0, 200.0
+        ),
+        "action_noise_standard_deviation": trial.suggest_float(
+            "action_noise_standard_deviation", 0.01, 1.0, log=True
+        ),
+    }
+
+    # Build reward function
+    reward_funcs = []
+    is_combo = len(tasks_list) > 1
+    for task in tasks_list:
+        if task.startswith("binary_"):
+            target_length = 40 if is_combo else 80
+            hard = task == "binary_hard"
+            reward_funcs.append(
+                partial(binary_reward, target_path_length=target_length, hard=hard)
+            )
+        else:
+            reward_funcs.append(globals()[f"{task}_reward"])
+
+    reward_fn = CombinedReward(reward_funcs) if len(reward_funcs) > 1 else reward_funcs[0]
+
+    total_reward = 0
+    NUMBER_OF_SAMPLES = 10  # As in evolution.py objective
+    for i in range(NUMBER_OF_SAMPLES):
+        best_agent, _, _, _ = evolve_fi2pop(
+            reward_fn=reward_fn,
+            task_args={},
+            generations=generations_per_trial,
+            population_size=48,
+            number_of_actions_mutated_mean=hyperparams["number_of_actions_mutated_mean"],
+            number_of_actions_mutated_standard_deviation=hyperparams[
+                "number_of_actions_mutated_standard_deviation"
+            ],
+            action_noise_standard_deviation=hyperparams[
+                "action_noise_standard_deviation"
+            ],
+            tournament_k=hyperparams["tournament_k"],
+            patience=50,
+        )
+        reward = best_agent.reward if best_agent else float("-inf")
+        print(f"Best reward at sample {i + 1}/{NUMBER_OF_SAMPLES}: {reward}")
+        total_reward += reward
+
+    return total_reward
 
 # ----------------------------------------------------------------------------
 # FI-2Pop GA: returns best & median histories
@@ -164,28 +263,36 @@ def evolve_fi2pop(
     reward_fn: Any,
     task_args: Dict[str, Any],
     generations: int = 100,
-    pop_size: int = 48,
-    mutation_rate: float = 0.0559,
+    population_size: int = 48,
+    number_of_actions_mutated_mean: int = 10,
+    number_of_actions_mutated_standard_deviation: float = 10.0,
+    action_noise_standard_deviation: float = 0.1,
     tournament_k: int = 3,
-    return_first_gen: bool = False,
-) -> Tuple[List[Genome], List[Genome], Optional[int], List[float], List[float]]:
+    patience: int = 30,
+) -> Tuple[Optional[Genome], int, List[float], List[float]]:
     reward_callable = partial(reward_fn, **task_args)
     best_hist: List[float] = []
     median_hist: List[float] = []
+    best_feasible_agent: Optional[Genome] = None
+    best_mean_elite: float | None = None
+    patience_counter = 0
 
-    combined = [Genome(make_env(reward_callable)) for _ in range(pop_size * 2)]
+    combined = [Genome(make_env(reward_callable)) for _ in range(population_size * 2)]
     with Pool(min(cpu_count(), len(combined))) as P:
         combined = P.map(_parallel_eval, combined)
 
     feasible = [g for g in combined if g.violation == 0]
     infeasible = [g for g in combined if g.violation > 0]
-    first_gen: Optional[int] = 0 if (feasible and return_first_gen) else None
+
+    if feasible:
+        best_feasible_agent = copy.deepcopy(max(feasible, key=lambda g: g.reward))
 
     # record gen 0
     rewards = [g.reward for g in combined]
-    best_hist.append(max(rewards))
-    median_hist.append(float(np.median(rewards)))
+    best_hist.append(max(rewards) if rewards else float("-inf"))
+    median_hist.append(float(np.median(rewards)) if rewards else float("-inf"))
 
+    final_gen = generations
     for gen in range(1, generations + 1):
         with Pool(min(cpu_count(), len(infeasible))) as P:
             infeasible = P.map(_parallel_eval, infeasible)
@@ -194,315 +301,338 @@ def evolve_fi2pop(
         feasible.extend(newly)
         infeasible = [g for g in infeasible if g.violation > 0]
 
-        if return_first_gen and first_gen is None and feasible:
-            first_gen = gen
-            break
+        if feasible:
+            current_best_in_gen = max(feasible, key=lambda g: g.reward)
+            if (
+                best_feasible_agent is None
+                or current_best_in_gen.reward > best_feasible_agent.reward
+            ):
+                best_feasible_agent = copy.deepcopy(current_best_in_gen)
 
         combined = feasible + infeasible
         rewards = [g.reward for g in combined]
-        best_hist.append(max(rewards))
-        median_hist.append(float(np.median(rewards)))
+        best_hist.append(max(rewards) if rewards else float("-inf"))
+        median_hist.append(float(np.median(rewards)) if rewards else float("-inf"))
 
-        if max(rewards) >= 0.0:
-            if return_first_gen and first_gen is None:
-                first_gen = gen
-            print(
-                f"[EARLY STOP] reached max reward {max(rewards):.3f} at generation {gen}"
-            )
+        # --- Early stopping on mean-elite reward ---
+        if feasible:
+            elite_rewards = [g.reward for g in feasible]
+            mean_elite_val = float(np.mean(elite_rewards))
+        else:
+            mean_elite_val = float("-inf")
+
+        if best_mean_elite is None or mean_elite_val > best_mean_elite:
+            best_mean_elite = mean_elite_val
+            patience_counter = 0
+        else:
+            patience_counter += 1
+
+        achieved_max = best_feasible_agent and best_feasible_agent.reward >= 0.0
+        if achieved_max or patience_counter >= patience:
+            print(f"[DEBUG] Converged at generation {gen}")
+            if achieved_max:
+                print(
+                    f"[DEBUG] Best agent achieved max reward: {best_feasible_agent.reward}"
+                )
+            else:
+                print(f"[DEBUG] Patience counter reached {patience_counter}")
+                print(f"[DEBUG] Best mean-elite reward: {best_mean_elite}")
+            final_gen = gen
             break
 
         # breeding
         def breed(pool: List[Genome], key: str) -> List[Genome]:
+            if not pool:
+                return []
             fit = [getattr(g, key) for g in pool]
-            parents = tournament_select(pool, fit, tournament_k, pop_size)
+            parents = tournament_select(pool, fit, tournament_k, population_size)
             kids: List[Genome] = []
             for i in range(0, len(parents), 2):
-                c1, c2 = Genome.crossover(parents[i], parents[(i + 1) % len(parents)])
-                c1.mutate(mutation_rate)
-                c2.mutate(mutation_rate)
+                p1 = parents[i]
+                p2 = parents[(i + 1) % len(parents)]
+                c1, c2 = Genome.crossover(p1, p2)
+                c1.mutate(
+                    number_of_actions_mutated_mean,
+                    number_of_actions_mutated_standard_deviation,
+                    action_noise_standard_deviation,
+                )
+                c2.mutate(
+                    number_of_actions_mutated_mean,
+                    number_of_actions_mutated_standard_deviation,
+                    action_noise_standard_deviation,
+                )
                 kids.extend([c1, c2])
             return kids
 
-        offspring = breed(feasible, "reward") + breed(infeasible, "violation")
+        feasible_offspring = breed(feasible, "reward")
+        infeasible_offspring = breed(infeasible, "violation")
+        offspring = feasible_offspring + infeasible_offspring
+
+        if not offspring:
+            print(f"Gen {gen:04d} | No offspring to evaluate. Stopping.")
+            final_gen = gen
+            break
+
         with Pool(min(cpu_count(), len(offspring))) as P:
             offspring = P.map(_parallel_eval, offspring)
 
         for g in offspring:
             (feasible if g.violation == 0 else infeasible).append(g)
 
-        feasible = sorted(feasible, key=lambda g: g.reward, reverse=True)[:pop_size]
-        infeasible = sorted(infeasible, key=lambda g: g.violation)[:pop_size]
+        feasible = sorted(feasible, key=lambda g: g.reward, reverse=True)[:population_size]
+        infeasible = sorted(infeasible, key=lambda g: g.violation)[:population_size]
+
+        best_reward_str = f"{feasible[0].reward:.3f}" if feasible else "N/A"
         print(
-            f"Gen {gen:04d} | Feas {len(feasible):02d} | Infeas {len(infeasible):02d} | BestReward {feasible[0].reward:.3f}"
+            f"Gen {gen:04d} | Feas {len(feasible):02d} | Infeas {len(infeasible):02d} | BestReward {best_reward_str}"
         )
 
-    return feasible, infeasible, first_gen, best_hist, median_hist
+    return best_feasible_agent, final_gen, best_hist, median_hist
 
 
 # ----------------------------------------------------------------------------
-# Dual‐axis summary sweep over all combos & modes
 # ----------------------------------------------------------------------------
-def summary_sweep(
-    hyperparams: dict[str, Any], sample_size: int, path_lengths: List[int]
-) -> None:
-    combos = [
-        (
-            "Binary",
-            lambda hard: [partial(binary_reward, target_path_length=L, hard=hard)],
-        ),
-        (
-            "B+Pond",
-            lambda hard: [
-                partial(binary_reward, target_path_length=L, hard=hard),
-                pond_reward,
-            ],
-        ),
-        (
-            "B+River",
-            lambda hard: [
-                partial(binary_reward, target_path_length=L, hard=hard),
-                river_reward,
-            ],
-        ),
-        (
-            "B+Grass",
-            lambda hard: [
-                partial(binary_reward, target_path_length=L, hard=hard),
-                grass_reward,
-            ],
-        ),
-        (
-            "B+Hill",
-            lambda hard: [
-                partial(binary_reward, target_path_length=L, hard=hard),
-                hill_reward,
-            ],
-        ),
-    ]
-    modes = [("hard", True), ("easy", False)]
-
-    MAP_L, MAP_W = MAP_LENGTH, MAP_WIDTH
-    MAX_G = hyperparams.get("generations", 100)
-    pop_size = hyperparams.get("population_size", 96)
-    mut_rate = _compute_mutation_rate(hyperparams, MAP_L, MAP_W)
-    t_k = hyperparams.get("tournament_k", 3)
-
-    for combo_label, builder in combos:
-        for mode_label, hard_flag in modes:
-            gens_to_conv = np.full((len(path_lengths), sample_size), np.nan)
-
-            for i, L in enumerate(path_lengths):
-                for run in range(sample_size):
-                    print(
-                        f"[{combo_label}-{mode_label}] L={L}, run {run + 1}/{sample_size}"
-                    )
-                    reward_fn = CombinedReward(builder(hard_flag))
-                    _, _, first_gen, _, _ = evolve_fi2pop(
-                        reward_fn, {}, MAX_G, pop_size, mut_rate, t_k, True
-                    )
-                    if first_gen is not None:
-                        gens_to_conv[i, run] = first_gen
-
-            means = np.nanmean(gens_to_conv, axis=1)
-            counts = np.sum(~np.isnan(gens_to_conv), axis=1)
-            stderr = np.nanstd(gens_to_conv, axis=1) / np.sqrt(np.maximum(counts, 1))
-            frac = counts / sample_size
-
-            fig, ax1 = plt.subplots(figsize=(8, 5))
-            ax2 = ax1.twinx()
-            ax1.errorbar(
-                path_lengths, means, yerr=stderr, fmt="o-", capsize=4, label="Mean gens"
-            )
-            ax2.bar(
-                path_lengths,
-                frac,
-                width=(path_lengths[1] - path_lengths[0]) * 0.8,
-                alpha=0.3,
-                label="Frac converged",
-            )
-
-            ax1.set_xlabel("Desired Path Length")
-            ax1.set_ylabel("Mean Gens to Converge")
-            ax2.set_ylabel("Fraction Converged")
-            ax1.set_title(f"{combo_label} ({mode_label}) Convergence")
-            h1, l1 = ax1.get_legend_handles_labels()
-            h2, l2 = ax2.get_legend_handles_labels()
-            ax1.legend(h1 + h2, l1 + l2, loc="upper left")
-
-            out = f"figures_fi2pop/{combo_label}_{mode_label}_summary.png".replace(
-                "+", "p"
-            )
-            fig.tight_layout()
-            fig.savefig(out)
-            plt.close(fig)
-
-
+# Render best agent (adapted from evolution.py)
 # ----------------------------------------------------------------------------
-# Green‐bar biome‐only convergence
-# ----------------------------------------------------------------------------
-def plot_biome_convergence_bar(
-    hyperparams: dict[str, Any], runs: int = 20, hard: bool = True
-) -> None:
-    tasks = {
-        "Pond": pond_reward,
-        "River": river_reward,
-        "Grass": grass_reward,
-        "Hill": hill_reward,
-    }
-    MAP_L, MAP_W = MAP_LENGTH, MAP_WIDTH
-    pop_size = hyperparams.get("population_size", 48)
-    mut_rate = _compute_mutation_rate(hyperparams, MAP_L, MAP_W)
-    t_k = hyperparams.get("tournament_k", 3)
-    MAX_G = hyperparams.get("generations", 100)
-
-    labels, means = [], []
-    for name, fn in tasks.items():
-        gens_list = []
-        print(f"[BIOME-BAR] Task {name} ({'HARD' if hard else 'EASY'})")
-        for i in range(runs):
-            _, _, first_gen, _, _ = evolve_fi2pop(
-                fn,
-                {},
-                generations=MAX_G,
-                pop_size=pop_size,
-                mutation_rate=mut_rate,
-                tournament_k=t_k,
-                return_first_gen=True,
-            )
-            if first_gen is not None:
-                gens_list.append(first_gen)
-        if gens_list:
-            labels.append(name)
-            means.append(np.mean(gens_list))
-
-    plt.figure(figsize=(8, 5))
-    x = np.arange(len(labels))
-    plt.bar(x, means, color="green")
-    plt.xticks(x, labels)
-    plt.ylabel("Avg Gens to First Feasible")
-    plt.title(f"FI-2Pop Biome Convergence ({'HARD' if hard else 'EASY'})")
-    plt.tight_layout()
-    plt.savefig("figures_fi2pop/fi2pop_biome_convergence_bar.png")
-    plt.close()
-
-
-# ----------------------------------------------------------------------------
-# CLI entrypoint with fine‐grained flags
-# ----------------------------------------------------------------------------
-def main():
-    parser = argparse.ArgumentParser(
-        description="FI-2Pop convergence: binary, combos, and bar graph"
-    )
-    parser.add_argument(
-        "-l",
-        "--load-hyperparameters",
-        required=True,
-        help="Path to YAML of GA hyperparameters",
-    )
-    parser.add_argument(
-        "-r", "--runs", type=int, default=20, help="Trials per path length / per task"
-    )
-    parser.add_argument(
-        "--min-path", type=int, default=10, help="Min target path length"
-    )
-    parser.add_argument(
-        "--max-path", type=int, default=100, help="Max target path length"
-    )
-    parser.add_argument(
-        "--step", type=int, default=10, help="Step between path-lengths"
-    )
-
-    # mutually exclusive easy/hard
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("--hard", action="store_true", help="Hard mode")
-    group.add_argument("--easy", action="store_true", help="Easy/soft mode")
-
-    # analysis flags
-    parser.add_argument("--binary", action="store_true", help="Binary alone")
-    parser.add_argument("--binary-pond", action="store_true", help="Binary + Pond")
-    parser.add_argument("--binary-river", action="store_true", help="Binary + River")
-    parser.add_argument("--binary-grass", action="store_true", help="Binary + Grass")
-    parser.add_argument("--binary-hill", action="store_true", help="Binary + Hill")
-    parser.add_argument(
-        "--bar-graph", action="store_true", help="Green biome-only bar graph"
-    )
-
-    # Add hyperparameter tuning option
-    parser.add_argument("--tune", action="store_true", help="Run hyperparameter tuning")
-    parser.add_argument("--optuna-trials", type=int, default=30, help="Number of Optuna trials for tuning")
-
-    args = parser.parse_args()
-
-    # default mode hard
-    hard_flag = True if args.hard or not args.easy else False
-
-    # default to all analyses
-    if not any(
-        [
-            args.binary,
-            args.binary_pond,
-            args.binary_river,
-            args.binary_grass,
-            args.binary_hill,
-            args.bar_graph,
-        ]
-    ):
-        args.binary = args.binary_pond = args.binary_river = True
-        args.binary_grass = args.binary_hill = True
-        args.bar_graph = True
-
-    if args.tune:
-        import optuna
-        study = optuna.create_study(direction="minimize")
-        study.optimize(
-            lambda trial: objective(trial, args.runs, hard_flag),
-            n_trials=args.optuna_trials
-        )
-        print("Best params:", study.best_params)
-        import yaml
-        with open("best_fi2pop_hyperparams.yaml", "w") as f:
-            yaml.dump(study.best_params, f)
-        print("Saved best params to best_fi2pop_hyperparams.yaml")
+def render_best_agent(
+    env: WFCWrapper, best_agent: Genome, tile_images, task_name: str = ""
+):
+    """Renders the action sequence of the best agent and saves the final map."""
+    if not best_agent:
+        print("No best agent found to render.")
         return
 
-    with open(args.load_hyperparameters) as f:
-        hyperparams = yaml.safe_load(f)
+    pygame.init()
+    SCREEN_WIDTH = env.map_width * 32
+    SCREEN_HEIGHT = env.map_length * 32
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    pygame.display.set_caption(f"Best FI-2Pop Evolved WFC Map - {task_name}")
+    final_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
 
-    path_lengths = list(range(args.min_path, args.max_path + 1, args.step))
+    env.reset()
+    total_reward = 0
+    print("Info:", best_agent.info)
+    print("Rendering best agent's action sequence...")
 
-    # run requested combos
-    if args.binary:
-        print("==> Running Binary summary")
-        summary_sweep(hyperparams, args.runs, path_lengths)
+    # Re-run the simulation to get the final grid state for rendering
+    for action in best_agent.action_sequence:
+        _, reward, terminate, truncate, _ = env.step(action)
+        total_reward += reward
+        if terminate or truncate:
+            break
 
-    # bar graph
-    if args.bar_graph:
-        print("==> Running Biome bar graph")
-        plot_biome_convergence_bar(hyperparams, runs=args.runs, hard=hard_flag)
+    # Render final state
+    final_surface.fill((0, 0, 0))
+    for y in range(env.map_length):
+        for x in range(env.map_width):
+            cell_set = env.grid[y][x]
+            if len(cell_set) == 1:
+                tile_name = next(iter(cell_set))
+                if tile_name in tile_images:
+                    final_surface.blit(tile_images[tile_name], (x * 32, y * 32))
+            elif len(cell_set) == 0:
+                pygame.draw.rect(final_surface, (255, 0, 0), (x * 32, y * 32, 32, 32))
 
-    print("Done. All plots in 'figures/'")
+    # --- Draw the path with smooth curves ---
+    if "longest_path" in best_agent.info:
+        path_indices = best_agent.info["longest_path"]
+        if path_indices and len(path_indices) > 1:
+            path_points = [
+                (idx[1] * 32 + 16, idx[0] * 32 + 16) for idx in path_indices
+            ]
+            if len(path_points) > 1:
+                pygame.draw.lines(final_surface, (255, 0, 0), False, path_points, 3)
+            for point in path_points:
+                pygame.draw.circle(final_surface, (255, 0, 0), point, 4)
+
+    screen.blit(final_surface, (0, 0))
+    pygame.display.flip()
+
+    # Save the final rendered map
+    if task_name:
+        os.makedirs("wfc_reward_img", exist_ok=True)
+        filename = f"wfc_reward_img/fi2pop_{task_name}_{best_agent.reward:.2f}.png"
+        pygame.image.save(final_surface, filename)
+        print(f"Saved final map to {filename}")
+
+    print(f"Final map reward for the best agent: {total_reward:.4f}")
+    print(f"Best agent reward during evolution: {best_agent.reward:.4f}")
+
+    print("Displaying final map for 5 seconds...")
+    start_time = time.time()
+    while time.time() - start_time < 5:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                return
+    pygame.quit()
 
 
-# --- Optuna objective for tuning ---
-def objective(trial, runs, hard):
-    from functools import partial
-    import numpy as np
-    params = {
-        "pop_size": trial.suggest_categorical("pop_size", [24, 48, 96]),
-        "mutation_rate": trial.suggest_float("mutation_rate", 0.01, 0.2),
-        "tournament_k": trial.suggest_int("tournament_k", 2, 5),
-        "generations": trial.suggest_int("generations", 50, 200)
+# ----------------------------------------------------------------------------
+# CLI entrypoint
+# ----------------------------------------------------------------------------
+def main():
+    parser = argparse.ArgumentParser(description="Evolve WFC agents with FI-2Pop.")
+    parser.add_argument(
+        "--load-hyperparameters",
+        type=str,
+        default=None,
+        help="Path to a YAML file containing hyperparameters to load.",
+    )
+    parser.add_argument(
+        "--generations",
+        type=int,
+        default=50,
+        help="Number of generations to run evolution for.",
+    )
+    parser.add_argument(
+        "--optuna-trials",
+        type=int,
+        default=0,
+        help="Number of trials for Optuna hyperparameter search.",
+    )
+    parser.add_argument(
+        "--generations-per-trial",
+        type=int,
+        default=10,
+        help="Number of generations for each Optuna trial.",
+    )
+    parser.add_argument(
+        "--hyperparameter-dir",
+        type=str,
+        default="hyperparameters",
+        help="Directory to save/load hyperparameters.",
+    )
+    parser.add_argument(
+        "--output-file",
+        type=str,
+        default="best_fi2pop_hyperparameters.yaml",
+        help="Filename for the saved hyperparameters YAML.",
+    )
+    parser.add_argument(
+        "--best-agent-pickle",
+        type=str,
+        help="Path to a pickled agent to load and render.",
+    )
+    parser.add_argument(
+        "--override-patience",
+        type=int,
+        default=None,
+        help="Override the patience setting from YAML.",
+    )
+    parser.add_argument(
+        "--task",
+        action="append",
+        default=[],
+        choices=["binary_easy", "binary_hard", "river", "pond", "grass", "hill"],
+        help="Task(s) to use. For combo tasks, specify multiple --task flags.",
+    )
+    args = parser.parse_args()
+    if not args.task:
+        args.task = ["binary_easy"]
+
+    task_rewards = {
+        "binary_easy": partial(binary_reward, target_path_length=80),
+        "binary_hard": partial(binary_reward, target_path_length=80, hard=True),
+        "river": river_reward,
+        "pond": pond_reward,
+        "grass": grass_reward,
+        "hill": hill_reward,
     }
-    gens = []
-    for _ in range(runs):
-        _, _, first_gen, _, _ = evolve_fi2pop(
-            partial(binary_reward, target_path_length=80, hard=hard),
-            {},
-            **params,
-            return_first_gen=True
+
+    if len(args.task) == 1:
+        selected_reward = task_rewards[args.task[0]]
+    else:
+        selected_reward = CombinedReward([task_rewards[task] for task in args.task])
+
+    env = make_env(selected_reward)
+    hyperparams = {}
+    best_agent = None
+
+    if args.load_hyperparameters:
+        print(f"Loading hyperparameters from: {args.load_hyperparameters}")
+        with open(args.load_hyperparameters, "r") as f:
+            hyperparams = yaml.safe_load(f)
+        if args.override_patience is not None:
+            hyperparams["patience"] = args.override_patience
+        print("Successfully loaded hyperparameters:", hyperparams)
+
+        start_time = time.time()
+        (
+            best_agent,
+            generations,
+            best_agent_rewards,
+            median_agent_rewards,
+        ) = evolve_fi2pop(
+            reward_fn=selected_reward,
+            task_args={},
+            generations=args.generations,
+            population_size=hyperparams.get("population_size", 48),
+            number_of_actions_mutated_mean=hyperparams[
+                "number_of_actions_mutated_mean"
+            ],
+            number_of_actions_mutated_standard_deviation=hyperparams[
+                "number_of_actions_mutated_standard_deviation"
+            ],
+            action_noise_standard_deviation=hyperparams[
+                "action_noise_standard_deviation"
+            ],
+            tournament_k=hyperparams.get("tournament_k", 3),
+            patience=hyperparams.get("patience", 50),
         )
-        gens.append(first_gen if first_gen is not None else float('inf'))
-    return np.nanmean(gens)
+        end_time = time.time()
+        print(f"Evolution finished in {end_time - start_time:.2f} seconds.")
+        print(f"Evolved for a total of {generations} generations")
+
+        task_str = "_".join(args.task)
+        x_axis = np.arange(len(median_agent_rewards))
+        plt.plot(x_axis, best_agent_rewards, label="Best Agent Per Generation")
+        plt.plot(x_axis, median_agent_rewards, label="Median Agent Per Generation")
+        plt.legend()
+        plt.title(f"FI-2Pop Performance: {task_str}")
+        plt.xlabel("Generations")
+        plt.ylabel("Reward")
+        os.makedirs("figures", exist_ok=True)
+        plt.savefig(f"figures/fi2pop_performance_{task_str}.png")
+        plt.close()
+
+    elif args.optuna_trials > 0:
+        import optuna
+
+        print(f"Running Optuna search for {args.optuna_trials} trials...")
+        study = optuna.create_study(direction="maximize")
+        study.optimize(
+            lambda trial: objective(
+                trial, args.generations_per_trial, tasks_list=args.task
+            ),
+            n_trials=args.optuna_trials,
+        )
+        hyperparams = study.best_params
+        print("Best hyperparameters found:", hyperparams)
+
+        os.makedirs(args.hyperparameter_dir, exist_ok=True)
+        output_path = os.path.join(args.hyperparameter_dir, args.output_file)
+        with open(output_path, "w") as f:
+            yaml.dump(hyperparams, f)
+        print(f"Saved best hyperparameters to: {output_path}")
+
+    elif args.best_agent_pickle:
+        with open(args.best_agent_pickle, "rb") as f:
+            best_agent = pickle.load(f)
+
+    if best_agent:
+        task_name = "_".join(args.task)
+        render_best_agent(env, best_agent, TILE_IMAGES, task_name)
+
+        AGENT_DIR = "agents"
+        os.makedirs(AGENT_DIR, exist_ok=True)
+        filename = f"{AGENT_DIR}/best_fi2pop_{task_name}_reward_{best_agent.reward:.2f}_agent.pkl"
+        with open(filename, "wb") as f:
+            pickle.dump(best_agent, f)
+        print(f"Saved best agent to {filename}")
+
+    print("Script finished.")
+
 
 if __name__ == "__main__":
     main()
