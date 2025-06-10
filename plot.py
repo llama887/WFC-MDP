@@ -3,6 +3,7 @@ import argparse
 import os
 from typing import Any, Callable, Literal
 import time
+import pickle
 
 import matplotlib
 import numpy as np
@@ -34,6 +35,282 @@ def get_figure_directory(method: str) -> str:
         "fi2pop": "figures_fi2pop",
         "baseline": "figures_baseline",
     }.get(method, "figures")
+
+
+def _generic_evolution_collector(
+    loop_keys: list[Any],
+    make_reward_fn: Callable[[Any], Callable[..., float]],
+    evolution_hyperparameters: dict[str, Any],
+    output_csv_prefix: str,
+    method: str,
+    use_quality_diversity: bool = False,
+    genotype_dimensions: Literal[1, 2] = 1,
+    is_biome_only: bool = False,
+    sample_size: int = 20,
+    debug: bool = False
+) -> str:
+    adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
+    map_length, map_width = 15, 20
+
+    # Prepare cross_over_method enum and patience
+    raw_cross_over = evolution_hyperparameters.get("cross_over_method", "ONE_POINT")
+    try:
+        cross_over_method = CrossOverMethod(raw_cross_over)
+    except (ValueError, TypeError):
+        cross_over_method = CrossOverMethod(int(raw_cross_over))
+
+    fig_dir = get_figure_directory(method)
+    os.makedirs(fig_dir, exist_ok=True)
+    os.makedirs(DEBUG_DIRECTORY, exist_ok=True)
+    csv_filename = f"{output_csv_prefix}convergence.csv"
+    csv_path = os.path.join(fig_dir, csv_filename)
+
+    data_rows: list[dict[str, Any]] = []
+
+    for key in loop_keys:
+        for run_index in range(1, sample_size + 1):
+            reward_callable = make_reward_fn(key)
+            env = WFCWrapper(
+                map_length=map_length,
+                map_width=map_width,
+                tile_symbols=tile_symbols,
+                adjacency_bool=adjacency_bool,
+                num_tiles=len(tile_symbols),
+                tile_to_index=tile_to_index,
+                reward=reward_callable,
+                deterministic=True,
+                qd_function=binary_percent_water if use_quality_diversity else None,
+            )
+
+            # Run evolve and record timing
+            if debug:
+                start_time = time.time()
+
+            pop, best_agent, generations, best_agent_rewards, mean_agent_rewards = evolve_standard(
+                env=env,
+                generations=evolution_hyperparameters.get("generations", 1000),
+                population_size=48,  # Fixed population size
+                number_of_actions_mutated_mean=evolution_hyperparameters[
+                    "number_of_actions_mutated_mean"
+                ],
+                number_of_actions_mutated_standard_deviation=evolution_hyperparameters[
+                    "number_of_actions_mutated_standard_deviation"
+                ],
+                action_noise_standard_deviation=evolution_hyperparameters[
+                    "action_noise_standard_deviation"
+                ],
+                survival_rate=evolution_hyperparameters["survival_rate"],
+                cross_over_method=cross_over_method,
+                patience=50,  # Fixed patience
+                qd=use_quality_diversity,
+                genotype_representation=f"{genotype_dimensions}d",
+            )
+
+            if debug:
+                end_time = time.time()
+                print(f"[DEBUG] Key={key}, Run={run_index}: Evolve took {end_time - start_time:.2f} sec, stopped at gen {generations}")
+
+            gens = generations if best_agent.info.get("achieved_max_reward", False) else float("nan")
+            row = {"run_index": run_index, "generations_to_converge": gens}
+            row["biome" if is_biome_only else "desired_path_length"] = key
+            data_rows.append(row)
+
+            # Produce debug plot if requested and if we have reward history
+            if debug and best_agent_rewards and mean_agent_rewards:
+                x_axis = np.arange(1, len(mean_agent_rewards) + 1)
+                plt.figure(figsize=(6, 4))
+                plt.plot(x_axis, best_agent_rewards, label="Best Agent")
+                plt.plot(x_axis, mean_agent_rewards, label="Mean Elite")
+                plt.legend()
+                plt.xlabel("Generation")
+                plt.ylabel("Reward")
+                what_str = f"Biom_{key}" if is_biome_only else f"Path_{key}"
+                title = f"Gen vs Reward — {what_str} — Run{run_index} — {genotype_dimensions}d"
+                plt.title(title)
+                filename = f"debug_{output_csv_prefix}{what_str}_run{run_index}.png"
+                plt.tight_layout()
+                plt.savefig(os.path.join(DEBUG_DIRECTORY, filename))
+                plt.close()
+
+    new_df = pd.DataFrame(data_rows)
+    new_df.to_csv(csv_path, index=False)
+    print(f"Saved raw data to {csv_path}")
+    return csv_path
+
+
+def _generic_constrained_ea_collector(
+    mode: EvolutionMode,
+    loop_keys: list,
+    make_reward_fn: callable,
+    hyperparameters: dict,
+    output_csv_prefix: str,
+    is_biome_only: bool,
+    sample_size: int,
+    debug: bool,
+) -> str:
+    raw_cross_over = hyperparameters.get("cross_over_method", "ONE_POINT")
+    try:
+        cross_over_method = CrossOverMethod(raw_cross_over)
+    except (ValueError, TypeError):
+        cross_over_method = CrossOverMethod(int(raw_cross_over))
+
+    fig_dir = get_figure_directory(mode.value)
+    os.makedirs(fig_dir, exist_ok=True)
+    os.makedirs(DEBUG_DIRECTORY, exist_ok=True)
+    csv_filename = f"{output_csv_prefix}convergence.csv"
+    csv_path = os.path.join(fig_dir, csv_filename)
+
+    data_rows = []
+    for key in loop_keys:
+        for run_index in range(1, sample_size + 1):
+            if debug:
+                start_time = time.time()
+
+            reward_callable = make_reward_fn(key)
+            best_agent, final_gen, _, _ = evolve_constrained(
+                mode=mode,
+                reward_fn=reward_callable,
+                task_args={},
+                generations=hyperparameters.get("generations", 1000),
+                population_size=48,
+                number_of_actions_mutated_mean=hyperparameters[
+                    "number_of_actions_mutated_mean"
+                ],
+                number_of_actions_mutated_standard_deviation=hyperparameters[
+                    "number_of_actions_mutated_standard_deviation"
+                ],
+                action_noise_standard_deviation=hyperparameters[
+                    "action_noise_standard_deviation"
+                ],
+                survival_rate=hyperparameters["survival_rate"],
+                cross_over_method=cross_over_method,
+                cross_or_mutate_proportion=hyperparameters.get(
+                    "cross_or_mutate_proportion", 0.7
+                ),
+                patience=50,
+            )
+
+            if debug:
+                elapsed = time.time() - start_time
+                print(f"[{mode.value.upper()}] Key={key}, Run={run_index}: Stopped at gen {final_gen} in {elapsed:.2f}s")
+
+            converged = best_agent and best_agent.reward >= 0.0
+            generations_to_converge = final_gen if converged else float("nan")
+            row = {"run_index": run_index, "generations_to_converge": generations_to_converge}
+            row["biome" if is_biome_only else "desired_path_length"] = key
+            data_rows.append(row)
+
+    new_df = pd.DataFrame(data_rows)
+    new_df.to_csv(csv_path, index=False)
+    print(f"Saved raw data to {csv_path}")
+    return csv_path
+
+
+def _resumable_mcts_collector(
+    loop_keys: list[Any],
+    make_reward_fn: Callable[[Any], Callable[..., float]],
+    task_prefix: str,
+    is_biome_only: bool,
+    sample_size: int,
+    max_iterations_per_run: int,
+) -> str:
+    """
+    Collects MCTS data statefully, allowing resumption of incomplete runs.
+
+    This function manages a state file (.pkl) that stores MCTS tree objects
+    and their progress. On each execution, it loads the state, continues
+    searches for unsolved tasks, and saves the updated state.
+
+    Args:
+        loop_keys (list[Any]): List of values to iterate over (e.g., path lengths).
+        make_reward_fn (Callable): Function that returns a reward callable for a given key.
+        task_prefix (str): A prefix for the state and output CSV filenames.
+        is_biome_only (bool): True if the task is biome-only.
+        sample_size (int): The number of sample runs for each key.
+        max_iterations_per_run (int): The number of MCTS iterations to add in this session.
+
+    Returns:
+        str: The path to the final summary CSV file.
+    """
+    fig_dir = get_figure_directory("mcts")
+    os.makedirs(fig_dir, exist_ok=True)
+    state_path = os.path.join(fig_dir, f"{task_prefix}_state.pkl")
+
+    # Load existing state or initialize a new one
+    if os.path.exists(state_path):
+        print(f"Resuming MCTS from state file: {state_path}")
+        with open(state_path, "rb") as f:
+            mcts_states = pickle.load(f)
+    else:
+        print("No state file found. Starting new MCTS run.")
+        mcts_states = {}
+
+    adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
+    map_length, map_width = 15, 20
+    DEFAULT_EXPLORATION_WEIGHT = math.sqrt(2)
+
+    for key in loop_keys:
+        for run_index in range(1, sample_size + 1):
+            state = mcts_states.get(key, {}).get(run_index)
+
+            # Case 1: Task is already solved, skip.
+            if state and state.get("result") is not None:
+                print(f"Skipping solved task: Key={key}, Run={run_index}")
+                continue
+
+            # Case 2: Task is in progress, resume it.
+            if state:
+                print(f"Resuming task: Key={key}, Run={run_index}, Cumulative Iterations: {state['cumulative_iterations']}")
+                mcts_instance = state["mcts_instance"]
+            # Case 3: New task, create it.
+            else:
+                print(f"Starting new task: Key={key}, Run={run_index}")
+                reward_callable = make_reward_fn(key)
+                env = WFCWrapper(
+                    map_length=map_length, map_width=map_width, tile_symbols=tile_symbols,
+                    adjacency_bool=adjacency_bool, num_tiles=len(tile_symbols),
+                    tile_to_index=tile_to_index, reward=reward_callable, deterministic=True,
+                )
+                mcts_instance = MCTS(env, exploration_weight=DEFAULT_EXPLORATION_WEIGHT)
+                # Initialize state
+                mcts_states.setdefault(key, {})[run_index] = {
+                    "mcts_instance": mcts_instance,
+                    "cumulative_iterations": 0,
+                    "result": None,
+                }
+
+            # Run the search for more iterations
+            _, _, iterations_in_run = resume_mcts_search(mcts_instance, max_iterations_per_run)
+
+            # Update state based on result
+            current_state = mcts_states[key][run_index]
+            if iterations_in_run is not None:
+                total_iterations = current_state["cumulative_iterations"] + iterations_in_run
+                current_state["result"] = total_iterations
+                print(f"Task SOLVED: Key={key}, Run={run_index} at total iterations: {total_iterations}")
+            else:
+                current_state["cumulative_iterations"] += max_iterations_per_run
+                print(f"Task NOT solved: Key={key}, Run={run_index}. Cumulative iterations now: {current_state['cumulative_iterations']}")
+
+            # Save state after each task to prevent data loss
+            with open(state_path, "wb") as f:
+                pickle.dump(mcts_states, f)
+
+    # --- Generate final CSV report from the state file ---
+    report_rows = []
+    for key, runs in mcts_states.items():
+        for run_index, state in runs.items():
+            row = {
+                "run_index": run_index,
+                "iterations_to_converge": state["result"],
+            }
+            row["biome" if is_biome_only else "desired_path_length"] = key
+            report_rows.append(row)
+
+    csv_path = os.path.join(fig_dir, f"{task_prefix}_convergence.csv")
+    pd.DataFrame(report_rows).to_csv(csv_path, index=False)
+    print(f"Saved final MCTS report to {csv_path}")
+    return csv_path
 
 
 def _generic_convergence_collector(
