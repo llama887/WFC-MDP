@@ -30,7 +30,7 @@ from tasks.grass_task import grass_reward
 from tasks.pond_task import pond_reward
 from tasks.river_task import river_reward
 
-from core.mcts import MCTS, run_mcts_until_complete
+from core.mcts import run_mcts_until_complete
 
 def get_figure_directory(method: str) -> str:
     return {
