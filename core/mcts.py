@@ -259,7 +259,7 @@ def resume_mcts_search(mcts_instance: "MCTS", max_iterations: int) -> tuple[list
             else:
                 # This can happen if a rollout spuriously reported max reward.
                 # We should continue searching.
-                print(f"Warning: MCTS reported a solution, but validation failed. Continuing search.")
+                print("Warning: MCTS reported a solution, but validation failed. Continuing search.")
 
     return None, None, None
 

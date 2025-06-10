@@ -16,7 +16,7 @@ import yaml
 from assets.biome_adjacency_rules import create_adjacency_matrix
 from core.evolution import evolve as evolve_standard, CrossOverMethod
 from core.fi2pop import evolve as evolve_constrained, EvolutionMode
-from core.mcts import run_mcts_until_complete, resume_mcts_search, MCTS
+from core.mcts import resume_mcts_search, MCTS
 from core.wfc_env import CombinedReward, WFCWrapper
 from tasks.binary_task import binary_percent_water, binary_reward
 from tasks.grass_task import grass_reward
