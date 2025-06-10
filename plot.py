@@ -1,3 +1,4 @@
+import math
 import argparse
 import os
 from typing import Any, Callable, Literal
@@ -208,6 +209,7 @@ def collect_mcts_binary_convergence(
     MIN_PATH_LENGTH = 10
     MAX_PATH_LENGTH = 100
     STEP = 10
+    DEFAULT_EXPLORATION_WEIGHT = math.sqrt(2)
     MAP_LENGTH = 15
     MAP_WIDTH = 20
     MAX_ITERATIONS = 1000
@@ -233,12 +235,9 @@ def collect_mcts_binary_convergence(
                 deterministic=True,
             )
             
-            # Create MCTS instance
-            mcts = MCTS(env)
-            env.reset()
-            
+            exploration_weight = DEFAULT_EXPLORATION_WEIGHT
             # Run MCTS
-            _, _, iterations = run_mcts_until_complete(env, mcts, MAX_ITERATIONS)
+            _, _, iterations = run_mcts_until_complete(env, exploration_weight, MAX_ITERATIONS)
             
             elapsed = time.time() - start_time
             print(f"Completed in {elapsed:.2f}s, iterations: {iterations if iterations else 'N/A'}")
@@ -266,6 +265,7 @@ def collect_mcts_combo_convergence(
     MIN_PATH_LENGTH = 10
     MAX_PATH_LENGTH = 100
     STEP = 10
+    DEFAULT_EXPLORATION_WEIGHT = math.sqrt(2)
     MAP_LENGTH = 15
     MAP_WIDTH = 20
     MAX_ITERATIONS = 1000
@@ -303,12 +303,9 @@ def collect_mcts_combo_convergence(
                 deterministic=True,
             )
             
-            # Create MCTS instance
-            mcts = MCTS(env)
-            env.reset()
-            
+            exploration_weight = DEFAULT_EXPLORATION_WEIGHT
             # Run MCTS
-            _, _, iterations = run_mcts_until_complete(env, mcts, MAX_ITERATIONS)
+            _, _, iterations = run_mcts_until_complete(env, exploration_weight, MAX_ITERATIONS)
             
             elapsed = time.time() - start_time
             print(f"Completed in {elapsed:.2f}s, iterations: {iterations if iterations else 'N/A'}")
@@ -334,6 +331,7 @@ def collect_mcts_biome_convergence(
     """
     MAP_LENGTH = 15
     MAP_WIDTH = 20
+    DEFAULT_EXPLORATION_WEIGHT = math.sqrt(2)
     MAX_ITERATIONS = 1000
 
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
@@ -361,12 +359,9 @@ def collect_mcts_biome_convergence(
             deterministic=True,
         )
         
-        # Create MCTS instance
-        mcts = MCTS(env)
-        env.reset()
-        
+        exploration_weight = DEFAULT_EXPLORATION_WEIGHT
         # Run MCTS
-        _, _, iterations = run_mcts_until_complete(env, mcts, MAX_ITERATIONS)
+        _, _, iterations = run_mcts_until_complete(env, exploration_weight, MAX_ITERATIONS)
         
         elapsed = time.time() - start_time
         print(f"Completed in {elapsed:.2f}s, iterations: {iterations if iterations else 'N/A'}")
