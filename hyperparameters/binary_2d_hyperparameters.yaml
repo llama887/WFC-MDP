@@ -1,0 +1,7 @@
+action_noise_standard_deviation: 0.08653510377428472
+cross_or_mutate: 0.5220797107938323
+cross_over_method: 1
+number_of_actions_mutated_mean: 71
+number_of_actions_mutated_standard_deviation: 164.0066896203973
+random_offspring: 0.2963138044118386
+survival_rate: 0.3210177077116886

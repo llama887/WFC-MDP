@@ -1,0 +1,4 @@
+action_noise_standard_deviation: 0.05055668090823518
+number_of_actions_mutated_mean: 175
+number_of_actions_mutated_standard_deviation: 125.54029311730955
+tournament_k: 2

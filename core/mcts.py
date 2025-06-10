@@ -335,7 +335,7 @@ def main():
         import optuna
         print(f"Running Optuna search for {args.optuna_trials} trials...")
         study = optuna.create_study(direction="minimize")
-        study.optimize(lambda trial: objective(trial, args.iterations_per_trial, args.task), n_trials=args.optuna_trials)
+        study.optimize(lambda trial: objective(trial, args.iterations_per_trial, args.task), n_trials=args.optuna_trials, n_jobs=1)
         hyperparams = study.best_params
         print("Best hyperparameters found:", hyperparams)
         os.makedirs(args.hyperparameter_dir, exist_ok=True)
