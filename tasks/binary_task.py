@@ -1,5 +1,7 @@
 from typing import Any
 
+import numpy as np
+
 from .utils import (
     calc_longest_path,
     calc_num_regions,
@@ -11,12 +13,13 @@ MAX_BINARY_REWARD = 0
 
 
 def binary_reward(
-    grid: list[list[set[str]]], target_path_length: int, hard: bool = False
+    grid: list[list[set[str]]], target_path_length: int, passable_mask: np.ndarray, hard: bool = False,
 ) -> tuple[float, dict[str, Any]]:
-    binary_map = grid_to_binary_map(
-        grid,
-        lambda tile_name: tile_name.startswith("sand") or tile_name.startswith("path"),
-    )
+    # binary_map = grid_to_binary_map(
+    #     grid,
+    #     lambda tile_name: tile_name.startswith("sand") or tile_name.startswith("path"),
+    # )
+    binary_map = ~np.any(grid * passable_mask[None, None], axis=2)
     number_of_regions = calc_num_regions(binary_map)
     current_path_length, longest_path = calc_longest_path(binary_map)
 

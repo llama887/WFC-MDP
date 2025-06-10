@@ -242,10 +242,19 @@ class WFCWrapper(gym.Env):
         else:
             reward = 0
 
+        # if terminated or truncated:
+        #     print(
+        #         f"Step {self.current_step}: Terminated={terminated}, Truncated={truncated}"
+        #     )
+
         # if reward != 0:
         #     print(reward)
         # Get the next observation
-        observation = self.get_observation()
+
+        # Not using observations currently
+        # observation = self.get_observation()
+        observation = None
+
         info["steps"] = self.current_step
         if terminated:
             info["terminated_reason"] = "completed"
@@ -267,8 +276,11 @@ class WFCWrapper(gym.Env):
         # Re-initialize the grid using the function from biome_wfc
         self.grid = initialize_wfc_grid(self.map_width, self.map_length, self.all_tiles)
         self.current_step = 0
-        # Compute and store initial longest path
-        observation = self.get_observation()
+
+        # Not currently using observations
+        # observation = self.get_observation()
+        observation = None
+
         info = {}  # Can provide initial info if needed
         # print("Environment Reset") # Debug print
         return observation, info
@@ -286,12 +298,15 @@ class WFCWrapper(gym.Env):
 
                 for y in range(self.map_length):
                     for x in range(self.map_width):
-                        cell_set = self.grid[y][x]
-                        num_options = len(cell_set)
+                        cell_vec = self.grid[y, x]
+                        # num_options = len(cell_set)
+                        num_options = np.sum(cell_vec)
 
                         if num_options == 1:
                             # Draw the collapsed tile
-                            tile_name = next(iter(cell_set))
+                            tile_idx = np.argwhere(cell_vec)[0].item()
+                            tile_name = self.all_tiles[tile_idx]
+                            # tile_name = next(iter(cell_set))
                             if tile_name in self.tile_images:
                                 self.screen.blit(
                                     self.tile_images[tile_name],
@@ -312,7 +327,7 @@ class WFCWrapper(gym.Env):
                         else:
                             # Draw superposition (gray with number of options)
                             shade = min(
-                                255, 50 + 205 * (1 - len(cell_set) / self.num_tiles)
+                                255, 50 + 205 * (1 - num_options / self.num_tiles)
                             )
                             pygame.draw.rect(
                                 self.screen,
@@ -337,17 +352,18 @@ class WFCWrapper(gym.Env):
                 for y in range(self.map_length):
                     row_str = ""
                     for x in range(self.map_width):
-                        cell_set = self.grid[y][x]
-                        num_options = len(cell_set)
+                        cell_vec = self.grid[y, x]
+                        num_options = np.sum(cell_vec)
                         if num_options == 1:
-                            tile_name = next(iter(cell_set))
+                            tile_idx = np.argwhere(cell_vec)[0].item()
+                            tile_name = self.all_tiles[tile_idx]
                             row_str += tile_name + " "
                         elif num_options == self.num_tiles:
                             row_str += "? "
                         elif num_options == 0:
                             row_str += "! "
                         else:
-                            row_str += f"{len(cell_set)} "
+                            row_str += f"{num_options} "
                     print(row_str.strip())
                 print("-" * (self.map_width * 2))
         else:

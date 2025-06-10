@@ -1,5 +1,6 @@
 import os
 import sys
+from timeit import default_timer as timer
 
 # Add the project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -104,6 +105,7 @@ class PopulationMember:
         )
 
     def run_action_sequence(self):
+        start_time = timer()
         self.reward = 0
         observation,  _ =self.env.reset()
         if self.genotype_representation == "1d":
@@ -123,6 +125,8 @@ class PopulationMember:
                 observation, reward, terminate, truncate, info = self.env.step(self.action_sequence[flattened_index])
                 self.reward += reward
                 self.info = info
+        end_time = timer()
+        self.info["wfc_rollout_time"] = end_time - start_time
 
                    
     @staticmethod
@@ -241,8 +245,12 @@ def evolve(
 
     for gen in tqdm(range(1, generations + 1), desc="Generations"):
         # --- 2) Evaluate entire population (in parallel) ---
-        with Pool(min(cpu_count() * 2, len(population))) as pool:
-            population = pool.map(run_member, population)
+        if not args.no_multiprocessing:
+            with Pool(min(cpu_count() * 2, len(population))) as pool:
+                population = pool.map(run_member, population)
+        else:
+            for i, member in enumerate(population):
+                population[i] = run_member(member)
 
         # --- 3) Gather fitnesses and track best individual ---
         fitnesses = np.array([m.reward for m in population])
@@ -255,6 +263,13 @@ def evolve(
         # --- 4) Track global best‐agent (based on max reward) ---
         if best_agent is None or best_reward > best_agent.reward:
             best_agent = copy.deepcopy(population[best_idx])
+        # best_agent.env.render_mode = 'human'
+        # print(best_agent.env.render())
+        render_best_agent(best_agent.env, best_agent, tile_images, task_name="Best Agent")
+
+        rollout_times = np.array([m.info["wfc_rollout_time"] for m in population])
+        mean_rollout_time = np.mean(rollout_times)
+        print(f"[DEBUG] Mean rollout time: {mean_rollout_time:.2f} seconds")
 
         # --- 5) Selection step (fitness‐based or QD‐based) ---
         if not qd:
@@ -345,8 +360,11 @@ def evolve(
                 )
             if pairs_args:
                 n_procs = min(cpu_count() * 2, len(pairs_args))
-                with Pool(n_procs) as pool:
-                    results = pool.map(reproduce_pair, pairs_args)
+                if not args.no_multiprocessing:
+                    with Pool(n_procs) as pool:
+                        results = pool.map(reproduce_pair, pairs_args)
+                else:
+                    results = [reproduce_pair(args) for args in pairs_args]
                 crossover_children = [child for pair in results for child in pair][:n_crossover]
             else:
                 crossover_children = []
@@ -362,8 +380,11 @@ def evolve(
             ]
             if mutation_args:
                 n_procs = min(cpu_count() * 2, len(mutation_args))
-                with Pool(n_procs) as pool:
-                    mutated = pool.map(_mutate_clone, mutation_args)
+                if not args.no_multiprocessing:
+                    with Pool(n_procs) as pool:
+                        mutated = pool.map(_mutate_clone, mutation_args)
+                else:
+                    mutated = [_mutate_clone(args) for args in mutation_args]
             else:
                 mutated = []
             offspring.extend(mutated)
@@ -391,6 +412,7 @@ def evolve(
 def objective(
     trial: optuna.Trial, 
     generations_per_trial: int, 
+    passable_mask: np.ndarray,
     qd: bool = False,
     tasks_list: list[str] = None
 ) -> float:
@@ -424,7 +446,7 @@ def objective(
             target_length = 40 if is_combo else 80
             hard = (task == "binary_hard")
             reward_funcs.append(partial(binary_reward,
-                target_path_length=target_length,
+                target_path_length=target_length, passable_mask=passable_mask,
                 hard=hard))
         else:
             reward_funcs.append(globals()[f"{task}_reward"])
@@ -511,9 +533,10 @@ def render_best_agent(
         # Render the current state to both surfaces
         for y in range(env.map_length):
             for x in range(env.map_width):
-                cell_set = env.grid[y][x]
-                if len(cell_set) == 1:  # Collapsed cell
-                    tile_name = next(iter(cell_set))
+                cell_vec = env.grid[y][x]
+                if cell_vec.sum() == 1:
+                    cell_idx = np.argmax(cell_vec)
+                    tile_name = env.all_tiles[cell_idx]
                     if tile_name in tile_images:
                         screen.blit(tile_images[tile_name], (x * 32, y * 32))
                         final_surface.blit(tile_images[tile_name], (x * 32, y * 32))
@@ -525,7 +548,7 @@ def render_best_agent(
                         pygame.draw.rect(
                             final_surface, (255, 0, 255), (x * 32, y * 32, 32, 32)
                         )
-                elif len(cell_set) == 0:  # Contradiction
+                elif not np.any(cell_vec):
                     pygame.draw.rect(screen, (255, 0, 0), (x * 32, y * 32, 32, 32))
                     pygame.draw.rect(
                         final_surface, (255, 0, 0), (x * 32, y * 32, 32, 32)
@@ -709,6 +732,12 @@ if __name__ == "__main__":
         default=None,
         help="Override the patience setting from YAML.",
     )
+    parser.add_argument(
+        "--no-multiprocessing",
+        action="store_true",
+        default=False,
+        help="Disable multiprocessing for running members.",
+    )
 
     parser.add_argument("--genotype-dimensions", type=int, choices=[1, 2], default=1, help="The dimensions of the genotype representation. 1d or 2d")
 
@@ -723,9 +752,14 @@ if __name__ == "__main__":
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     num_tiles = len(tile_symbols)
 
+    passable_mask = np.zeros(num_tiles, dtype=bool)
+    for tile_name in tile_symbols:
+        if tile_name.startswith("sand") or tile_name.startswith("path"):
+            passable_mask[tile_to_index[tile_name]] = True
+
     task_rewards = {
-        "binary_easy": partial(binary_reward, target_path_length=80),
-        "binary_hard": partial(binary_reward, target_path_length=80, hard=True),
+        "binary_easy": partial(binary_reward, target_path_length=80, passable_mask=passable_mask),
+        "binary_hard": partial(binary_reward, target_path_length=80, passable_mask=passable_mask, hard=True),
         "river": river_reward,
         "pond": pond_reward,
         "grass": grass_reward,
@@ -824,7 +858,7 @@ if __name__ == "__main__":
         start_time = time.time()
         study.optimize(
             lambda trial: objective(
-                trial, args.generations_per_trial, args.qd, tasks_list=args.task
+                trial, args.generations_per_trial, passable_mask=passable_mask, qd=args.qd, tasks_list=args.task, 
             ),
             n_trials=args.optuna_trials,
         )
