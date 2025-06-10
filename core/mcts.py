@@ -16,6 +16,7 @@ import pygame
 import yaml
 from pydantic import BaseModel, Field
 from tqdm import tqdm
+from math import sqrt
 
 # Add the project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -49,9 +50,8 @@ class MCTSConfig(BaseModel):
     """Configuration for the MCTS algorithm"""
 
     exploration_weight: float = Field(
-        default=1.0, description="Exploration weight for UCT calculation"
+        default=sqrt(2), description="Exploration weight for UCT calculation"
     )
-    # num_simulations is always 48, hardcoded everywhere else.
 
 
 class Node:
