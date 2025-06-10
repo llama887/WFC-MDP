@@ -30,6 +30,15 @@ from tasks.river_task import river_reward
 from wfc_env import CombinedReward, WFCWrapper
 
 
+def _simulate_node(node: "Node") -> tuple[float, list[np.ndarray], bool]:
+    """
+    Run just the simulation/rollout part of MCTS. This is sent to worker processes.
+    It does NOT modify the tree (no backpropagation).
+    Returns: (reward, action_sequence, achieved_max_flag)
+    """
+    return node.simulate()
+
+
 class Action(BaseModel):
     """Represents an action in the MCTS tree with its statistics"""
 
@@ -144,46 +153,64 @@ class MCTS:
         self.best_action_sequence: list[np.ndarray] = []
         self.best_reward = float("-inf")
 
-    def _run_simulation(self, node: Node) -> tuple[float, list[np.ndarray], bool, Node]:
-        """Run a single simulation from a node"""
-        reward, action_sequence, achieved_max_reward = node.simulate()
-        node.backpropagate(reward)
-        return reward, action_sequence, achieved_max_reward, node
-
     def search(self) -> tuple[Action, list[np.ndarray], bool]:
         """Run the MCTS algorithm and return the best action and sequence"""
         num_simulations = 48  # Hardcoded as per hardware limitations
         num_processes = min(multiprocessing.cpu_count(), num_simulations)
-        with Pool(processes=num_processes) as pool:
-            nodes = [self.select_node() for _ in range(num_simulations)]
-            simulation_results = pool.map(self._run_simulation, nodes)
 
-        for reward, rollout_sequence, achieved_max_reward, node in simulation_results:
+        # 1. Selection Phase: In the main process, select all nodes to be simulated.
+        #    This expands the tree and modifies the main tree state.
+        nodes_to_simulate = [self.select_node() for _ in range(num_simulations)]
+
+        # 2. Simulation Phase: Run the heavy simulation part in parallel worker processes.
+        #    Each worker gets a copy of a node and returns only the simulation result.
+        with Pool(processes=num_processes) as pool:
+            simulation_outputs: list[tuple[float, list[np.ndarray], bool]] = pool.map(
+                _simulate_node, nodes_to_simulate
+            )
+
+        # 3. Backpropagation & Processing Phase: Update the main tree in the parent process.
+        #    We zip the original nodes with their results, which are in the same order.
+        for node, (reward, rollout_sequence, achieved_max_reward) in zip(
+            nodes_to_simulate, simulation_outputs
+        ):
+            # First, update the tree with the result. This is safe as we are in the main process.
+            node.backpropagate(reward)
+
+            # Now, process the result to see if we found a solution or a new best reward.
             if achieved_max_reward:
                 prefix_actions: list[np.ndarray] = []
-                n = node
-                while n.parent is not None:
-                    prefix_actions.append(n.action_taken.action_logits)
-                    n = n.parent
+                current_node = node
+                while current_node.parent is not None:
+                    prefix_actions.append(current_node.action_taken.action_logits)
+                    current_node = current_node.parent
                 prefix_actions.reverse()
+
                 full_sequence = prefix_actions + rollout_sequence
                 self.best_action_sequence = full_sequence
                 self.best_reward = reward
-                for child in self.root.children:
-                    if child.action_taken and np.array_equal(child.action_taken.action_logits, full_sequence[0]):
-                        return child.action_taken, full_sequence, True
+
+                # Find the first action taken from the root to return
+                if full_sequence:
+                    for child in self.root.children:
+                        if child.action_taken and np.array_equal(
+                            child.action_taken.action_logits, full_sequence[0]
+                        ):
+                            return child.action_taken, full_sequence, True
 
             if reward > self.best_reward:
                 self.best_reward = reward
                 prefix_actions = []
-                n = node
-                while n.parent is not None:
-                    prefix_actions.append(n.action_taken.action_logits)
-                    n = n.parent
+                current_node = node
+                while current_node.parent is not None:
+                    prefix_actions.append(current_node.action_taken.action_logits)
+                    current_node = current_node.parent
                 prefix_actions.reverse()
                 self.best_action_sequence = prefix_actions + rollout_sequence
 
+        # 4. If no solution was found, return the action leading to the most visited child.
         if not self.root.children:
+            # Fallback if the tree was never expanded (e.g., root is terminal)
             action_logits = self.env.action_space.sample()
             return Action(action_logits=action_logits), self.best_action_sequence, False
 
