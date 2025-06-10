@@ -83,7 +83,7 @@ class Genome:
             [env.action_space.sample() for _ in range(env.map_length * env.map_width)]
         )
         self.reward: float = float("-inf")
-        self.violation: int = 1_000_000
+        self.violation: int = sys.maxsize
         self.info: Dict[str, Any] = {}
 
     def mutate(
