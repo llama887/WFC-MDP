@@ -46,12 +46,6 @@ class Action(BaseModel):
         arbitrary_types_allowed = True
 
 
-class MCTSConfig(BaseModel):
-    """Configuration for the MCTS algorithm"""
-
-    exploration_weight: float = Field(
-        default=sqrt(2), description="Exploration weight for UCT calculation"
-    )
 
 
 class Node:
@@ -143,9 +137,9 @@ class Node:
 class MCTS:
     """Monte Carlo Tree Search implementation for WFC"""
 
-    def __init__(self, env: WFCWrapper, config: MCTSConfig = MCTSConfig()):
+    def __init__(self, env: WFCWrapper, exploration_weight: float = sqrt(2)):
         self.env = env
-        self.config = config
+        self.exploration_weight = exploration_weight
         self.root = Node(env)
         self.best_action_sequence: list[np.ndarray] = []
         self.best_reward = float("-inf")
@@ -200,7 +194,7 @@ class MCTS:
         """Select a node to expand using UCT"""
         node = self.root
         while not node.is_terminal and node.is_fully_expanded:
-            node = node.best_child(self.config.exploration_weight)
+            node = node.best_child(self.exploration_weight)
         if not node.is_terminal and not node.is_fully_expanded:
             return node.expand()
         return node
@@ -235,9 +229,9 @@ def render_action_sequence(env: WFCWrapper, action_sequence: list[np.ndarray], t
     pygame.quit()
 
 
-def run_mcts_until_complete(env: WFCWrapper, config: MCTSConfig, max_iterations: int = 1000) -> tuple[list[np.ndarray] | None, float | None, int | None]:
+def run_mcts_until_complete(env: WFCWrapper, exploration_weight: float, max_iterations: int = 1000) -> tuple[list[np.ndarray] | None, float | None, int | None]:
     """Run MCTS search until a complete solution is found or max iterations are reached."""
-    mcts = MCTS(env, config)
+    mcts = MCTS(env, exploration_weight)
     test_env = copy.deepcopy(env)
     for i in tqdm(range(max_iterations), desc="MCTS Search Iterations"):
         _, action_sequence, found_max = mcts.search()
@@ -268,10 +262,7 @@ def run_mcts_until_complete(env: WFCWrapper, config: MCTSConfig, max_iterations:
 
 def objective(trial, max_iterations_per_trial: int, tasks_list: list[str]) -> float:
     """Optuna objective: minimize iterations to find a solution."""
-    hyperparams = {
-        "exploration_weight": trial.suggest_float("exploration_weight", 0.1, 3.0),
-    }
-    config = MCTSConfig(**hyperparams)
+    exploration_weight = trial.suggest_float("exploration_weight", 0.1, 3.0)
     reward_funcs = []
     is_combo = len(tasks_list) > 1
     for task in tasks_list:
@@ -293,7 +284,7 @@ def objective(trial, max_iterations_per_trial: int, tasks_list: list[str]) -> fl
     iterations_to_converge = []
     NUMBER_OF_SAMPLES = 10
     for _ in range(NUMBER_OF_SAMPLES):
-        _, _, iterations = run_mcts_until_complete(env, config, max_iterations=max_iterations_per_trial)
+        _, _, iterations = run_mcts_until_complete(env, exploration_weight, max_iterations=max_iterations_per_trial)
         iterations_to_converge.append(iterations if iterations is not None else max_iterations_per_trial)
     return np.mean(iterations_to_converge)
 
@@ -345,10 +336,9 @@ def main():
         print(f"Loading hyperparameters from: {args.load_hyperparameters}")
         with open(args.load_hyperparameters, "r") as f:
             hyperparams = yaml.safe_load(f)
-        config = MCTSConfig(**hyperparams)
-        print("Successfully loaded hyperparameters:", hyperparams)
+        exploration_weight = hyperparams["exploration_weight"]
         start_time = time.time()
-        sequence, reward, iterations = run_mcts_until_complete(env, config, max_iterations=args.max_iterations)
+        sequence, reward, iterations = run_mcts_until_complete(env, exploration_weight, max_iterations=args.max_iterations)
         end_time = time.time()
         print(f"MCTS search finished in {end_time - start_time:.2f} seconds.")
         if sequence:
