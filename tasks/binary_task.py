@@ -5,7 +5,6 @@ import numpy as np
 from .utils import (
     calc_longest_path,
     calc_num_regions,
-    grid_to_binary_map,
     percent_target_tiles_excluding_excluded_tiles,
 )
 
