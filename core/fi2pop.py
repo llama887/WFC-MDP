@@ -243,12 +243,6 @@ def objective(
             "cross_or_mutate_proportion", 0.0, 1.0
         ),
     }
-    if mode == EvolutionMode.BASELINE:
-        hyperparams["violation_penalty"] = trial.suggest_float(
-            "violation_penalty", 0.01, 10.0, log=True
-        )
-    else:
-        hyperparams["violation_penalty"] = 0.0  # Not used in FI-2Pop
 
     # Build reward function
     reward_funcs = []
@@ -289,7 +283,6 @@ def objective(
             cross_over_method=CrossOverMethod(hyperparams["cross_over_method"]),
             cross_or_mutate_proportion=hyperparams["cross_or_mutate_proportion"],
             patience=50,
-            violation_penalty=hyperparams["violation_penalty"],
         )
         reward = best_agent.reward if best_agent else float("-inf")
         print(f"Best reward at sample {i + 1}/{NUMBER_OF_SAMPLES}: {reward}")
@@ -311,7 +304,6 @@ def evolve(
     cross_over_method: CrossOverMethod = CrossOverMethod.ONE_POINT,
     cross_or_mutate_proportion: float = 0.7,
     patience: int = 50,
-    violation_penalty: float = 1.0,
 ) -> Tuple[Optional[Genome], int, List[float], List[float]]:
     reward_callable = partial(reward_fn, **task_args)
     best_reward_history: List[float] = []
@@ -396,7 +388,7 @@ def evolve(
             population = pool.map(_parallel_eval, population)
         # Apply penalty for baseline mode
         for member in population:
-            member.reward -= member.violation * violation_penalty
+            member.reward -= member.violation
 
     # --- Find initial best agent and record history ---
     feasible_agents = [m for m in population if m.violation == 0]
@@ -520,7 +512,7 @@ def evolve(
             )
         else:  # Baseline mode
             for member in offspring:
-                member.reward -= member.violation * violation_penalty
+                member.reward -= member.violation
             population = survivors + offspring
             best_in_pop = max(population, key=lambda g: g.reward)
             print(
@@ -668,12 +660,6 @@ def main():
         help="Override the patience setting from YAML.",
     )
     parser.add_argument(
-        "--violation-penalty",
-        type=float,
-        default=1.0,
-        help="Penalty multiplier for each WFC violation in baseline mode.",
-    )
-    parser.add_argument(
         "--task",
         action="append",
         default=[],
@@ -710,10 +696,6 @@ def main():
             hyperparams = yaml.safe_load(f)
         if args.override_patience is not None:
             hyperparams["patience"] = args.override_patience
-        # Allow CLI to override YAML for violation penalty
-        hyperparams["violation_penalty"] = hyperparams.get(
-            "violation_penalty", args.violation_penalty
-        )
         print("Successfully loaded hyperparameters:", hyperparams)
 
         start_time = time.time()
@@ -745,7 +727,6 @@ def main():
                 "cross_or_mutate_proportion", 0.7
             ),
             patience=hyperparams.get("patience", 50),
-            violation_penalty=hyperparams["violation_penalty"],
         )
         end_time = time.time()
         print(f"Evolution finished in {end_time - start_time:.2f} seconds.")
