@@ -499,14 +499,8 @@ def plot_mcts_biome_convergence_from_csv(csv_file_path: str, output_png_path: st
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Collect and plot WFC convergence data")
-<<<<<<< HEAD
-    parser.add_argument("--method", type=str, choices=["evolution", "mcts", "fi2pop"], default="evolution", help="Method to use for convergence testing")
-    parser.add_argument("--load-hyperparameters", type=str, required=True, help="YAML file with evolution hyperparameters")
-=======
-    # Add new argument
     parser.add_argument("--method", type=str, choices=["evolution", "mcts"], default="evolution", help="Method to use for convergence testing")
     parser.add_argument("--load-hyperparameters", type=str, help="YAML file with evolution hyperparameters")
->>>>>>> 22c627e (sbatch file change)
     parser.add_argument("--task", type=str, choices=["binary_easy", "binary_hard", "river", "pond", "grass", "biomes"], required=True)
     parser.add_argument("--combo", type=str, choices=["easy", "hard"], default="easy")
     parser.add_argument("--quality-diversity", action="store_true", help="Use the QD variant")
@@ -514,21 +508,6 @@ if __name__ == "__main__":
     parser.add_argument("--debug", action="store_true", help="Save per-run debug plots")
     args = parser.parse_args()
 
-<<<<<<< HEAD
-    # Set up directories based on method
-    global FIGURES_DIRECTORY, DEBUG_DIRECTORY
-    FIGURES_DIRECTORY = get_figure_directory(args.method)
-    DEBUG_DIRECTORY = os.path.join(FIGURES_DIRECTORY, "debug")
-    os.makedirs(FIGURES_DIRECTORY, exist_ok=True)
-    os.makedirs(DEBUG_DIRECTORY, exist_ok=True)
-
-    if not os.path.exists(args.load_hyperparameters):
-        print(f"Hyperparameters file not found: {args.load_hyperparameters}")
-        exit(1)
-
-    with open(args.load_hyperparameters, "r") as f:
-        hyperparams = yaml.safe_load(f)
-=======
     if args.load_hyperparameters:
         if not os.path.exists(args.load_hyperparameters):
             print(f"Hyperparameters file not found: {args.load_hyperparameters}")
@@ -536,7 +515,6 @@ if __name__ == "__main__":
         else:
             with open(args.load_hyperparameters, "r") as f:
                 hyperparams = yaml.safe_load(f)
->>>>>>> 22c627e (sbatch file change)
 
     # --- FI-2Pop integration ---
     def convert_to_fi2pop_hyperparams(evolution_params: dict, map_length: int, map_width: int) -> dict:
