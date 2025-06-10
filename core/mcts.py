@@ -251,8 +251,6 @@ def run_mcts_until_complete(env: WFCWrapper, config: MCTSConfig, max_iterations:
                     break
             if not info.get("achieved_max_reward", False):
                 print(f"WARNING: Expected max reward but not achieved. Final state: terminated={terminated}, achieved_max={info.get('achieved_max_reward', False)}")
-                import ipdb
-                ipdb.set_trace()
             
             # Debugging:
             print(f"Testing best action sequence (found_max={found_max})")
@@ -271,6 +269,10 @@ def objective(trial, max_iterations_per_trial: int, tasks_list: list[str]) -> fl
     """Optuna objective: minimize iterations to find a solution."""
     hyperparams = {
         "exploration_weight": trial.suggest_float("exploration_weight", 0.1, 3.0),
+        # I only want mcts to do 48 rollouts in parallel at one time. I do not want this to go up to 100. This is due to hardware limiations.
+        # Hard code number_of_simulations (use the full word) to 48 and do not make it a hyperparameter since it will nto change.
+        # Make sure the rest of the code works properly once this is no longer a hyperparameter.
+        # I suspect you dont need the MCTSConfig class anymore since it only has one hyperparameter. AI!
         "num_simulations": trial.suggest_int("num_simulations", 50, 500),
     }
     config = MCTSConfig(**hyperparams)
