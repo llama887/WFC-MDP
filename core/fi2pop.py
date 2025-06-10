@@ -8,6 +8,7 @@ import random
 import sys
 import time
 import pickle
+from enum import Enum
 
 # Add the project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -25,6 +26,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pygame
 import yaml
+
+
+class CrossOverMethod(Enum):
+    UNIFORM = 0
+    ONE_POINT = 1
+
 
 
 # ----------------------------------------------------------------------------
@@ -129,13 +136,30 @@ class Genome:
         )
 
     @staticmethod
-    def crossover(p1: Genome, p2: Genome) -> Tuple[Genome, Genome]:
-        cut = random.randint(1, len(p1.action_sequence) - 1)
+    def crossover(
+        p1: "Genome", p2: "Genome", method: CrossOverMethod = CrossOverMethod.ONE_POINT
+    ) -> tuple["Genome", "Genome"]:
+        if isinstance(method, int):
+            method = CrossOverMethod(method)
+        seq1 = p1.action_sequence
+        seq2 = p2.action_sequence
+        length = len(seq1)
+        match method:
+            case CrossOverMethod.ONE_POINT:
+                point = random.randint(1, length - 1)
+                child_seq1 = np.concatenate([seq1[:point], seq2[point:]])
+                child_seq2 = np.concatenate([seq2[:point], seq1[point:]])
+            case CrossOverMethod.UNIFORM:
+                mask = np.random.rand(length, 1) < 0.5
+                child_seq1 = np.where(mask, seq1, seq2)
+                child_seq2 = np.where(mask, seq2, seq1)
+            case _:
+                raise ValueError(f"Unknown crossover method: {method!r}")
+
         c1, c2 = copy.deepcopy(p1), copy.deepcopy(p2)
-        c1.action_sequence[cut:], c2.action_sequence[cut:] = (
-            p2.action_sequence[cut:].copy(),
-            p1.action_sequence[cut:].copy(),
-        )
+        c1.action_sequence, c2.action_sequence = child_seq1.copy(), child_seq2.copy()
+        c1.reward, c2.reward = float("-inf"), float("-inf")
+        c1.violation, c2.violation = sys.maxsize, sys.maxsize
         return c1, c2
 
 
@@ -166,6 +190,33 @@ def evaluate(env: WFCWrapper, actions: np.ndarray) -> Tuple[float, int, Dict[str
     return total_reward, int(violation), info
 
 
+def _mutate_clone(args):
+    member, mean, stddev, noise = args
+    member.mutate(mean, stddev, noise)
+    return member
+
+
+def reproduce_pair(
+    args: tuple[
+        "Genome",  # parent1
+        "Genome",  # parent2
+        int,  # mean
+        float,  # stddev
+        float,  # action_noise
+        CrossOverMethod,  # method
+    ],
+) -> tuple["Genome", "Genome"]:
+    """
+    Given (p1, p2, mean, stddev, noise), perform crossover + mutate
+    and return two children.
+    """
+    p1, p2, mean, stddev, noise, method = args
+    c1, c2 = Genome.crossover(p1, p2, method=method)
+    c1.mutate(mean, stddev, noise)
+    c2.mutate(mean, stddev, noise)
+    return c1, c2
+
+
 def _parallel_eval(gen: Genome) -> Genome:
     e = copy.deepcopy(gen.env)
     gen.reward, gen.violation, gen.info = evaluate(e, gen.action_sequence)
@@ -175,20 +226,6 @@ def _parallel_eval(gen: Genome) -> Genome:
 # ----------------------------------------------------------------------------
 # Selection
 # ----------------------------------------------------------------------------
-def tournament_select(
-    pop: List[Genome], fitness: List[float], k: int, n: int
-) -> List[Genome]:
-    winners: List[Genome] = []
-    for _ in range(n):
-        best = random.randrange(len(pop))
-        for __ in range(1, k):
-            cand = random.randrange(len(pop))
-            if fitness[cand] > fitness[best]:
-                best = cand
-        winners.append(copy.deepcopy(pop[best]))
-    return winners
-
-
 
 
 # ----------------------------------------------------------------------------
@@ -205,7 +242,6 @@ def objective(
 
     # Suggest new hyperparameters
     hyperparams = {
-        "tournament_k": trial.suggest_int("tournament_k", 2, 5),
         "number_of_actions_mutated_mean": trial.suggest_int(
             "number_of_actions_mutated_mean", 1, 200
         ),
@@ -214,6 +250,11 @@ def objective(
         ),
         "action_noise_standard_deviation": trial.suggest_float(
             "action_noise_standard_deviation", 0.01, 1.0, log=True
+        ),
+        "survival_rate": trial.suggest_float("survival_rate", 0.1, 0.8),
+        "cross_over_method": trial.suggest_categorical("cross_over_method", [0, 1]),
+        "cross_or_mutate_proportion": trial.suggest_float(
+            "cross_or_mutate_proportion", 0.0, 1.0
         ),
     }
 
@@ -230,7 +271,9 @@ def objective(
         else:
             reward_funcs.append(globals()[f"{task}_reward"])
 
-    reward_fn = CombinedReward(reward_funcs) if len(reward_funcs) > 1 else reward_funcs[0]
+    reward_fn = (
+        CombinedReward(reward_funcs) if len(reward_funcs) > 1 else reward_funcs[0]
+    )
 
     total_reward = 0
     NUMBER_OF_SAMPLES = 10  # As in evolution.py objective
@@ -240,14 +283,18 @@ def objective(
             task_args={},
             generations=generations_per_trial,
             population_size=48,
-            number_of_actions_mutated_mean=hyperparams["number_of_actions_mutated_mean"],
+            number_of_actions_mutated_mean=hyperparams[
+                "number_of_actions_mutated_mean"
+            ],
             number_of_actions_mutated_standard_deviation=hyperparams[
                 "number_of_actions_mutated_standard_deviation"
             ],
             action_noise_standard_deviation=hyperparams[
                 "action_noise_standard_deviation"
             ],
-            tournament_k=hyperparams["tournament_k"],
+            survival_rate=hyperparams["survival_rate"],
+            cross_over_method=CrossOverMethod(hyperparams["cross_over_method"]),
+            cross_or_mutate_proportion=hyperparams["cross_or_mutate_proportion"],
             patience=50,
         )
         reward = best_agent.reward if best_agent else float("-inf")
@@ -267,7 +314,9 @@ def evolve_fi2pop(
     number_of_actions_mutated_mean: int = 10,
     number_of_actions_mutated_standard_deviation: float = 10.0,
     action_noise_standard_deviation: float = 0.1,
-    tournament_k: int = 3,
+    survival_rate: float = 0.2,
+    cross_over_method: CrossOverMethod = CrossOverMethod.ONE_POINT,
+    cross_or_mutate_proportion: float = 0.7,
     patience: int = 30,
 ) -> Tuple[Optional[Genome], int, List[float], List[float]]:
     reward_callable = partial(reward_fn, **task_args)
@@ -277,6 +326,7 @@ def evolve_fi2pop(
     best_mean_elite: float | None = None
     patience_counter = 0
 
+    # Initial population
     combined = [Genome(make_env(reward_callable)) for _ in range(population_size * 2)]
     with Pool(min(cpu_count(), len(combined))) as P:
         combined = P.map(_parallel_eval, combined)
@@ -284,23 +334,30 @@ def evolve_fi2pop(
     feasible = [g for g in combined if g.violation == 0]
     infeasible = [g for g in combined if g.violation > 0]
 
+    # Truncate initial populations
+    feasible = sorted(feasible, key=lambda g: g.reward, reverse=True)[:population_size]
+    infeasible = sorted(infeasible, key=lambda g: g.violation)[:population_size]
+
     if feasible:
         best_feasible_agent = copy.deepcopy(max(feasible, key=lambda g: g.reward))
 
-    # record gen 0
-    rewards = [g.reward for g in combined]
-    best_hist.append(max(rewards) if rewards else float("-inf"))
-    median_hist.append(float(np.median(rewards)) if rewards else float("-inf"))
+    # Record gen 0
+    all_rewards = [g.reward for g in feasible] + [g.reward for g in infeasible]
+    best_hist.append(max(all_rewards) if all_rewards else float("-inf"))
+    median_hist.append(float(np.median(all_rewards)) if all_rewards else float("-inf"))
 
     final_gen = generations
     for gen in range(1, generations + 1):
+        # --- 1. Evaluation of newly feasible individuals ---
+        # (This step is implicitly handled by the reproduction logic now)
         with Pool(min(cpu_count(), len(infeasible))) as P:
             infeasible = P.map(_parallel_eval, infeasible)
 
-        newly = [g for g in infeasible if g.violation == 0]
-        feasible.extend(newly)
+        newly_feasible = [g for g in infeasible if g.violation == 0]
+        feasible.extend(newly_feasible)
         infeasible = [g for g in infeasible if g.violation > 0]
 
+        # --- 2. Track global best ---
         if feasible:
             current_best_in_gen = max(feasible, key=lambda g: g.reward)
             if (
@@ -309,14 +366,27 @@ def evolve_fi2pop(
             ):
                 best_feasible_agent = copy.deepcopy(current_best_in_gen)
 
-        combined = feasible + infeasible
-        rewards = [g.reward for g in combined]
-        best_hist.append(max(rewards) if rewards else float("-inf"))
-        median_hist.append(float(np.median(rewards)) if rewards else float("-inf"))
+        # --- 3. Record history ---
+        all_rewards = [g.reward for g in feasible] + [g.reward for g in infeasible]
+        best_hist.append(max(all_rewards) if all_rewards else float("-inf"))
+        median_hist.append(
+            float(np.median(all_rewards)) if all_rewards else float("-inf")
+        )
 
-        # --- Early stopping on mean-elite reward ---
-        if feasible:
-            elite_rewards = [g.reward for g in feasible]
+        # --- 4. Elitist Selection ---
+        num_feasible_survivors = max(2, int(len(feasible) * survival_rate))
+        feasible_survivors = sorted(feasible, key=lambda g: g.reward, reverse=True)[
+            :num_feasible_survivors
+        ]
+
+        num_infeasible_survivors = max(2, int(len(infeasible) * survival_rate))
+        infeasible_survivors = sorted(infeasible, key=lambda g: g.violation)[
+            :num_infeasible_survivors
+        ]
+
+        # --- 5. Early stopping on mean-elite reward of feasible population ---
+        if feasible_survivors:
+            elite_rewards = [g.reward for g in feasible_survivors]
             mean_elite_val = float(np.mean(elite_rewards))
         else:
             mean_elite_val = float("-inf")
@@ -340,46 +410,90 @@ def evolve_fi2pop(
             final_gen = gen
             break
 
-        # breeding
-        def breed(pool: List[Genome], key: str) -> List[Genome]:
-            if not pool:
-                return []
-            fit = [getattr(g, key) for g in pool]
-            parents = tournament_select(pool, fit, tournament_k, population_size)
-            kids: List[Genome] = []
-            for i in range(0, len(parents), 2):
-                p1 = parents[i]
-                p2 = parents[(i + 1) % len(parents)]
-                c1, c2 = Genome.crossover(p1, p2)
-                c1.mutate(
-                    number_of_actions_mutated_mean,
-                    number_of_actions_mutated_standard_deviation,
-                    action_noise_standard_deviation,
-                )
-                c2.mutate(
-                    number_of_actions_mutated_mean,
-                    number_of_actions_mutated_standard_deviation,
-                    action_noise_standard_deviation,
-                )
-                kids.extend([c1, c2])
-            return kids
+        # --- 6. Reproduction ---
+        offspring = []
 
-        feasible_offspring = breed(feasible, "reward")
-        infeasible_offspring = breed(infeasible, "violation")
-        offspring = feasible_offspring + infeasible_offspring
+        def generate_offspring_from_pool(
+            survivors: List[Genome], num_needed: int
+        ) -> List[Genome]:
+            if not survivors or num_needed <= 0:
+                return []
+
+            new_children = []
+            n_crossover = int(round(num_needed * cross_or_mutate_proportion))
+            n_mutation = num_needed - n_crossover
+
+            # Crossover pairs
+            n_pairs = (n_crossover + 1) // 2
+            pairs_args = []
+            for _ in range(n_pairs):
+                p1, p2 = (
+                    random.sample(survivors, 2)
+                    if len(survivors) >= 2
+                    else (survivors[0], survivors[0])
+                )
+                pairs_args.append(
+                    (
+                        p1,
+                        p2,
+                        number_of_actions_mutated_mean,
+                        number_of_actions_mutated_standard_deviation,
+                        action_noise_standard_deviation,
+                        cross_over_method,
+                    )
+                )
+            if pairs_args:
+                with Pool(min(cpu_count(), len(pairs_args))) as pool:
+                    results = pool.map(reproduce_pair, pairs_args)
+                crossover_children = [
+                    child for pair in results for child in pair
+                ][:n_crossover]
+                new_children.extend(crossover_children)
+
+            # Mutation-only children
+            mutation_args = [
+                (
+                    copy.deepcopy(random.choice(survivors)),
+                    number_of_actions_mutated_mean,
+                    number_of_actions_mutated_standard_deviation,
+                    action_noise_standard_deviation,
+                )
+                for _ in range(n_mutation)
+            ]
+            if mutation_args:
+                with Pool(min(cpu_count(), len(mutation_args))) as pool:
+                    mutated = pool.map(_mutate_clone, mutation_args)
+                new_children.extend(mutated)
+
+            return new_children
+
+        # Generate offspring for both populations
+        n_feasible_offspring = population_size - len(feasible_survivors)
+        offspring.extend(
+            generate_offspring_from_pool(feasible_survivors, n_feasible_offspring)
+        )
+
+        n_infeasible_offspring = population_size - len(infeasible_survivors)
+        offspring.extend(
+            generate_offspring_from_pool(infeasible_survivors, n_infeasible_offspring)
+        )
 
         if not offspring:
             print(f"Gen {gen:04d} | No offspring to evaluate. Stopping.")
             final_gen = gen
             break
 
+        # --- 7. Evaluate and form next generation ---
         with Pool(min(cpu_count(), len(offspring))) as P:
             offspring = P.map(_parallel_eval, offspring)
 
-        for g in offspring:
-            (feasible if g.violation == 0 else infeasible).append(g)
+        feasible = feasible_survivors + [g for g in offspring if g.violation == 0]
+        infeasible = infeasible_survivors + [g for g in offspring if g.violation > 0]
 
-        feasible = sorted(feasible, key=lambda g: g.reward, reverse=True)[:population_size]
+        # Final truncation to maintain population size
+        feasible = sorted(feasible, key=lambda g: g.reward, reverse=True)[
+            :population_size
+        ]
         infeasible = sorted(infeasible, key=lambda g: g.violation)[:population_size]
 
         best_reward_str = f"{feasible[0].reward:.3f}" if feasible else "N/A"
@@ -577,7 +691,13 @@ def main():
             action_noise_standard_deviation=hyperparams[
                 "action_noise_standard_deviation"
             ],
-            tournament_k=hyperparams.get("tournament_k", 3),
+            survival_rate=hyperparams.get("survival_rate", 0.2),
+            cross_over_method=CrossOverMethod(
+                hyperparams.get("cross_over_method", 1)
+            ),
+            cross_or_mutate_proportion=hyperparams.get(
+                "cross_or_mutate_proportion", 0.7
+            ),
             patience=hyperparams.get("patience", 50),
         )
         end_time = time.time()
