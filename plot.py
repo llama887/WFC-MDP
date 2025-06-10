@@ -8,6 +8,10 @@ import matplotlib
 import numpy as np
 import pandas as pd
 
+# Directory constants
+FIGURES_DIRECTORY = "figures_mcts"
+DEBUG_DIRECTORY = "debug_plots"
+
 matplotlib.use("Agg")
 from functools import partial
 
