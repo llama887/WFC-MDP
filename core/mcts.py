@@ -51,7 +51,7 @@ class MCTSConfig(BaseModel):
     exploration_weight: float = Field(
         default=1.0, description="Exploration weight for UCT calculation"
     )
-    num_simulations: int = Field(default=48, description="Number of simulations to run per search step")
+    # num_simulations is always 48, hardcoded everywhere else.
 
 
 class Node:
@@ -158,9 +158,10 @@ class MCTS:
 
     def search(self) -> tuple[Action, list[np.ndarray], bool]:
         """Run the MCTS algorithm and return the best action and sequence"""
-        num_processes = min(multiprocessing.cpu_count(), self.config.num_simulations)
+        num_simulations = 48  # Hardcoded as per hardware limitations
+        num_processes = min(multiprocessing.cpu_count(), num_simulations)
         with Pool(processes=num_processes) as pool:
-            nodes = [self.select_node() for _ in range(self.config.num_simulations)]
+            nodes = [self.select_node() for _ in range(num_simulations)]
             simulation_results = pool.map(self._run_simulation, nodes)
 
         for reward, rollout_sequence, achieved_max_reward, node in simulation_results:
@@ -269,11 +270,6 @@ def objective(trial, max_iterations_per_trial: int, tasks_list: list[str]) -> fl
     """Optuna objective: minimize iterations to find a solution."""
     hyperparams = {
         "exploration_weight": trial.suggest_float("exploration_weight", 0.1, 3.0),
-        # I only want mcts to do 48 rollouts in parallel at one time. I do not want this to go up to 100. This is due to hardware limiations.
-        # Hard code number_of_simulations (use the full word) to 48 and do not make it a hyperparameter since it will nto change.
-        # Make sure the rest of the code works properly once this is no longer a hyperparameter.
-        # I suspect you dont need the MCTSConfig class anymore since it only has one hyperparameter. AI!
-        "num_simulations": trial.suggest_int("num_simulations", 50, 500),
     }
     config = MCTSConfig(**hyperparams)
     reward_funcs = []
