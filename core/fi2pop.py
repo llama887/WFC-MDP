@@ -535,7 +535,7 @@ def evolve(
 # Render best agent (adapted from evolution.py)
 # ----------------------------------------------------------------------------
 def render_best_agent(
-    env: WFCWrapper, best_agent: PopulationMember, tile_images, task_name: str = ""
+    env: WFCWrapper, best_agent: Genome, tile_images, task_name: str = ""
 ):
     """Renders the action sequence of the best agent and saves the final map."""
     if not best_agent:
