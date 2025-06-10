@@ -47,14 +47,6 @@ from assets.biome_adjacency_rules import create_adjacency_matrix
 from wfc import load_tile_images
 from wfc_env import CombinedReward, WFCWrapper
 
-# ----------------------------------------------------------------------------
-# Prepare figures directory
-# ----------------------------------------------------------------------------
-# Removed hardcoded figure directory - now handled by plot.py
-
-# ----------------------------------------------------------------------------
-# WFC environment factory
-# ----------------------------------------------------------------------------
 ADJ_BOOL, TILE_SYMBOLS, TILE2IDX = create_adjacency_matrix()
 NUM_TILES = len(TILE_SYMBOLS)
 TILE_IMAGES = load_tile_images()
@@ -80,10 +72,7 @@ def make_env(reward_callable: Any) -> WFCWrapper:
     )
 
 
-# ----------------------------------------------------------------------------
-# Genome definition
-# ----------------------------------------------------------------------------
-class Genome:
+class PopulationMember:
     def __init__(self, env: WFCWrapper):
         self.env = env
         self.action_sequence = np.array(
@@ -137,8 +126,8 @@ class Genome:
 
     @staticmethod
     def crossover(
-        p1: "Genome", p2: "Genome", method: CrossOverMethod = CrossOverMethod.ONE_POINT
-    ) -> tuple["Genome", "Genome"]:
+        p1: "PopulationMember", p2: "PopulationMember", method: CrossOverMethod = CrossOverMethod.ONE_POINT
+    ) -> tuple["PopulationMember", "PopulationMember"]:
         if isinstance(method, int):
             method = CrossOverMethod(method)
         seq1 = p1.action_sequence
@@ -198,39 +187,31 @@ def _mutate_clone(args):
 
 def reproduce_pair(
     args: tuple[
-        "Genome",  # parent1
-        "Genome",  # parent2
+        "PopulationMember",  # parent1
+        "PopulationMember",  # parent2
         int,  # mean
         float,  # stddev
         float,  # action_noise
         CrossOverMethod,  # method
     ],
-) -> tuple["Genome", "Genome"]:
+) -> tuple["PopulationMember", "PopulationMember"]:
     """
     Given (p1, p2, mean, stddev, noise), perform crossover + mutate
     and return two children.
     """
     p1, p2, mean, stddev, noise, method = args
-    c1, c2 = Genome.crossover(p1, p2, method=method)
+    c1, c2 = PopulationMember.crossover(p1, p2, method=method)
     c1.mutate(mean, stddev, noise)
     c2.mutate(mean, stddev, noise)
     return c1, c2
 
 
-def _parallel_eval(gen: Genome) -> Genome:
+def _parallel_eval(gen: PopulationMember) -> PopulationMember:
     e = copy.deepcopy(gen.env)
     gen.reward, gen.violation, gen.info = evaluate(e, gen.action_sequence)
     return gen
 
 
-# ----------------------------------------------------------------------------
-# Selection
-# ----------------------------------------------------------------------------
-
-
-# ----------------------------------------------------------------------------
-# Optuna objective
-# ----------------------------------------------------------------------------
 def objective(
     trial,
     generations_per_trial: int,
@@ -303,9 +284,7 @@ def objective(
 
     return total_reward
 
-# ----------------------------------------------------------------------------
-# FI-2Pop GA: returns best & median histories
-# ----------------------------------------------------------------------------
+
 def evolve_fi2pop(
     reward_fn: Any,
     task_args: Dict[str, Any],
@@ -317,17 +296,17 @@ def evolve_fi2pop(
     survival_rate: float = 0.2,
     cross_over_method: CrossOverMethod = CrossOverMethod.ONE_POINT,
     cross_or_mutate_proportion: float = 0.7,
-    patience: int = 30,
-) -> Tuple[Optional[Genome], int, List[float], List[float]]:
+    patience: int = 50,
+) -> Tuple[Optional[PopulationMember], int, List[float], List[float]]:
     reward_callable = partial(reward_fn, **task_args)
     best_hist: List[float] = []
     median_hist: List[float] = []
-    best_feasible_agent: Optional[Genome] = None
+    best_feasible_agent: Optional[PopulationMember] = None
     best_mean_elite: float | None = None
     patience_counter = 0
 
     # Initial population
-    combined = [Genome(make_env(reward_callable)) for _ in range(population_size * 2)]
+    combined = [PopulationMember(make_env(reward_callable)) for _ in range(population_size * 2)]
     with Pool(min(cpu_count(), len(combined))) as P:
         combined = P.map(_parallel_eval, combined)
 
@@ -414,8 +393,8 @@ def evolve_fi2pop(
         offspring = []
 
         def generate_offspring_from_pool(
-            survivors: List[Genome], num_needed: int
-        ) -> List[Genome]:
+            survivors: List[PopulationMember], num_needed: int
+        ) -> List[PopulationMember]:
             if not survivors or num_needed <= 0:
                 return []
 
@@ -509,7 +488,7 @@ def evolve_fi2pop(
 # Render best agent (adapted from evolution.py)
 # ----------------------------------------------------------------------------
 def render_best_agent(
-    env: WFCWrapper, best_agent: Genome, tile_images, task_name: str = ""
+    env: WFCWrapper, best_agent: PopulationMember, tile_images, task_name: str = ""
 ):
     """Renders the action sequence of the best agent and saves the final map."""
     if not best_agent:
