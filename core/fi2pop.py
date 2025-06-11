@@ -362,29 +362,26 @@ def evolve(
 
         return new_children
 
-    # --- Initial Population ---
+    # --- Initial Population (Common for both modes) ---
+    initial_pool = [
+        Genome(make_env(reward_callable)) 
+        for _ in range(population_size)
+    ]
+    with Pool(min(cpu_count(), len(initial_pool))) as pool:
+        initial_pool = pool.map(_parallel_eval, initial_pool)
+
+    # --- Mode-Specific Processing ---
     if mode == EvolutionMode.FI2POP:
-        initial_pool = [
-            Genome(make_env(reward_callable)) for _ in range(population_size)
-        ]
-        with Pool(min(cpu_count(), len(initial_pool))) as pool:
-            initial_pool = pool.map(_parallel_eval, initial_pool)
         feasible = [g for g in initial_pool if g.violation == 0]
         infeasible = [g for g in initial_pool if g.violation > 0]
-        feasible = sorted(feasible, key=lambda g: g.reward, reverse=True)[
-            :population_size
-        ]
+        # Keep capping but it's now redundant since sizes are <= population_size
+        feasible = sorted(feasible, key=lambda g: g.reward, reverse=True)[:population_size]
         infeasible = sorted(infeasible, key=lambda g: g.violation)[:population_size]
         population = feasible + infeasible
     else:  # Baseline mode
-        population = [
-            Genome(make_env(reward_callable)) for _ in range(population_size)
-        ]
-        with Pool(min(cpu_count(), len(population))) as pool:
-            population = pool.map(_parallel_eval, population)
-        # Apply penalty for baseline mode
-        for member in population:
+        for member in initial_pool:
             member.reward -= member.violation
+        population = initial_pool
 
     # --- Find initial best agent and record history ---
     feasible_agents = [m for m in population if m.violation == 0]
