@@ -465,7 +465,7 @@ def plot_convergence_from_csv(csv_path: str, output_path: str = None, title: str
     print(f"Saved plot to {output_path}")
 
 
-def plot_average_biome_convergence_from_csv(csv_file_path: str, output_png_path: str = None):
+def plot_average_biome_convergence_from_csv(csv_file_path: str, output_png_path: str = None, y_label: str = "Mean Generations to Converge"):
     df = pd.read_csv(csv_file_path)
     
     # Clean invalid runs (non-converged = NaN)
@@ -488,8 +488,8 @@ def plot_average_biome_convergence_from_csv(csv_file_path: str, output_png_path:
     x = np.arange(len(stats["biome"]))
 
     # Bar 1: Mean generations with error bars
-    ax1.bar(x - bar_width/2, stats["mean"], yerr=stats["stderr"], capsize=4, width=bar_width, label="Mean Generations", color='tab:blue', alpha=0.7)
-    ax1.set_ylabel("Mean Generations to Converge", color='tab:blue')
+    ax1.bar(x - bar_width/2, stats["mean"], yerr=stats["stderr"], capsize=4, width=bar_width, label=y_label.replace(" to Converge", ""), color='tab:blue', alpha=0.7)
+    ax1.set_ylabel(y_label, color='tab:blue')
     ax1.tick_params(axis='y', labelcolor='tab:blue')
 
     # Bar 2: Fraction converged
