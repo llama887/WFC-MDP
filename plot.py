@@ -462,26 +462,51 @@ def plot_convergence_from_csv(csv_path: str, output_path: str = None, title: str
 
 def plot_average_biome_convergence_from_csv(csv_file_path: str, output_png_path: str = None):
     df = pd.read_csv(csv_file_path)
-    stats = df.groupby("biome")["generations_to_converge"].agg(["mean", "std", "count"]).reset_index()
+    
+    # Clean invalid runs (non-converged = NaN)
+    df_valid = df.dropna(subset=["generations_to_converge"])
+    
+    # Aggregate statistics
+    stats = df_valid.groupby("biome")["generations_to_converge"].agg(["mean", "std", "count"]).reset_index()
     stats["stderr"] = stats["std"] / np.sqrt(stats["count"])
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.bar(stats["biome"], stats["mean"], yerr=stats["stderr"], capsize=4, alpha=0.7)
-    ax.set_xlabel("Biome")
-    ax.set_ylabel("Mean Generations to Converge")
-    ax.set_title("Average Convergence per Biome")
+    
+    # Compute total runs for normalization (for fraction converged)
+    total_runs_per_biome = df.groupby("biome")["run_index"].count().reset_index(name="total_runs")
+    stats = stats.merge(total_runs_per_biome, on="biome")
+    stats["fraction_converged"] = stats["count"] / stats["total_runs"]
+
+    # Setup dual bar chart
+    fig, ax1 = plt.subplots(figsize=(8, 5))
+    ax2 = ax1.twinx()
+
+    bar_width = 0.35
+    x = np.arange(len(stats["biome"]))
+
+    # Bar 1: Mean generations with error bars
+    ax1.bar(x - bar_width/2, stats["mean"], yerr=stats["stderr"], capsize=4, width=bar_width, label="Mean Generations", color='tab:blue', alpha=0.7)
+    ax1.set_ylabel("Mean Generations to Converge", color='tab:blue')
+    ax1.tick_params(axis='y', labelcolor='tab:blue')
+
+    # Bar 2: Fraction converged
+    ax2.bar(x + bar_width/2, stats["fraction_converged"], width=bar_width, label="Fraction Converged", color='tab:orange', alpha=0.5)
+    ax2.set_ylabel("Fraction Converged", color='tab:orange')
+    ax2.tick_params(axis='y', labelcolor='tab:orange')
+
+    # X-axis labels
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(stats["biome"])
+    ax1.set_xlabel("Biome")
+
+    # Title & Layout
+    plt.title("Average Convergence per Biome")
     fig.tight_layout()
+
+    # Save
     if output_png_path is None:
         output_png_path = csv_file_path.replace(".csv", ".png")
     fig.savefig(output_png_path)
     plt.close(fig)
     print(f"Saved biome convergence plot to {output_png_path}")
-
-
-# --- REMOVED: collect_mcts_binary_convergence, collect_mcts_combo_convergence, collect_mcts_biome_convergence ---
-
-# --- REMOVED: plot_mcts_convergence_from_csv, plot_mcts_biome_convergence_from_csv ---
-
-# ----------- Constrained EA (FI-2Pop/Baseline) helpers -----------
 
 def collect_constrained_binary_convergence(
     mode: EvolutionMode,
