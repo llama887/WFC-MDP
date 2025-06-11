@@ -689,7 +689,7 @@ if __name__ == "__main__":
         "--method",
         type=str,
         choices=["evolution", "mcts", "fi2pop", "baseline"],
-        required=True,
+        default="evolution",
         help="Method to use for convergence testing",
     )
     parser.add_argument(
