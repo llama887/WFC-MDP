@@ -52,7 +52,10 @@ def _generic_evolution_collector(
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     map_length, map_width = 15, 20
 
-    fig_dir = get_figure_directory(method)
+    # Only create dimension subdir for evolution method
+    base_fig_dir = get_figure_directory(method)
+    fig_dir = os.path.join(base_fig_dir, f"{genotype_dimensions}d") if method == "evolution" else base_fig_dir
+    
     os.makedirs(fig_dir, exist_ok=True)
     os.makedirs(DEBUG_DIRECTORY, exist_ok=True)
     csv_filename = f"{output_csv_prefix}convergence.csv"
@@ -425,8 +428,11 @@ def _generic_convergence_collector(
                 plt.close()
 
     csv_filename = f"{output_csv_prefix}convergence.csv"
-    fig_dir = get_figure_directory(evolution_hyperparameters.get("method", "evolution"))
+    method = evolution_hyperparameters.get("method", "evolution")
+    base_fig_dir = get_figure_directory(method)
+    fig_dir = os.path.join(base_fig_dir, f"{genotype_dimensions}d") if method == "evolution" else base_fig_dir
     os.makedirs(fig_dir, exist_ok=True)
+    
     csv_path = os.path.join(fig_dir, csv_filename)
     file_exists = os.path.isfile(csv_path)
     new_df = pd.DataFrame(data_rows)
@@ -445,14 +451,14 @@ def _generic_convergence_collector(
 
 def collect_binary_convergence(sample_size, evolution_hyperparameters, use_quality_diversity=False, use_hard_variant=False, genotype_dimensions=1, debug=False):
     path_lengths = list(np.arange(10, 101, 10))
-    prefix = f"{'qd_' if use_quality_diversity else ''}{'hard_' if use_hard_variant else ''}{genotype_dimensions}d_binary_"
+    prefix = f"{'qd_' if use_quality_diversity else ''}{'hard_' if use_hard_variant else ''}binary_"
     def make_reward(path_len): return partial(binary_reward, target_path_length=path_len, hard=use_hard_variant)
     return _generic_convergence_collector(path_lengths, make_reward, evolution_hyperparameters, prefix, use_quality_diversity, genotype_dimensions, is_biome_only=False, sample_size=sample_size, debug=debug)
 
 
 def collect_combo_convergence(sample_size, evolution_hyperparameters, use_quality_diversity, second_task, use_hard_variant=False, genotype_dimensions=1, debug=False):
     path_lengths = list(np.arange(10, 101, 10))
-    prefix = f"{'qd_' if use_quality_diversity else ''}{'hard_' if use_hard_variant else ''}{genotype_dimensions}d_{second_task}_combo_"
+    prefix = f"{'qd_' if use_quality_diversity else ''}{'hard_' if use_hard_variant else ''}{second_task}_combo_"
     biome_reward_map = {"river": river_reward, "pond": pond_reward, "grass": grass_reward}
     second_reward = biome_reward_map[second_task]
     def make_reward(path_len): return CombinedReward([partial(binary_reward, target_path_length=path_len, hard=use_hard_variant), second_reward])
@@ -461,7 +467,7 @@ def collect_combo_convergence(sample_size, evolution_hyperparameters, use_qualit
 
 def collect_average_biome_convergence_data(evolution_hyperparameters, use_quality_diversity=False, runs=20, genotype_dimensions=1, debug=False):
     biomes = ["Pond", "River", "Grass"]
-    prefix = f"{'qd_' if use_quality_diversity else ''}{genotype_dimensions}d_biome_average_"
+    prefix = f"{'qd_' if use_quality_diversity else ''}biome_average_"
     def make_reward(biome): return {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[biome]
     return _generic_convergence_collector(biomes, make_reward, evolution_hyperparameters, prefix, use_quality_diversity, genotype_dimensions, is_biome_only=True, sample_size=runs, debug=debug)
 
