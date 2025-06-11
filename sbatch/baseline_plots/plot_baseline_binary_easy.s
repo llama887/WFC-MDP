@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=plot_river_hard
-#SBATCH --output=plot_river_hard_%j.out
-#SBATCH --error=plot_river_hard_%j.err
+#SBATCH --job-name=plot_binary_easy_baseline
+#SBATCH --output=plot_binary_easy_baseline_%j.out
+#SBATCH --error=plot_binary_easy_baseline_%j.err
 #SBATCH --mail-type=START,END,FAIL
 #SBATCH --mail-user=fyy2003@nyu.edu
 #SBATCH --time=48:00:00 
@@ -26,7 +26,7 @@ module purge
 cd /scratch/fyy2003/optimizing_WFC
 source venv/bin/activate
 # python plot.py --load-hyperparameters hyperparameters/qd_binary_hyperparameters.yaml --qd
-python plot.py --load-hyperparameters hyperparameters/binary_1d_hyperparameters.yaml --task river --combo hard
+python plot.py --load-hyperparameters hyperparameters/baseline_binary_hyperparameters.yaml --task binary_easy --method baseline
 
 
 
