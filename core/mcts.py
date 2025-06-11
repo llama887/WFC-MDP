@@ -27,7 +27,7 @@ from tasks.grass_task import grass_reward
 from tasks.hill_task import hill_reward
 from tasks.pond_task import pond_reward
 from tasks.river_task import river_reward
-from wfc_env import CombinedReward, WFCWrapper
+from core.wfc_env import CombinedReward, WFCWrapper
 
 
 def _simulate_node(node: "Node") -> tuple[float, list[np.ndarray], bool]:

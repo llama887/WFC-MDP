@@ -48,8 +48,8 @@ from tasks.pond_task import pond_reward
 from tasks.river_task import river_reward
 
 from assets.biome_adjacency_rules import create_adjacency_matrix
-from wfc import load_tile_images
-from wfc_env import CombinedReward, WFCWrapper
+from core.wfc import load_tile_images
+from core.wfc_env import CombinedReward, WFCWrapper
 
 ADJACENCY_BOOL, TILE_SYMBOLS, TILE_TO_INDEX = create_adjacency_matrix()
 NUM_TILES = len(TILE_SYMBOLS)
