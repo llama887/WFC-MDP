@@ -8,7 +8,7 @@
 #SBATCH --nodes=1                     
 #SBATCH --ntasks-per-node=1           
 #SBATCH --cpus-per-task=48           
-#SBATCH --mem=180G                             
+#SBATCH --mem=369G                             
 #SBATCH --account=pr_100_tandon_priority
 
 ### -------------------- Logging Setup -------------------- ###
@@ -26,7 +26,7 @@ module purge
 cd /scratch/fyy2003/optimizing_WFC
 source venv/bin/activate
 # python plot.py --load-hyperparameters hyperparameters/qd_binary_hyperparameters.yaml --qd
-python plot.py --task grass --combo easy --method mcts
+python plot.py --task grass --combo easy --method mcts --sample-size 5
 
 
 

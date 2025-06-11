@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=plot_river_hard_2d
-#SBATCH --output=plot_river_hard_2d_%j.out
-#SBATCH --error=plot_river_hard_2d_%j.err
+#SBATCH --job-name=plot_river_hard_fi2pop
+#SBATCH --output=plot_river_hard_fi2pop_%j.out
+#SBATCH --error=plot_river_hard_fi2pop_%j.err
 #SBATCH --mail-type=START,END,FAIL
 #SBATCH --mail-user=fyy2003@nyu.edu
 #SBATCH --time=48:00:00 
@@ -26,6 +26,8 @@ module purge
 cd /scratch/fyy2003/optimizing_WFC
 source venv/bin/activate
 # python plot.py --load-hyperparameters hyperparameters/qd_binary_hyperparameters.yaml --qd
-python plot.py --load-hyperparameters hyperparameters/binary_2d_hyperparameters.yaml --task river --combo hard --genotype-dimensions 2
+python plot.py --load-hyperparameters hyperparameters/fi2pop_combo_river_hyperparameters.yaml --task river --combo hard --debug --method fi2pop
+
+
 
 

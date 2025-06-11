@@ -26,6 +26,6 @@ module purge
 cd /scratch/fyy2003/optimizing_WFC
 source venv/bin/activate
 # python plot.py --load-hyperparameters hyperparameters/qd_binary_hyperparameters.yaml --qd
-python plot.py --load-hyperparameters hyperparameters/biomes_1d_hyperparameters.yaml --task biomes
+python plot.py --load-hyperparameters hyperparameters/biomes_1d_hyperparameters.yaml --task biomes 
 
 

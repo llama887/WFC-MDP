@@ -438,7 +438,7 @@ def collect_average_biome_convergence_data(evolution_hyperparameters, use_qualit
     return _generic_convergence_collector(biomes, make_reward, evolution_hyperparameters, prefix, use_quality_diversity, genotype_dimensions, is_biome_only=True, sample_size=runs, debug=debug)
 
 
-def plot_convergence_from_csv(csv_path: str, output_path: str = None, title: str = "", xlabel: str = "desired_path_length"):
+def plot_convergence_from_csv(csv_path: str, output_path: str = None, title: str = "", xlabel: str = "desired_path_length", y_label: str = "Mean Generations"):
     df = pd.read_csv(csv_path)
     df_valid = df.dropna(subset=["generations_to_converge"])
     stats = df_valid.groupby(xlabel)["generations_to_converge"].agg(["mean", "std", "count"]).reset_index()
@@ -451,7 +451,7 @@ def plot_convergence_from_csv(csv_path: str, output_path: str = None, title: str
     for x, y in zip(stats[xlabel], stats["mean"]): ax1.text(x, y, f"{y:.1f}", ha="center", va="bottom")
     ax2.bar(stats[xlabel], stats["fraction_converged"], width=8, alpha=0.3, label="Fraction converged")
     ax1.set_xlabel(xlabel)
-    ax1.set_ylabel("Mean Generations")
+    ax1.set_ylabel(y_label)
     ax2.set_ylabel("Fraction Converged")
     h1, l1 = ax1.get_legend_handles_labels()
     h2, l2 = ax2.get_legend_handles_labels()

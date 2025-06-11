@@ -26,8 +26,7 @@ module purge
 cd /scratch/fyy2003/optimizing_WFC
 source venv/bin/activate
 # python plot.py --load-hyperparameters hyperparameters/qd_binary_hyperparameters.yaml --qd
-python plot.py --load-hyperparameters hyperparameters/binary_2d_hyperparameters.yaml --task river --combo easy --genotype-dimensions 2 --debug
-
+python plot.py --load-hyperparameters hyperparameters/binary_2d_hyperparameters.yaml --task river --combo easy --genotype-dimensions 2
 
 
 
