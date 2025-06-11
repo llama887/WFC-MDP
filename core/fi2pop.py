@@ -374,9 +374,10 @@ def evolve(
     if mode == EvolutionMode.FI2POP:
         feasible = [g for g in initial_pool if g.violation == 0]
         infeasible = [g for g in initial_pool if g.violation > 0]
-        # Keep capping but it's now redundant since sizes are <= population_size
-        feasible = sorted(feasible, key=lambda g: g.reward, reverse=True)[:population_size]
-        infeasible = sorted(infeasible, key=lambda g: g.violation)[:population_size]
+        # Cap each subpopulation at half the total population size
+        subpop_size = population_size // 2
+        feasible = sorted(feasible, key=lambda g: g.reward, reverse=True)[:subpop_size]
+        infeasible = sorted(infeasible, key=lambda g: g.violation)[:subpop_size]
         population = feasible + infeasible
     else:  # Baseline mode
         for member in initial_pool:
@@ -464,13 +465,14 @@ def evolve(
         # --- 4. Reproduction ---
         offspring = []
         if mode == EvolutionMode.FI2POP:
-            n_feasible_offspring = population_size - len(feasible_survivors)
+            subpop_size = population_size // 2
+            n_feasible_offspring = subpop_size - len(feasible_survivors)
             offspring.extend(
                 generate_offspring_from_pool(
                     feasible_survivors, n_feasible_offspring
                 )
             )
-            n_infeasible_offspring = population_size - len(infeasible_survivors)
+            n_infeasible_offspring = subpop_size - len(infeasible_survivors)
             offspring.extend(
                 generate_offspring_from_pool(
                     infeasible_survivors, n_infeasible_offspring
@@ -490,13 +492,15 @@ def evolve(
             offspring = pool.map(_parallel_eval, offspring)
 
         if mode == EvolutionMode.FI2POP:
+            subpop_size = population_size // 2
             feasible = feasible_survivors + [g for g in offspring if g.violation == 0]
             infeasible = infeasible_survivors + [g for g in offspring if g.violation > 0]
+            # Cap each subpopulation at half the total population size
             feasible = sorted(feasible, key=lambda g: g.reward, reverse=True)[
-                :population_size
+                :subpop_size
             ]
             infeasible = sorted(infeasible, key=lambda g: g.violation)[
-                :population_size
+                :subpop_size
             ]
             population = feasible + infeasible
             best_reward_str = f"{feasible[0].reward:.3f}" if feasible else "N/A"
