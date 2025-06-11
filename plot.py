@@ -846,7 +846,7 @@ if __name__ == "__main__":
         elif args.task == "biomes":
             csv_path = _generic_evolution_collector(
                 ["Pond", "River", "Grass"], lambda b: {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[b],
-                hyperparams, "biome_average_", "evolution", args.quality_diversity, args.genotype_dimensions, True, args.sample_size, args.debug
+                hyperparams, f"{args.genotype_dimensions}d_biome_average_", "evolution", args.quality_diversity, args.genotype_dimensions, True, args.sample_size, args.debug
             )
             plot_average_biome_convergence_from_csv(csv_path)
         else: # Combo tasks
