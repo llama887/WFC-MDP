@@ -28,11 +28,6 @@ import pygame
 import yaml
 
 
-class CrossOverMethod(Enum):
-    UNIFORM = 0
-    ONE_POINT = 1
-
-
 class EvolutionMode(Enum):
     FI2POP = "fi2pop"
     BASELINE = "baseline"
@@ -48,6 +43,7 @@ from tasks.pond_task import pond_reward
 from tasks.river_task import river_reward
 
 from assets.biome_adjacency_rules import create_adjacency_matrix
+from core.evolution import CrossOverMethod
 from core.wfc import load_tile_images
 from core.wfc_env import CombinedReward, WFCWrapper
 
