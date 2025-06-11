@@ -10,10 +10,8 @@ import sys
 import time
 from functools import partial
 from multiprocessing import Pool
-from typing import Literal
 
 import numpy as np
-import pygame
 import yaml
 from pydantic import BaseModel, Field
 from tqdm import tqdm
