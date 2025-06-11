@@ -135,9 +135,18 @@ def _generic_evolution_collector(
                 plt.savefig(os.path.join(DEBUG_DIRECTORY, filename))
                 plt.close()
 
+    file_exists = os.path.isfile(csv_path)
     new_df = pd.DataFrame(data_rows)
-    new_df.to_csv(csv_path, index=False)
-    print(f"Saved raw data to {csv_path}")
+    new_df.to_csv(
+        csv_path,
+        mode='a',
+        index=False,
+        header=not file_exists
+    )
+    if file_exists:
+        print(f"Appended {len(new_df)} rows to {csv_path}")
+    else:
+        print(f"Created new CSV {csv_path} with {len(new_df)} rows")
     return csv_path
 
 
@@ -205,9 +214,18 @@ def _generic_constrained_ea_collector(
             row["biome" if is_biome_only else "desired_path_length"] = key
             data_rows.append(row)
 
+    file_exists = os.path.isfile(csv_path)
     new_df = pd.DataFrame(data_rows)
-    new_df.to_csv(csv_path, index=False)
-    print(f"Saved raw data to {csv_path}")
+    new_df.to_csv(
+        csv_path,
+        mode='a',
+        index=False,
+        header=not file_exists
+    )
+    if file_exists:
+        print(f"Appended {len(new_df)} rows to {csv_path}")
+    else:
+        print(f"Created new CSV {csv_path} with {len(new_df)} rows")
     return csv_path
 
 
@@ -410,8 +428,18 @@ def _generic_convergence_collector(
     fig_dir = get_figure_directory(evolution_hyperparameters.get("method", "evolution"))
     os.makedirs(fig_dir, exist_ok=True)
     csv_path = os.path.join(fig_dir, csv_filename)
-    pd.DataFrame(data_rows).to_csv(csv_path, index=False)
-    print(f"Saved raw data to {csv_path}")
+    file_exists = os.path.isfile(csv_path)
+    new_df = pd.DataFrame(data_rows)
+    new_df.to_csv(
+        csv_path,
+        mode='a',
+        index=False,
+        header=not file_exists
+    )
+    if file_exists:
+        print(f"Appended {len(new_df)} rows to {csv_path}")
+    else:
+        print(f"Created new CSV {csv_path} with {len(new_df)} rows")
     return csv_path
 
 
