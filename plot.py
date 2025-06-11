@@ -52,13 +52,6 @@ def _generic_evolution_collector(
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     map_length, map_width = 15, 20
 
-    # Prepare cross_over_method enum and patience
-    raw_cross_over = evolution_hyperparameters.get("cross_over_method", "ONE_POINT")
-    try:
-        cross_over_method = CrossOverMethod(raw_cross_over)
-    except (ValueError, TypeError):
-        cross_over_method = CrossOverMethod(int(raw_cross_over))
-
     fig_dir = get_figure_directory(method)
     os.makedirs(fig_dir, exist_ok=True)
     os.makedirs(DEBUG_DIRECTORY, exist_ok=True)
@@ -68,6 +61,16 @@ def _generic_evolution_collector(
     data_rows: list[dict[str, Any]] = []
 
     for key in loop_keys:
+        # Get biome-specific hyperparameters if they exist, otherwise use the main ones
+        current_hyperparams = evolution_hyperparameters.get(
+            str(key), evolution_hyperparameters
+        )
+        raw_cross_over = current_hyperparams.get("cross_over_method", "ONE_POINT")
+        try:
+            cross_over_method = CrossOverMethod(raw_cross_over)
+        except (ValueError, TypeError):
+            cross_over_method = CrossOverMethod(int(raw_cross_over))
+
         for run_index in range(1, sample_size + 1):
             reward_callable = make_reward_fn(key)
             env = WFCWrapper(
@@ -88,18 +91,18 @@ def _generic_evolution_collector(
 
             pop, best_agent, generations, best_agent_rewards, mean_agent_rewards = evolve_standard(
                 env=env,
-                generations=evolution_hyperparameters.get("generations", 1000),
+                generations=current_hyperparams.get("generations", 1000),
                 population_size=48,  # Fixed population size
-                number_of_actions_mutated_mean=evolution_hyperparameters[
+                number_of_actions_mutated_mean=current_hyperparams[
                     "number_of_actions_mutated_mean"
                 ],
-                number_of_actions_mutated_standard_deviation=evolution_hyperparameters[
+                number_of_actions_mutated_standard_deviation=current_hyperparams[
                     "number_of_actions_mutated_standard_deviation"
                 ],
-                action_noise_standard_deviation=evolution_hyperparameters[
+                action_noise_standard_deviation=current_hyperparams[
                     "action_noise_standard_deviation"
                 ],
-                survival_rate=evolution_hyperparameters["survival_rate"],
+                survival_rate=current_hyperparams["survival_rate"],
                 cross_over_method=cross_over_method,
                 patience=50,  # Fixed patience
                 qd=use_quality_diversity,
@@ -148,12 +151,6 @@ def _generic_constrained_ea_collector(
     sample_size: int,
     debug: bool,
 ) -> str:
-    raw_cross_over = hyperparameters.get("cross_over_method", "ONE_POINT")
-    try:
-        cross_over_method = CrossOverMethod(raw_cross_over)
-    except (ValueError, TypeError):
-        cross_over_method = CrossOverMethod(int(raw_cross_over))
-
     fig_dir = get_figure_directory(mode.value)
     os.makedirs(fig_dir, exist_ok=True)
     os.makedirs(DEBUG_DIRECTORY, exist_ok=True)
@@ -162,6 +159,14 @@ def _generic_constrained_ea_collector(
 
     data_rows = []
     for key in loop_keys:
+        # Get biome-specific hyperparameters if they exist, otherwise use the main ones
+        current_hyperparams = hyperparameters.get(str(key), hyperparameters)
+        raw_cross_over = current_hyperparams.get("cross_over_method", "ONE_POINT")
+        try:
+            cross_over_method = CrossOverMethod(raw_cross_over)
+        except (ValueError, TypeError):
+            cross_over_method = CrossOverMethod(int(raw_cross_over))
+
         for run_index in range(1, sample_size + 1):
             if debug:
                 start_time = time.time()
@@ -171,20 +176,20 @@ def _generic_constrained_ea_collector(
                 mode=mode,
                 reward_fn=reward_callable,
                 task_args={},
-                generations=hyperparameters.get("generations", 1000),
+                generations=current_hyperparams.get("generations", 1000),
                 population_size=48,
-                number_of_actions_mutated_mean=hyperparameters[
+                number_of_actions_mutated_mean=current_hyperparams[
                     "number_of_actions_mutated_mean"
                 ],
-                number_of_actions_mutated_standard_deviation=hyperparameters[
+                number_of_actions_mutated_standard_deviation=current_hyperparams[
                     "number_of_actions_mutated_standard_deviation"
                 ],
-                action_noise_standard_deviation=hyperparameters[
+                action_noise_standard_deviation=current_hyperparams[
                     "action_noise_standard_deviation"
                 ],
-                survival_rate=hyperparameters["survival_rate"],
+                survival_rate=current_hyperparams["survival_rate"],
                 cross_over_method=cross_over_method,
-                cross_or_mutate_proportion=hyperparameters.get(
+                cross_or_mutate_proportion=current_hyperparams.get(
                     "cross_or_mutate_proportion", 0.7
                 ),
                 patience=50,
