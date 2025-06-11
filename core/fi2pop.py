@@ -365,7 +365,7 @@ def evolve(
     # --- Initial Population ---
     if mode == EvolutionMode.FI2POP:
         initial_pool = [
-            Genome(make_env(reward_callable)) for _ in range(population_size * 2)
+            Genome(make_env(reward_callable)) for _ in range(population_size)
         ]
         with Pool(min(cpu_count(), len(initial_pool))) as pool:
             initial_pool = pool.map(_parallel_eval, initial_pool)
