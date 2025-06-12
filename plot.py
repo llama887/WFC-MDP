@@ -793,7 +793,7 @@ if __name__ == "__main__":
         "--genotype-dimensions", type=int, choices=[1, 2], default=1
     )
     parser.add_argument("--debug", action="store_true", help="Save per-run debug plots")
-    parser.add_argument("--sample-size", type=int, default=10, help="Number of runs to collect per data point.")
+    parser.add_argument("--sample-size", type=int, default=20, help="Number of runs to collect per data point.")
     parser.add_argument("--mcts-iterations", type=int, default=1000, help="Number of MCTS iterations to run per session.")
     args = parser.parse_args()
 

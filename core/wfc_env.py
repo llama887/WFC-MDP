@@ -14,7 +14,7 @@ from gymnasium import spaces
 from copy import deepcopy
 
 # Import functions from biome_wfc instead of fast_wfc
-from wfc import (  # We might not need render_wfc_grid if we keep console rendering
+from core.wfc import (  # We might not need render_wfc_grid if we keep console rendering
     biome_wfc_step,
     find_lowest_entropy_cell,
     initialize_wfc_grid,
