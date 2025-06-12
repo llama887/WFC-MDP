@@ -190,6 +190,6 @@ output
 *.csv
 
 figures_baseline
-figures_fi-2pop
+figures_fi2pop
 figures_evolution
 figures_mcts
