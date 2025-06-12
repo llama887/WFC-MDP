@@ -314,19 +314,18 @@ def evolve(
         if not survivors or num_needed <= 0:
             return []
 
-        new_children = []
+        new_children: List[Genome] = []
         n_crossover = int(round(num_needed * cross_or_mutate_proportion))
         n_mutation = num_needed - n_crossover
 
         # Crossover pairs
         n_pairs = (n_crossover + 1) // 2
-        pairs_args = []
+        pairs_args: List[Tuple] = []
         for _ in range(n_pairs):
-            p1, p2 = (
-                random.sample(survivors, 2)
-                if len(survivors) >= 2
-                else (survivors[0], survivors[0])
-            )
+            if len(survivors) >= 2:
+                p1, p2 = random.sample(survivors, 2)
+            else:
+                p1 = p2 = survivors[0]
             pairs_args.append(
                 (
                     p1,
@@ -338,11 +337,11 @@ def evolve(
                 )
             )
         if pairs_args:
-            with Pool(min(cpu_count(), len(pairs_args))) as pool:
+            proc_count = max(1, min(cpu_count(), len(pairs_args)))
+            with Pool(proc_count) as pool:
                 results = pool.map(reproduce_pair, pairs_args)
-            crossover_children = [
-                child for pair in results for child in pair
-            ][:n_crossover]
+            # flatten and trim to required number
+            crossover_children = [child for pair in results for child in pair][:n_crossover]
             new_children.extend(crossover_children)
 
         # Mutation-only children
@@ -356,129 +355,104 @@ def evolve(
             for _ in range(n_mutation)
         ]
         if mutation_args:
-            with Pool(min(cpu_count(), len(mutation_args))) as pool:
+            proc_count = max(1, min(cpu_count(), len(mutation_args)))
+            with Pool(proc_count) as pool:
                 mutated = pool.map(_mutate_clone, mutation_args)
             new_children.extend(mutated)
 
         return new_children
 
     # --- Initial Population (Common for both modes) ---
-    initial_pool = [
-        Genome(make_env(reward_callable)) 
-        for _ in range(population_size)
-    ]
-    with Pool(min(cpu_count(), len(initial_pool))) as pool:
+    initial_pool = [Genome(make_env(reward_callable)) for _ in range(population_size)]
+    proc_count = max(1, min(cpu_count(), len(initial_pool)))
+    with Pool(proc_count) as pool:
         initial_pool = pool.map(_parallel_eval, initial_pool)
 
     # --- Mode-Specific Processing ---
     if mode == EvolutionMode.FI2POP:
         feasible = [g for g in initial_pool if g.violation == 0]
         infeasible = [g for g in initial_pool if g.violation > 0]
-        # Cap each subpopulation at half the total population size
         subpop_size = population_size // 2
         feasible = sorted(feasible, key=lambda g: g.reward, reverse=True)[:subpop_size]
         infeasible = sorted(infeasible, key=lambda g: g.violation)[:subpop_size]
         population = feasible + infeasible
-    else:  # Baseline mode
+    else:
+        # Baseline: penalize violations directly
         for member in initial_pool:
             member.reward -= member.violation
         population = initial_pool
 
-    # --- Find initial best agent and record history ---
+    # --- Record initial best ---
     feasible_agents = [m for m in population if m.violation == 0]
     if feasible_agents:
-        best_feasible_agent = copy.deepcopy(
-            max(feasible_agents, key=lambda g: g.reward)
-        )
+        best_feasible_agent = copy.deepcopy(max(feasible_agents, key=lambda g: g.reward))
 
     all_rewards = [g.reward for g in population]
     best_reward_history.append(max(all_rewards) if all_rewards else float("-inf"))
-    median_reward_history.append(
-        float(np.median(all_rewards)) if all_rewards else float("-inf")
-    )
+    median_reward_history.append(float(np.median(all_rewards)) if all_rewards else float("-inf"))
 
     final_generation = generations
     for generation_number in range(1, generations + 1):
-        # --- 1. Selection ---
+        # --- 1. Selection & re-evaluate infeasible in FI2POP ---
         if mode == EvolutionMode.FI2POP:
-            # Re-evaluate infeasible pool to check for newly feasible
-            with Pool(min(cpu_count(), len(infeasible))) as pool:
+            proc_count = max(1, min(cpu_count(), len(infeasible)))
+            with Pool(proc_count) as pool:
                 infeasible = pool.map(_parallel_eval, infeasible)
             newly_feasible = [g for g in infeasible if g.violation == 0]
             feasible.extend(newly_feasible)
             infeasible = [g for g in infeasible if g.violation > 0]
 
             num_feasible_survivors = max(2, int(len(feasible) * survival_rate))
-            feasible_survivors = sorted(
-                feasible, key=lambda g: g.reward, reverse=True
-            )[:num_feasible_survivors]
+            feasible_survivors = sorted(feasible, key=lambda g: g.reward, reverse=True)[:num_feasible_survivors]
 
             num_infeasible_survivors = max(2, int(len(infeasible) * survival_rate))
-            infeasible_survivors = sorted(infeasible, key=lambda g: g.violation)[
-                :num_infeasible_survivors
-            ]
-            survivors = feasible_survivors + infeasible_survivors
-        else:  # Baseline mode
-            num_survivors = max(2, int(len(population) * survival_rate))
-            survivors = sorted(population, key=lambda g: g.reward, reverse=True)[
-                :num_survivors
-            ]
+            infeasible_survivors = sorted(infeasible, key=lambda g: g.violation)[:num_infeasible_survivors]
 
-        # --- 2. Track Global Best and Record History ---
+            survivors = feasible_survivors + infeasible_survivors
+        else:
+            num_survivors = max(2, int(len(population) * survival_rate))
+            survivors = sorted(population, key=lambda g: g.reward, reverse=True)[:num_survivors]
+
+        # --- 2. Track best and history ---
         current_feasible = [m for m in population if m.violation == 0]
         if current_feasible:
-            current_best_in_gen = max(current_feasible, key=lambda g: g.reward)
-            if (
-                best_feasible_agent is None
-                or current_best_in_gen.reward > best_feasible_agent.reward
-            ):
-                best_feasible_agent = copy.deepcopy(current_best_in_gen)
+            current_best = max(current_feasible, key=lambda g: g.reward)
+            if best_feasible_agent is None or current_best.reward > best_feasible_agent.reward:
+                best_feasible_agent = copy.deepcopy(current_best)
 
         all_rewards = [g.reward for g in population]
         best_reward_history.append(max(all_rewards) if all_rewards else float("-inf"))
-        median_reward_history.append(
-            float(np.median(all_rewards)) if all_rewards else float("-inf")
-        )
+        median_reward_history.append(float(np.median(all_rewards)) if all_rewards else float("-inf"))
 
-        # --- 3. Early Stopping ---
+        # --- 3. Early stopping ---
         elite_pool = feasible_survivors if mode == EvolutionMode.FI2POP else survivors
         if elite_pool:
-            elite_rewards = [
-                g.reward for g in elite_pool if g.violation == 0
-            ]  # Use raw rewards for comparison
-            mean_elite_val = float(np.mean(elite_rewards)) if elite_rewards else float("-inf")
+            elite_rewards = [g.reward for g in elite_pool if g.violation == 0]
+            mean_elite = float(np.mean(elite_rewards)) if elite_rewards else float("-inf")
         else:
-            mean_elite_val = float("-inf")
+            mean_elite = float("-inf")
 
-        if best_mean_elite_reward is None or mean_elite_val > best_mean_elite_reward:
-            best_mean_elite_reward = mean_elite_val
+        if best_mean_elite_reward is None or mean_elite > best_mean_elite_reward:
+            best_mean_elite_reward = mean_elite
             patience_counter = 0
         else:
             patience_counter += 1
 
-        achieved_max = best_feasible_agent and best_feasible_agent.reward >= 0.0
-        if achieved_max or patience_counter >= patience:
+        if (best_feasible_agent and best_feasible_agent.reward >= 0.0) or patience_counter >= patience:
             print(f"[DEBUG] Converged at generation {generation_number}")
             final_generation = generation_number
             break
 
         # --- 4. Reproduction ---
-        offspring = []
+        offspring: List[Genome] = []
         if mode == EvolutionMode.FI2POP:
             subpop_size = population_size // 2
             n_feasible_offspring = subpop_size - len(feasible_survivors)
-            offspring.extend(
-                generate_offspring_from_pool(
-                    feasible_survivors, n_feasible_offspring
-                )
-            )
+            offspring.extend(generate_offspring_from_pool(feasible_survivors, n_feasible_offspring))
+
             n_infeasible_offspring = subpop_size - len(infeasible_survivors)
-            offspring.extend(
-                generate_offspring_from_pool(
-                    infeasible_survivors, n_infeasible_offspring
-                )
-            )
-        else:  # Baseline mode
+            offspring.extend(generate_offspring_from_pool(infeasible_survivors, n_infeasible_offspring))
+        else:
             n_offspring = population_size - len(survivors)
             offspring.extend(generate_offspring_from_pool(survivors, n_offspring))
 
@@ -487,34 +461,26 @@ def evolve(
             final_generation = generation_number
             break
 
-        # --- 5. Evaluate and Form Next Generation ---
-        with Pool(min(cpu_count(), len(offspring))) as pool:
+        # --- 5. Evaluate new offspring ---
+        proc_count = max(1, min(cpu_count(), len(offspring)))
+        with Pool(proc_count) as pool:
             offspring = pool.map(_parallel_eval, offspring)
 
         if mode == EvolutionMode.FI2POP:
             subpop_size = population_size // 2
             feasible = feasible_survivors + [g for g in offspring if g.violation == 0]
             infeasible = infeasible_survivors + [g for g in offspring if g.violation > 0]
-            # Cap each subpopulation at half the total population size
-            feasible = sorted(feasible, key=lambda g: g.reward, reverse=True)[
-                :subpop_size
-            ]
-            infeasible = sorted(infeasible, key=lambda g: g.violation)[
-                :subpop_size
-            ]
+            feasible = sorted(feasible, key=lambda g: g.reward, reverse=True)[:subpop_size]
+            infeasible = sorted(infeasible, key=lambda g: g.violation)[:subpop_size]
             population = feasible + infeasible
             best_reward_str = f"{feasible[0].reward:.3f}" if feasible else "N/A"
-            print(
-                f"Gen {generation_number:04d} | Feas {len(feasible):02d} | Infeas {len(infeasible):02d} | BestR {best_reward_str}"
-            )
-        else:  # Baseline mode
+            print(f"Gen {generation_number:04d} | Feas {len(feasible):02d} | Infeas {len(infeasible):02d} | BestR {best_reward_str}")
+        else:
             for member in offspring:
                 member.reward -= member.violation
             population = survivors + offspring
             best_in_pop = max(population, key=lambda g: g.reward)
-            print(
-                f"Gen {generation_number:04d} | Pop {len(population):02d} | BestR (penalized) {best_in_pop.reward:.3f}"
-            )
+            print(f"Gen {generation_number:04d} | Pop {len(population):02d} | BestR (penalized) {best_in_pop.reward:.3f}")
 
     return best_feasible_agent, final_generation, best_reward_history, median_reward_history
 
