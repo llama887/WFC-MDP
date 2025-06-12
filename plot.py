@@ -472,32 +472,80 @@ def collect_average_biome_convergence_data(evolution_hyperparameters, use_qualit
     return _generic_convergence_collector(biomes, make_reward, evolution_hyperparameters, prefix, use_quality_diversity, genotype_dimensions, is_biome_only=True, sample_size=runs, debug=debug)
 
 
-def plot_convergence_from_csv(csv_path: str, output_path: str = None, title: str = "", xlabel: str = "desired_path_length", y_label: str = "Mean Generations"):
+def plot_convergence_from_csv(
+    csv_path: str,
+    output_path: str = None,
+    title: str = "",
+    xlabel: str = "desired_path_length",
+    y_label: str = "Mean Generations"
+):
+    # 1. Read all runs
     df = pd.read_csv(csv_path)
-    df_valid = df.dropna(subset=["generations_to_converge"])
-    stats = df_valid.groupby(xlabel)["generations_to_converge"].agg(["mean", "std", "count"]).reset_index()
-    stats["stderr"] = stats["std"] / np.sqrt(stats["count"])
-    stats["fraction_converged"] = stats["count"] / df["run_index"].max()
 
+    # 2. Identify successful convergences
+    df_valid = df.dropna(subset=["generations_to_converge"])
+
+    # 3. Compute per-x statistics on converged runs
+    stats = (
+        df_valid
+        .groupby(xlabel)["generations_to_converge"]
+        .agg(mean="mean", std="std", successes="count")
+    )
+
+    # 4. Compute total runs per x (including non-converged)
+    total = df.groupby(xlabel)["run_index"].count().rename("total_runs")
+
+    # 5. Join them together
+    stats = stats.join(total)
+
+    # 6. Compute stderr and fraction converged
+    stats["stderr"] = stats["std"] / np.sqrt(stats["successes"])
+    stats["fraction_converged"] = stats["successes"] / stats["total_runs"]
+
+    # 7. Reset index for plotting
+    stats = stats.reset_index()
+
+    # 8. Plot
     fig, ax1 = plt.subplots(figsize=(8, 5))
     ax2 = ax1.twinx()
-    ax1.errorbar(stats[xlabel], stats["mean"], yerr=stats["stderr"], fmt="o-", capsize=4, label="Mean generations")
-    for x, y in zip(stats[xlabel], stats["mean"]): ax1.text(x, y, f"{y:.1f}", ha="center", va="bottom")
-    ax2.bar(stats[xlabel], stats["fraction_converged"], width=8, alpha=0.3, label="Fraction converged")
+
+    # a) Mean + stderr
+    ax1.errorbar(
+        stats[xlabel],
+        stats["mean"],
+        yerr=stats["stderr"],
+        fmt="o-",
+        capsize=4,
+        label="Mean generations"
+    )
+    for x, y in zip(stats[xlabel], stats["mean"]):
+        ax1.text(x, y, f"{y:.1f}", ha="center", va="bottom")
+
+    # b) Fraction converged
+    ax2.bar(
+        stats[xlabel],
+        stats["fraction_converged"],
+        width=(stats[xlabel].max() - stats[xlabel].min()) / (len(stats) * 1.5),
+        alpha=0.3,
+        label="Fraction converged"
+    )
+
     ax1.set_xlabel(xlabel)
     ax1.set_ylabel(y_label)
     ax2.set_ylabel("Fraction Converged")
-    h1, l1 = ax1.get_legend_handles_labels()
-    h2, l2 = ax2.get_legend_handles_labels()
-    ax1.legend(h1 + h2, l1 + l2, loc="upper left")
+
+    lines, labels = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines + lines2, labels + labels2, loc="upper left")
+
     ax1.set_title(title)
     fig.tight_layout()
+
     if output_path is None:
         output_path = csv_path.replace(".csv", ".png")
     fig.savefig(output_path)
     plt.close(fig)
     print(f"Saved plot to {output_path}")
-
 
 def plot_average_biome_convergence_from_csv(csv_file_path: str, output_png_path: str = None, y_label: str = "Mean Generations to Converge"):
     df = pd.read_csv(csv_file_path)
