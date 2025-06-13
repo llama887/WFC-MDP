@@ -1,5 +1,4 @@
 from typing import Any
-import numpy as np
 from .utils import (
     count_tiles,
     percent_target_tiles_excluding_excluded_tiles,
