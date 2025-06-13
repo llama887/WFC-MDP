@@ -442,7 +442,7 @@ def objective(
     for task in tasks_list:
         if task.startswith("binary_"):
             # Use fixed path lengths: 80 for standalone, 40 for combos
-            target_length = 40 if is_combo else 80
+            target_length = 10 if is_combo else 20
             hard = (task == "binary_hard")
             reward_funcs.append(partial(binary_reward,
                 target_path_length=target_length, passable_mask=passable_mask,
@@ -757,8 +757,8 @@ if __name__ == "__main__":
             passable_mask[tile_to_index[tile_name]] = True
 
     task_rewards = {
-        "binary_easy": partial(binary_reward, target_path_length=80, passable_mask=passable_mask),
-        "binary_hard": partial(binary_reward, target_path_length=80, passable_mask=passable_mask, hard=True),
+        "binary_easy": partial(binary_reward, target_path_length=20, passable_mask=passable_mask),
+        "binary_hard": partial(binary_reward, target_path_length=20, passable_mask=passable_mask, hard=True),
         "river": river_reward,
         "pond": pond_reward,
         "grass": grass_reward,
@@ -888,11 +888,6 @@ if __name__ == "__main__":
         with open(args.best_agent_pickle, "rb") as f:
             best_agent = pickle.load(f)
 
-    if args.best_agent_pickle:
-        biome_name = args.best_agent_pickle.split('_')[0]
-    else:
-        biome_name = args.biome
-
     # --- Render the result from the best agent ---
     if best_agent:
         print("\nInitializing Pygame for rendering the best map...")
@@ -903,7 +898,7 @@ if __name__ == "__main__":
         env.tile_images = tile_images
 
         os.makedirs("wfc_reward_img", exist_ok=True)
-        output_filename = f"wfc_reward_img/{biome_name}_{task_name}_reward_{best_agent.reward:.2f}.png"
+        output_filename = f"wfc_reward_img/{task_name}_reward_{best_agent.reward:.2f}.png"
 
         observation, _ = env.reset()
         for action in best_agent.action_sequence:

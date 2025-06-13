@@ -11,18 +11,18 @@ MAX_POND_REWARD = 0
 
 
 def pond_reward(
-    grid: list[list[set[str]]], target_water_percent: float = 25.0, target_center_percent: float = 11.0, max_water_regions: int = 3, max_land_regions: int = 5, max_water_path: int = 25, hard: bool = False,
-) -> tuple[float, dict[str, Any]]:
+    grid: list[list[set[str]]], target_water_percent: float = 25.0, target_center_percent: float = 11.0, max_water_regions: int = 3, max_land_regions: int = 5, max_water_path: int = 25, hard: bool = False, passable_mask: np.ndarray = None,
+) -> tuple[float, dict[str, Any]]:    
     percent_water = percent_target_tiles_excluding_excluded_tiles(
-        grid,
-        is_target_tiles=lambda tile_name: tile_name.startswith("water"),
-        is_excluded_tiles=lambda tile_name: tile_name.startswith("sand") or tile_name.startswith("path")
+        grid, 
+        lambda tile_name: isinstance(tile_name, str) and tile_name.startswith("water"), 
+        lambda tile_name: isinstance(tile_name, str) and (tile_name.startswith("sand") or tile_name.startswith("path")),
     ) * 100
 
     percent_water_center = percent_target_tiles_excluding_excluded_tiles(
-        grid,
-        is_target_tiles=lambda tile_name: tile_name == "water",
-        is_excluded_tiles=lambda tile_name: tile_name.startswith("sand") or tile_name.startswith("path")
+        grid, 
+        lambda tile_name: isinstance(tile_name, str) and tile_name == "water", 
+        lambda tile_name: isinstance(tile_name, str) and (tile_name.startswith("sand") or tile_name.startswith("path")),
     ) * 100
 
     if hard:
@@ -34,7 +34,7 @@ def pond_reward(
 
     water_binary_map = grid_to_binary_map(
         grid,
-        lambda tile_name: tile_name.startswith("water") or tile_name.startswith("shore"),
+        lambda tile_name: isinstance(tile_name, str) and (tile_name.startswith("water") or tile_name.startswith("shore"))
     )
     number_of_water_regions = calc_num_regions(water_binary_map)
     region_reward = max(max_water_regions - number_of_water_regions, 0) - max(number_of_water_regions - max_water_regions, 0)
@@ -44,7 +44,7 @@ def pond_reward(
 
     land_binary_map = grid_to_binary_map(
         grid,
-        lambda tile_name: not (tile_name.startswith("water") or tile_name.startswith("shore")),
+        lambda tile_name: not (isinstance(tile_name, str) and (tile_name.startswith("water") or tile_name.startswith("shore"))),
     )
     number_of_land_regions = calc_num_regions(land_binary_map)
     land_reward = -max(number_of_land_regions - max_land_regions, 0)
@@ -75,7 +75,7 @@ def pond_reward(
 
 def get_pond_biome(grid: list[list[set[str]]]) -> str:
     water_tiles = {
-        "water", "water_tl", "water_tr", "water_t", "water_l", "water_r", "water_bl", "water_b", "water_br", "shore_tl", "shore_tr",  "shore_bl", "shore_br", "shore_lr", "shore_rl", "pond"
+        "water", "water_tl", "water_tr", "water_t", "water_l", "water_r", "water_bl", "water_b", "water_br", "shore_tl", "shore_tr", "shore_bl", "shore_br", "shore_lr", "shore_rl", "pond"
     }
 
     water_cells = 0
@@ -85,7 +85,12 @@ def get_pond_biome(grid: list[list[set[str]]]) -> str:
     for row in grid:
         for cell in row:
             if len(cell) == 1:
-                tile = next(iter(cell)).lower()
+                tile = next(iter(cell))
+                if isinstance(tile, bool):
+                    continue
+                if not isinstance(tile, str):
+                    continue
+                tile = tile.lower()
                 if tile in water_tiles:
                     water_cells += 1
                     if tile == "water" or tile == "pond":

@@ -8,34 +8,36 @@ MAX_GRASS_REWARD = 0
 
 
 def grass_reward(
-    grid: list[list[set[str]]], target_grass_percent: float = 0.2, target_flower_percent: float = 0.2, hard: bool = False, 
+    grid: list[list[set[str]]]
 ) -> tuple[float, dict[str, Any]]:
+    grass_reward = 0
+    flower_reward = 0
+    
     water_count = count_tiles(
         grid,
-        lambda x: x.startswith("water") or x.startswith("shore"),
+        lambda tile_name: isinstance(tile_name, str) and (tile_name.startswith("water") or tile_name.startswith("shore")),
     ) 
     hill_count = count_tiles(
         grid,
-        lambda x: "hill" in x,
+        lambda tile_name: isinstance(tile_name, str) and "hill" in tile_name,
     )
-
     grass_percent = percent_target_tiles_excluding_excluded_tiles(
         grid,
-        lambda x: ("grass" in x),
-        lambda x: x.startswith("path") or x.startswith("sand"),
+        lambda tile_name: isinstance(tile_name, str) and "grass" in tile_name,
+        lambda tile_name: isinstance(tile_name, str) and (tile_name.startswith("path") or tile_name.startswith("sand")),
     )
     flower_percent = percent_target_tiles_excluding_excluded_tiles(
         grid,
-        lambda x: x == "flower",
-        lambda x: x.startswith("path") or x.startswith("sand"),
+        lambda tile_name: isinstance(tile_name, str) and tile_name == "flower",
+        lambda tile_name: isinstance(tile_name, str) and (tile_name.startswith("path") or tile_name.startswith("sand")),
     )
 
-    if hard:
-        grass_reward = -abs(grass_percent - target_grass_percent)
-        flower_reward = -abs(flower_percent - target_flower_percent)
-    else:
-        grass_reward = min(grass_percent - target_grass_percent, 0)
-        flower_reward = min(flower_percent - target_flower_percent, 0)
+    TARGET_GRASS_PERCENT = 0.2
+    TARGET_FLOWER_PERCENT = 0.2
+    if grass_percent < TARGET_GRASS_PERCENT:
+        grass_reward = grass_percent - TARGET_GRASS_PERCENT
+    if flower_percent < TARGET_FLOWER_PERCENT:
+        flower_reward = flower_percent - TARGET_FLOWER_PERCENT
 
     water_penalty = -water_count
     hill_penalty = -hill_count
@@ -46,11 +48,11 @@ def grass_reward(
         "hill_count": hill_count,
         "grass_percent": grass_percent,
         "flower_percent": flower_percent,
-        "target_grass_percent": target_grass_percent,
-        "target_flower_percent": target_flower_percent,
+        "target_grass_percent": TARGET_GRASS_PERCENT,
+        "target_flower_percent": TARGET_FLOWER_PERCENT,
     }
     
-    return min(total_reward, MAX_GRASS_REWARD), info
+    return (total_reward, info)
 
 
 def classify_grass_biome(counts: dict, grass_cells: int) -> str:

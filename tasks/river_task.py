@@ -6,11 +6,11 @@ MAX_RIVER_REWARD = 0
 
 
 def river_reward(
-    grid: list[list[set[str]]], target_river_length: int = 35, max_land_regions: int = 3, hard: bool = False
+    grid: list[list[set[str]]], target_river_length: int = 35, max_land_regions: int = 3, hard: bool = False, passable_mask: np.ndarray | None = None, target_path_length: int | None = None,
 ) -> tuple[float, dict[str, Any]]:
     water_binary_map = grid_to_binary_map(
         grid,
-        lambda tile_name: tile_name.startswith("water") or tile_name.startswith("shore"),
+        lambda tile_name: isinstance(tile_name, str) and (tile_name.startswith("water") or tile_name.startswith("shore")),
     )
     
     number_of_regions = calc_num_regions(water_binary_map)
@@ -18,12 +18,12 @@ def river_reward(
    
     number_of_water_centers = count_tiles(
         grid, 
-        lambda x: x == "water",
+        lambda tile_name: isinstance(tile_name, str) and tile_name == "water",
     )
     
     land_binary_map = grid_to_binary_map(
         grid,
-        lambda tile_name: not (tile_name.startswith("water") or tile_name.startswith("shore")),
+        lambda tile_name: not (isinstance(tile_name, str) and (tile_name.startswith("water") or tile_name.startswith("shore"))),
     )
     number_of_land_regions = calc_num_regions(land_binary_map)
     
