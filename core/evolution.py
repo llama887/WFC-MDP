@@ -266,9 +266,9 @@ def evolve(
             best_agent = copy.deepcopy(population[best_idx])
         # best_agent.env.render_mode = 'human'
         # print(best_agent.env.render())
-        # render_best_agent(
-        #     best_agent.env, best_agent, tile_images, task_name="Best Agent"
-        # )
+        render_best_agent(
+            best_agent.env, best_agent, tile_images, task_name="Best Agent"
+        )
 
         rollout_times = np.array([m.info["wfc_rollout_time"] for m in population])
         mean_rollout_time = np.mean(rollout_times)
@@ -457,11 +457,6 @@ def objective(
     # Build reward function with fixed path lengths
     reward_funcs = []
     is_combo = len(tasks_list) > 1
-
-    # Initialize passable mask in binary_task
-    from tasks.binary_task import init_passable_mask
-    adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
-    init_passable_mask(tile_symbols, tile_to_index)
 
     for task in tasks_list:
         if task.startswith("binary_"):
@@ -793,7 +788,10 @@ if __name__ == "__main__":
     num_tiles = len(tile_symbols)
 
     # Initialize passable_mask in binary_task
+    # what is this? this is not a function in binary task. You should be able to just have the passable mask init itself on import in the file
+    # this seems to be how it is working right now as the top of the binary file it seems to already be making the mask AI!
     from tasks.binary_task import init_passable_mask
+
     init_passable_mask(tile_symbols, tile_to_index)
 
     task_rewards = {
