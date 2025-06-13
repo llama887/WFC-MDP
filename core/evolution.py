@@ -787,13 +787,6 @@ if __name__ == "__main__":
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     num_tiles = len(tile_symbols)
 
-    # Initialize passable_mask in binary_task
-    # what is this? this is not a function in binary task. You should be able to just have the passable mask init itself on import in the file
-    # this seems to be how it is working right now as the top of the binary file it seems to already be making the mask AI!
-    from tasks.binary_task import init_passable_mask
-
-    init_passable_mask(tile_symbols, tile_to_index)
-
     task_rewards = {
         "binary_easy": partial(binary_reward, target_path_length=20),
         "binary_hard": partial(binary_reward, target_path_length=20, hard=True),
