@@ -263,6 +263,42 @@ def objective(trial, max_iterations_per_trial: int, tasks_list: list[str]) -> fl
     return np.mean(iterations_to_converge)
 
 
+def resume_mcts_search(mcts_instance: "MCTS", max_iterations: int) -> tuple[list[np.ndarray] | None, float | None, int | None]:
+    """
+    Resumes an MCTS search on an existing MCTS object for a given number of iterations.
+
+    Args:
+        mcts_instance (MCTS): The MCTS object to resume the search on.
+        max_iterations (int): The maximum number of additional search iterations to perform.
+
+    Returns:
+        A tuple containing:
+        - The best action sequence if a solution is found, otherwise None.
+        - The best reward if a solution is found, otherwise None.
+        - The number of iterations within this run it took to find the solution, otherwise None.
+    """
+    for i in tqdm(range(max_iterations), desc="Resuming MCTS Search", leave=False):
+        _, action_sequence, found_max = mcts_instance.search()
+        if found_max:
+            # Validate that the found sequence actually achieves the max reward
+            test_env = copy.deepcopy(mcts_instance.env)
+            test_env.reset()
+            current_reward = 0.0
+            for action in action_sequence:
+                _, reward, terminated, truncated, info = test_env.step(action)
+                current_reward += reward
+                if terminated or truncated:
+                    break
+
+            if info.get("achieved_max_reward", False):
+                return action_sequence, current_reward, i + 1
+            else:
+                # This can happen if a rollout spuriously reported max reward.
+                # We should continue searching.
+                print("Warning: MCTS reported a solution, but validation failed. Continuing search.")
+
+    return None, None, None
+
 def main():
     parser = argparse.ArgumentParser(description="Run MCTS for WFC map generation.")
     parser.add_argument(
