@@ -1,5 +1,6 @@
 import os
 import sys
+from timeit import default_timer as timer
 
 # Add the project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -104,6 +105,7 @@ class PopulationMember:
         )
 
     def run_action_sequence(self):
+        start_time = timer()
         self.reward = 0
         observation,  _ =self.env.reset()
         if self.genotype_representation == "1d":
@@ -123,6 +125,8 @@ class PopulationMember:
                 observation, reward, terminate, truncate, info = self.env.step(self.action_sequence[flattened_index])
                 self.reward += reward
                 self.info = info
+        end_time = timer()
+        self.info["wfc_rollout_time"] = end_time - start_time
 
                    
     @staticmethod
@@ -197,13 +201,13 @@ def reproduce_pair(
 def evolve(
     env: WFCWrapper,
     generations: int = 100,
-    population_size: int = 48,
+    population_size: int = 50,
     number_of_actions_mutated_mean: int = 10,
     number_of_actions_mutated_standard_deviation: float = 10.0,
     action_noise_standard_deviation: float = 0.1,
     survival_rate: float = 0.2,
     cross_over_method: CrossOverMethod = CrossOverMethod.ONE_POINT,
-    patience: int = 50,
+    patience: int = 30,
     qd: bool = False,
     genotype_representation: Literal["1d", "2d"] = "1d",
     cross_or_mutate_proportion: float = 0.7,
@@ -241,8 +245,12 @@ def evolve(
 
     for gen in tqdm(range(1, generations + 1), desc="Generations"):
         # --- 2) Evaluate entire population (in parallel) ---
-        with Pool(min(cpu_count() * 2, len(population))) as pool:
-            population = pool.map(run_member, population)
+        if not args.no_multiprocessing:
+            with Pool(min(cpu_count() * 2, len(population))) as pool:
+                population = pool.map(run_member, population)
+        else:
+            for i, member in enumerate(population):
+                population[i] = run_member(member)
 
         # --- 3) Gather fitnesses and track best individual ---
         fitnesses = np.array([m.reward for m in population])
@@ -255,6 +263,12 @@ def evolve(
         # --- 4) Track global best‐agent (based on max reward) ---
         if best_agent is None or best_reward > best_agent.reward:
             best_agent = copy.deepcopy(population[best_idx])
+        # best_agent.env.render_mode = 'human'
+        # print(best_agent.env.render())
+
+        rollout_times = np.array([m.info["wfc_rollout_time"] for m in population])
+        mean_rollout_time = np.mean(rollout_times)
+        print(f"[DEBUG] Mean rollout time: {mean_rollout_time:.2f} seconds")
 
         # --- 5) Selection step (fitness‐based or QD‐based) ---
         if not qd:
@@ -345,8 +359,11 @@ def evolve(
                 )
             if pairs_args:
                 n_procs = min(cpu_count() * 2, len(pairs_args))
-                with Pool(n_procs) as pool:
-                    results = pool.map(reproduce_pair, pairs_args)
+                if not args.no_multiprocessing:
+                    with Pool(n_procs) as pool:
+                        results = pool.map(reproduce_pair, pairs_args)
+                else:
+                    results = [reproduce_pair(args) for args in pairs_args]
                 crossover_children = [child for pair in results for child in pair][:n_crossover]
             else:
                 crossover_children = []
@@ -362,8 +379,11 @@ def evolve(
             ]
             if mutation_args:
                 n_procs = min(cpu_count() * 2, len(mutation_args))
-                with Pool(n_procs) as pool:
-                    mutated = pool.map(_mutate_clone, mutation_args)
+                if not args.no_multiprocessing:
+                    with Pool(n_procs) as pool:
+                        mutated = pool.map(_mutate_clone, mutation_args)
+                else:
+                    mutated = [_mutate_clone(args) for args in mutation_args]
             else:
                 mutated = []
             offspring.extend(mutated)
@@ -391,6 +411,7 @@ def evolve(
 def objective(
     trial: optuna.Trial, 
     generations_per_trial: int, 
+    passable_mask: np.ndarray,
     qd: bool = False,
     tasks_list: list[str] = None
 ) -> float:
@@ -424,7 +445,7 @@ def objective(
             target_length = 40 if is_combo else 80
             hard = (task == "binary_hard")
             reward_funcs.append(partial(binary_reward,
-                target_path_length=target_length,
+                target_path_length=target_length, passable_mask=passable_mask,
                 hard=hard))
         else:
             reward_funcs.append(globals()[f"{task}_reward"])
@@ -476,6 +497,174 @@ def objective(
     # Return the best reward but with account for how long it took
     print(f"Total Reward: {total_reward} | Time: {end_time - start_time}")
     return total_reward
+
+
+# def render_best_agent(
+#     env: WFCWrapper, best_agent: PopulationMember, tile_images, task_name: str = ""
+# ):
+#     """Renders the action sequence of the best agent and saves the final map."""
+#     if not best_agent:
+#         print("No best agent found to render.")
+#         return
+
+#     pygame.init()
+#     SCREEN_WIDTH = env.map_width * 32
+#     SCREEN_HEIGHT = env.map_length * 32
+#     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+#     pygame.display.set_caption(f"Best Evolved WFC Map - {task_name}")
+
+#     # Create a surface for saving the final map
+#     final_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+
+#     env.reset()
+#     total_reward = 0
+#     print("Info:", best_agent.info)
+#     print("Rendering best agent's action sequence...")
+
+#     for action in tqdm(best_agent.action_sequence, desc="Rendering Steps"):
+#         _, reward, terminate, truncate, _ = env.step(action)
+#         total_reward += reward
+
+#         # Clear screen
+#         screen.fill((0, 0, 0))
+#         final_surface.fill((0, 0, 0))  # Also clear the final surface
+
+#         # Render the current state to both surfaces
+#         for y in range(env.map_length):
+#             for x in range(env.map_width):
+#                 cell_vec = env.grid[y][x]
+#                 if cell_vec.sum() == 1:
+#                     cell_idx = np.argmax(cell_vec)
+#                     tile_name = env.all_tiles[cell_idx]
+#                     if tile_name in tile_images:
+#                         screen.blit(tile_images[tile_name], (x * 32, y * 32))
+#                         final_surface.blit(tile_images[tile_name], (x * 32, y * 32))
+#                     else:
+#                         # Fallback for missing tiles
+#                         pygame.draw.rect(
+#                             screen, (255, 0, 255), (x * 32, y * 32, 32, 32)
+#                         )
+#                         pygame.draw.rect(
+#                             final_surface, (255, 0, 255), (x * 32, y * 32, 32, 32)
+#                         )
+#                 elif not np.any(cell_vec):
+#                     pygame.draw.rect(screen, (255, 0, 0), (x * 32, y * 32, 32, 32))
+#                     pygame.draw.rect(
+#                         final_surface, (255, 0, 0), (x * 32, y * 32, 32, 32)
+#                     )
+#                 else:  # Superposition
+#                     pygame.draw.rect(screen, (100, 100, 100), (x * 32, y * 32, 32, 32))
+#                     pygame.draw.rect(
+#                         final_surface, (100, 100, 100), (x * 32, y * 32, 32, 32)
+#                     )
+
+#         pygame.display.flip()
+
+#         # Capture final frame if this is the last step
+#         if terminate or truncate:
+#             break
+
+#     # --- Draw the path with smooth curves ---
+#     if hasattr(best_agent.info, "get") and "longest_path" in best_agent.info:
+#         path_indices = best_agent.info["longest_path"]
+#         if path_indices and len(path_indices) > 1:
+#             print(f"Found path with {len(path_indices)} points")
+
+#             # Convert indices to Pygame coordinates (center of each tile)
+#             path_points = []
+#             for idx in path_indices:
+#                 if isinstance(idx, (list, tuple, np.ndarray)) and len(idx) >= 2:
+#                     y, x = idx[0], idx[1]  # Assuming (y, x) format
+#                     center_x = x * 32 + 16  # Center of the tile
+#                     center_y = y * 32 + 16
+#                     path_points.append((center_x, center_y))
+
+#             # Draw smooth path using bezier curves if we have enough points
+#             if len(path_points) >= 3:
+#                 # Create a list of points for smooth curve
+#                 smooth_points = []
+
+#                 # Add the first point
+#                 smooth_points.append(path_points[0])
+
+#                 # Add intermediate points with smoothing
+#                 for i in range(1, len(path_points) - 1):
+#                     prev = path_points[i - 1]
+#                     curr = path_points[i]
+#                     next_p = path_points[i + 1]
+
+#                     # Calculate control points for bezier curve
+#                     ctrl1 = ((prev[0] + curr[0]) / 2, (prev[1] + curr[1]) / 2)
+#                     ctrl2 = ((curr[0] + next_p[0]) / 2, (curr[1] + next_p[1]) / 2)
+
+#                     # Generate points along the bezier curve
+#                     t_values = np.linspace(0, 1, 10)
+#                     for t in t_values:
+#                         x = (
+#                             (1 - t) ** 2 * ctrl1[0]
+#                             + 2 * (1 - t) * t * curr[0]
+#                             + t**2 * ctrl2[0]
+#                         )
+#                         y = (
+#                             (1 - t) ** 2 * ctrl1[1]
+#                             + 2 * (1 - t) * t * curr[1]
+#                             + t**2 * ctrl2[1]
+#                         )
+#                         smooth_points.append((x, y))
+
+#                 # Add the last point
+#                 smooth_points.append(path_points[-1])
+
+#                 # Draw the smooth path on both surfaces
+#                 if len(smooth_points) > 1:
+#                     pygame.draw.lines(screen, (255, 0, 0), False, smooth_points, 3)
+#                     pygame.draw.lines(
+#                         final_surface, (255, 0, 0), False, smooth_points, 3
+#                     )
+
+#                     # Draw circles at the original path points
+#                     for point in path_points:
+#                         pygame.draw.circle(screen, (255, 0, 0), point, 4)
+#                         pygame.draw.circle(final_surface, (255, 0, 0), point, 4)
+#             elif len(path_points) > 1:
+#                 # Fallback to straight lines if not enough points for bezier
+#                 pygame.draw.lines(screen, (255, 0, 0), False, path_points, 3)
+#                 pygame.draw.lines(final_surface, (255, 0, 0), False, path_points, 3)
+
+#                 for point in path_points:
+#                     pygame.draw.circle(screen, (255, 0, 0), point, 4)
+#                     pygame.draw.circle(final_surface, (255, 0, 0), point, 4)
+
+#             pygame.display.flip()
+
+#     # Save the final rendered map
+#     if task_name:
+#         os.makedirs("wfc_reward_img", exist_ok=True)
+#         filename = f"wfc_reward_img/{task_name}_{best_agent.reward:.2f}.png"
+#         pygame.image.save(final_surface, filename)
+#         print(f"Saved final map to {filename}")
+
+#     print(f"Final map reward for the best agent: {total_reward:.4f}")
+#     print(f"Best agent reward during evolution: {best_agent.reward:.4f}")
+
+#     if best_agent.reward == 0.0:
+#         best_agent.info["achieved_max_reward"] = True
+#         print("Max reward of 0 achieved! Agent truly converged.")
+#     else:
+#         best_agent.info["achieved_max_reward"] = False
+#         print("Max reward NOT achieved. Agent stopped early without solving the task.")
+
+#     # Keep the window open for a bit
+#     print("Displaying final map for 5 seconds...")
+#     start_time = time.time()
+#     while time.time() - start_time < 5:
+#         for event in pygame.event.get():
+#             if event.type == pygame.QUIT:
+#                 pygame.quit()
+#                 return
+#         pygame.display.flip()
+
+#     pygame.quit()
 
 
 if __name__ == "__main__":
@@ -542,6 +731,12 @@ if __name__ == "__main__":
         default=None,
         help="Override the patience setting from YAML.",
     )
+    parser.add_argument(
+        "--no-multiprocessing",
+        action="store_true",
+        default=False,
+        help="Disable multiprocessing for running members.",
+    )
 
     parser.add_argument("--genotype-dimensions", type=int, choices=[1, 2], default=1, help="The dimensions of the genotype representation. 1d or 2d")
 
@@ -556,9 +751,14 @@ if __name__ == "__main__":
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     num_tiles = len(tile_symbols)
 
+    passable_mask = np.zeros(num_tiles, dtype=bool)
+    for tile_name in tile_symbols:
+        if tile_name.startswith("sand") or tile_name.startswith("path"):
+            passable_mask[tile_to_index[tile_name]] = True
+
     task_rewards = {
-        "binary_easy": partial(binary_reward, target_path_length=80),
-        "binary_hard": partial(binary_reward, target_path_length=80, hard=True),
+        "binary_easy": partial(binary_reward, target_path_length=80, passable_mask=passable_mask),
+        "binary_hard": partial(binary_reward, target_path_length=80, passable_mask=passable_mask, hard=True),
         "river": river_reward,
         "pond": pond_reward,
         "grass": grass_reward,
@@ -657,7 +857,7 @@ if __name__ == "__main__":
         start_time = time.time()
         study.optimize(
             lambda trial: objective(
-                trial, args.generations_per_trial, args.qd, tasks_list=args.task
+                trial, args.generations_per_trial, passable_mask=passable_mask, qd=args.qd, tasks_list=args.task, 
             ),
             n_trials=args.optuna_trials,
         )
@@ -699,14 +899,12 @@ if __name__ == "__main__":
         pygame.init()
         task_name = "_".join(args.task)
 
-        # Setup environment for rendering
         env.render_mode = "human"
         env.tile_images = tile_images
 
-        os.makedirs("evolution_output", exist_ok=True)
-        output_filename = f"evolution_output/{biome_name}_{task_name}_reward_{best_agent.reward:.2f}.png"
+        os.makedirs("wfc_reward_img", exist_ok=True)
+        output_filename = f"wfc_reward_img/{biome_name}_{task_name}_reward_{best_agent.reward:.2f}.png"
 
-        # Run the best agent's actions
         observation, _ = env.reset()
         for action in best_agent.action_sequence:
             observation, _, terminated, truncated, _ = env.step(action)
@@ -715,11 +913,9 @@ if __name__ == "__main__":
             if terminated or truncated:
                 break
 
-        # Save the final render
         env.save_render(output_filename)
         print(f"Saved final render to {output_filename}")
     
-        # Display for 5 seconds
         start_time = time.time()
         while time.time() - start_time < 5:
             env.render()
@@ -729,11 +925,12 @@ if __name__ == "__main__":
     else:
         print("\nNo best agent was found during the process.")
 
-    # Save the best agent
-    os.makedirs("agents", exist_ok=True)
+    AGENT_DIR = "agents"
+    os.makedirs(AGENT_DIR, exist_ok=True)
+    # save the best agent in a .pkl file
     if best_agent:
         task_str = "_".join(args.task)
-        filename = f"agents/best_evolved_{biome_name}_{task_str}_reward_{best_agent.reward:.2f}_agent.pkl"
+        filename = f"{AGENT_DIR}/best_evolved_{task_str}_reward_{best_agent.reward:.2f}_agent.pkl"
         with open(filename, "wb") as f:
             pickle.dump(best_agent, f)
         print(f"Saved best agent to {filename}")
