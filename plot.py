@@ -505,11 +505,16 @@ def plot_convergence_from_csv(
     # 7. Reset index for plotting
     stats = stats.reset_index()
 
-    # 8. Plot
+    # Early exit if nothing to plot
+    if stats.empty:
+        print(f"No convergence data found in {csv_path}, skipping plot.")
+        return
+
+    # --- Plotting ---
     fig, ax1 = plt.subplots(figsize=(8, 5))
     ax2 = ax1.twinx()
 
-    # a) Mean + stderr
+    # a) Errorbar: Mean + stderr
     ax1.errorbar(
         stats[xlabel],
         stats["mean"],
@@ -521,11 +526,13 @@ def plot_convergence_from_csv(
     for x, y in zip(stats[xlabel], stats["mean"]):
         ax1.text(x, y, f"{y:.1f}", ha="center", va="bottom")
 
-    # b) Fraction converged
+    # b) Bar: Fraction converged
+    ax1.set_xlim(10, 100)
+    bar_width = 9  # 90/(number of bins=10)
     ax2.bar(
         stats[xlabel],
         stats["fraction_converged"],
-        width=(stats[xlabel].max() - stats[xlabel].min()) / (len(stats) * 1.5),
+        width=bar_width,
         alpha=0.3,
         label="Fraction converged"
     )
