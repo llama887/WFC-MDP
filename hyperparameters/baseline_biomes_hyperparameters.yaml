@@ -1,0 +1,23 @@
+River:
+  action_noise_standard_deviation: 0.14519648809830948
+  cross_or_mutate_proportion: 0.9632768485236498
+  cross_over_method: 1
+  number_of_actions_mutated_mean: 1
+  number_of_actions_mutated_standard_deviation: 56.75438740701259
+  survival_rate: 0.7987976663018307
+
+Pond:
+  action_noise_standard_deviation: 0.01659486494446287
+  cross_or_mutate_proportion: 0.9126474575567955
+  cross_over_method: 1
+  number_of_actions_mutated_mean: 91
+  number_of_actions_mutated_standard_deviation: 39.990252248775164
+  survival_rate: 0.36816253616201117
+
+Grass:
+  action_noise_standard_deviation: 0.3915555213301735
+  cross_or_mutate_proportion: 0.6876355496104026
+  cross_over_method: 0
+  number_of_actions_mutated_mean: 86
+  number_of_actions_mutated_standard_deviation: 146.9723703064352
+  survival_rate: 0.7513302847262083

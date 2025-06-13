@@ -25,7 +25,7 @@ log_and_email "Starting job: $SLURM_JOB_NAME ($SLURM_JOB_ID)"
 module purge
 cd /scratch/fyy2003/optimizing_WFC
 source venv/bin/activate
-python core/evolution.py --generations-per-trial 100 --hyperparameter-dir hyperparameters --output-file combo_pond_2d_hyperparameters.yaml --task binary_hard --task river --optuna-trials 20 --genotype-dimensions 2
+python core/evolution.py --generations-per-trial 100 --hyperparameter-dir hyperparameters --output-file combo_river_2d_hyperparameters.yaml --task binary_hard --task river --optuna-trials 20 --genotype-dimensions 2
 
 
 

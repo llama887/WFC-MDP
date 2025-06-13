@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=plot_binary_easy_mcts
-#SBATCH --output=plot_binary_easy_mcts_%j.out
-#SBATCH --error=plot_binary_easy_mcts_%j.err
+#SBATCH --job-name=plot_grass_easy_fi2pop
+#SBATCH --output=plot_grass_easy_fi2pop_%j.out
+#SBATCH --error=plot_grass_easy_fi2pop_%j.err
 #SBATCH --mail-type=START,END,FAIL
 #SBATCH --mail-user=fyy2003@nyu.edu
 #SBATCH --time=48:00:00 
@@ -26,7 +26,8 @@ module purge
 cd /scratch/fyy2003/optimizing_WFC
 source venv/bin/activate
 # python plot.py --load-hyperparameters hyperparameters/qd_binary_hyperparameters.yaml --qd
-python plot.py --task binary_easy --debug --method mcts
+python plot.py --load-hyperparameters hyperparameters/fi2pop_combo_grass_hyperparameters.yaml --task grass --combo easy --method fi2pop
+
 
 
 

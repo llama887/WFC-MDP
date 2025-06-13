@@ -7,18 +7,24 @@ from .utils import (
     calc_num_regions,
     percent_target_tiles_excluding_excluded_tiles,
 )
-
 MAX_BINARY_REWARD = 0
 
+PASSABLE_MASK = None
+
+def init_passable_mask(tile_symbols, tile_to_index):
+    global PASSABLE_MASK
+    num_tiles = len(tile_symbols)
+    passable_mask = np.zeros(num_tiles, dtype=bool)
+    for tile_name in tile_symbols:
+        if tile_name.startswith("sand") or tile_name.startswith("path"):
+            passable_mask[tile_to_index[tile_name]] = True
+    PASSABLE_MASK = passable_mask
 
 def binary_reward(
-    grid: list[list[set[str]]], target_path_length: int, passable_mask: np.ndarray, hard: bool = False,
+    grid: list[list[set[str]]], target_path_length: int, hard: bool = False,
 ) -> tuple[float, dict[str, Any]]:
-    # binary_map = grid_to_binary_map(
-    #     grid,
-    #     lambda tile_name: tile_name.startswith("sand") or tile_name.startswith("path"),
-    # )
-    binary_map = ~np.any(grid * passable_mask[None, None], axis=2)
+    # Use global PASSABLE_MASK
+    binary_map = ~np.any(grid * PASSABLE_MASK[None, None], axis=2)
     number_of_regions = calc_num_regions(binary_map)
     current_path_length, longest_path = calc_longest_path(binary_map)
 

@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=hyperparams_combo_pond_1d_mcts
-#SBATCH --output=hyperparams_combo_pond_1d_mcts_%j.out
-#SBATCH --error=hyperparams_combo_pond_1d_mcts_%j.err
+#SBATCH --job-name=hyperparams_combo_pond_mcts
+#SBATCH --output=hyperparams_combo_pond_mcts_%j.out
+#SBATCH --error=hyperparams_combo_pond_mcts_%j.err
 #SBATCH --mail-type=START,END,FAIL
 #SBATCH --mail-user=fyy2003@nyu.edu
 #SBATCH --time=48:00:00 

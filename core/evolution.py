@@ -5,7 +5,6 @@ from timeit import default_timer as timer
 # Add the project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from typing import Literal
 import argparse
 import copy
 import math
@@ -26,24 +25,23 @@ import yaml
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.stats import truncnorm
 from tqdm import tqdm
+
+from assets.biome_adjacency_rules import create_adjacency_matrix
 from core.wfc import (  # We might not need render_wfc_grid if we keep console rendering
     load_tile_images,
 )
 from core.wfc_env import CombinedReward, WFCWrapper
-
-
 from tasks.binary_task import binary_percent_water, binary_reward
 from tasks.grass_task import grass_reward
 from tasks.hill_task import hill_reward
 from tasks.pond_task import pond_reward
 from tasks.river_task import river_reward
 
-from assets.biome_adjacency_rules import create_adjacency_matrix
-
 
 class CrossOverMethod(Enum):
     UNIFORM = 0
     ONE_POINT = 1
+
 
 def _mutate_clone(args):
     member, mean, stddev, noise = args
@@ -52,11 +50,13 @@ def _mutate_clone(args):
 
 
 class PopulationMember:
-    def __init__(self, env: WFCWrapper, genotype_representation: Literal["1d", "2d"]="1d"):
+    def __init__(
+        self, env: WFCWrapper, genotype_representation: Literal["1d", "2d"] = "1d"
+    ):
         self.env: WFCWrapper = copy.deepcopy(env)
         self.env.reset()
         self.reward: float = float("-inf")
-        self.genotype_representation: Literal["1d", "2d"]=genotype_representation
+        self.genotype_representation: Literal["1d", "2d"] = genotype_representation
         self.action_sequence: np.ndarray = np.array(
             [
                 self.env.action_space.sample()
@@ -107,7 +107,7 @@ class PopulationMember:
     def run_action_sequence(self):
         start_time = timer()
         self.reward = 0
-        observation,  _ =self.env.reset()
+        observation, _ = self.env.reset()
         if self.genotype_representation == "1d":
             for idx, action in enumerate(self.action_sequence):
                 _, reward, terminate, truncate, info = self.env.step(action)
@@ -122,13 +122,14 @@ class PopulationMember:
                 next_collapse_x, next_collapse_y = map(int, observation[-2:])
                 # print(f"Next collapse: {next_collapse_x}, {next_collapse_y}")
                 flattened_index = next_collapse_y * self.env.map_width + next_collapse_x
-                observation, reward, terminate, truncate, info = self.env.step(self.action_sequence[flattened_index])
+                observation, reward, terminate, truncate, info = self.env.step(
+                    self.action_sequence[flattened_index]
+                )
                 self.reward += reward
                 self.info = info
         end_time = timer()
         self.info["wfc_rollout_time"] = end_time - start_time
 
-                   
     @staticmethod
     def crossover(
         parent1: "PopulationMember",
@@ -201,23 +202,23 @@ def reproduce_pair(
 def evolve(
     env: WFCWrapper,
     generations: int = 100,
-    population_size: int = 50,
+    population_size: int = 48,
     number_of_actions_mutated_mean: int = 10,
     number_of_actions_mutated_standard_deviation: float = 10.0,
     action_noise_standard_deviation: float = 0.1,
     survival_rate: float = 0.2,
     cross_over_method: CrossOverMethod = CrossOverMethod.ONE_POINT,
-    patience: int = 30,
+    patience: int = 50,
     qd: bool = False,
     genotype_representation: Literal["1d", "2d"] = "1d",
     cross_or_mutate_proportion: float = 0.7,
     random_offspring_proportion: float = 0.1,
 ) -> tuple[
     list[PopulationMember],  # final population
-    PopulationMember,        # global best agent
-    int,                     # generation at which we stopped
-    list[float],             # best‐agent reward history
-    list[float]              # mean‐elite reward history
+    PopulationMember,  # global best agent
+    int,  # generation at which we stopped
+    list[float],  # best‐agent reward history
+    list[float],  # mean‐elite reward history
 ]:
     """
     Standard EA if qd=False; QD selection + global reproduction if qd=True.
@@ -265,7 +266,9 @@ def evolve(
             best_agent = copy.deepcopy(population[best_idx])
         # best_agent.env.render_mode = 'human'
         # print(best_agent.env.render())
-        render_best_agent(best_agent.env, best_agent, tile_images, task_name="Best Agent")
+        # render_best_agent(
+        #     best_agent.env, best_agent, tile_images, task_name="Best Agent"
+        # )
 
         rollout_times = np.array([m.info["wfc_rollout_time"] for m in population])
         mean_rollout_time = np.mean(rollout_times)
@@ -290,8 +293,7 @@ def evolve(
                     population[i] for i, lbl in enumerate(labels) if lbl == cluster
                 ]
                 members.sort(
-                    key=lambda m: m.info.get("qd_score", m.reward),
-                    reverse=True
+                    key=lambda m: m.info.get("qd_score", m.reward), reverse=True
                 )
                 num_in_cluster = max(1, int(len(members) * survival_rate))
                 survivors.extend(members[:num_in_cluster])
@@ -316,7 +318,11 @@ def evolve(
         # If someone hit “achieved_max_reward,” stop immediately:
         achieved_max = population[best_idx].info.get("achieved_max_reward", False)
         if achieved_max or patience_counter >= patience:
-            print(f"[DEBUG] Converged at generation {gen}" if achieved_max else f"[DEBUG] Stopping early at generation {gen} due to patience.")
+            print(
+                f"[DEBUG] Converged at generation {gen}"
+                if achieved_max
+                else f"[DEBUG] Stopping early at generation {gen} due to patience."
+            )
             print(f"[DEBUG] Best agent reward: {best_agent.reward}")
             print(f"[DEBUG] Mean‐elite reward: {best_mean_elite}")
             print(f"[DEBUG] Patience counter: {patience_counter}")
@@ -330,7 +336,9 @@ def evolve(
         # 7a: Generate random agents
         n_random = max(0, int(round(n_offspring * random_offspring_proportion)))
         for _ in range(n_random):
-            new_agent = PopulationMember(env, genotype_representation=genotype_representation)
+            new_agent = PopulationMember(
+                env, genotype_representation=genotype_representation
+            )
             offspring.append(new_agent)
 
         remaining_needed = n_offspring - n_random
@@ -365,17 +373,21 @@ def evolve(
                         results = pool.map(reproduce_pair, pairs_args)
                 else:
                     results = [reproduce_pair(args) for args in pairs_args]
-                crossover_children = [child for pair in results for child in pair][:n_crossover]
+                crossover_children = [child for pair in results for child in pair][
+                    :n_crossover
+                ]
             else:
                 crossover_children = []
             offspring.extend(crossover_children)
 
             # Mutation-only children
             mutation_args = [
-                (copy.deepcopy(random.choice(survivors)), 
-                 number_of_actions_mutated_mean,
-                 number_of_actions_mutated_standard_deviation,
-                 action_noise_standard_deviation)
+                (
+                    copy.deepcopy(random.choice(survivors)),
+                    number_of_actions_mutated_mean,
+                    number_of_actions_mutated_standard_deviation,
+                    action_noise_standard_deviation,
+                )
                 for _ in range(n_mutation)
             ]
             if mutation_args:
@@ -393,14 +405,15 @@ def evolve(
         if len(offspring) < n_offspring:
             for _ in range(n_offspring - len(offspring)):
                 extra = copy.deepcopy(random.choice(survivors))
-                extra.mutate(number_of_actions_mutated_mean,
-                             number_of_actions_mutated_standard_deviation,
-                             action_noise_standard_deviation)
+                extra.mutate(
+                    number_of_actions_mutated_mean,
+                    number_of_actions_mutated_standard_deviation,
+                    action_noise_standard_deviation,
+                )
                 offspring.append(extra)
 
         # --- 8) Form next generation ---
         population = survivors + offspring
-
 
     # If we exhaust all generations without early stopping:
     return population, best_agent, generations, best_agent_rewards, mean_elite_rewards
@@ -410,11 +423,10 @@ def evolve(
 
 
 def objective(
-    trial: optuna.Trial, 
-    generations_per_trial: int, 
-    passable_mask: np.ndarray,
+    trial: optuna.Trial,
+    generations_per_trial: int,
     qd: bool = False,
-    tasks_list: list[str] = None
+    tasks_list: list[str] = None,
 ) -> float:
     """Objective function for Optuna hyperparameter optimization."""
 
@@ -424,9 +436,15 @@ def objective(
 
     # Suggest new hyperparameters (fixed population_size=48, patience=50)
     hyperparams = {
-        "number_of_actions_mutated_mean": trial.suggest_int("number_of_actions_mutated_mean", 1, 200),
-        "number_of_actions_mutated_standard_deviation": trial.suggest_float("number_of_actions_mutated_standard_deviation", 0.0, 200.0),
-        "action_noise_standard_deviation": trial.suggest_float("action_noise_standard_deviation", 0.01, 1.0, log=True),
+        "number_of_actions_mutated_mean": trial.suggest_int(
+            "number_of_actions_mutated_mean", 1, 200
+        ),
+        "number_of_actions_mutated_standard_deviation": trial.suggest_float(
+            "number_of_actions_mutated_standard_deviation", 0.0, 200.0
+        ),
+        "action_noise_standard_deviation": trial.suggest_float(
+            "action_noise_standard_deviation", 0.01, 1.0, log=True
+        ),
         "survival_rate": trial.suggest_float("survival_rate", 0.1, 0.8),
         "cross_over_method": trial.suggest_categorical("cross_over_method", [0, 1]),
         "cross_or_mutate": trial.suggest_float("cross_or_mutate", 0.0, 1.0),
@@ -440,25 +458,35 @@ def objective(
     reward_funcs = []
     is_combo = len(tasks_list) > 1
 
+    # Initialize passable mask in binary_task
+    from tasks.binary_task import init_passable_mask
+    adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
+    init_passable_mask(tile_symbols, tile_to_index)
+
     for task in tasks_list:
         if task.startswith("binary_"):
             # Use fixed path lengths: 80 for standalone, 40 for combos
             target_length = 40 if is_combo else 80
-            hard = (task == "binary_hard")
-            reward_funcs.append(partial(binary_reward,
-                target_path_length=target_length, passable_mask=passable_mask,
-                hard=hard))
+            hard = task == "binary_hard"
+            reward_funcs.append(
+                partial(
+                    binary_reward,
+                    target_path_length=target_length,
+                    hard=hard,
+                )
+            )
         else:
             reward_funcs.append(globals()[f"{task}_reward"])
 
-    reward_fn = CombinedReward(reward_funcs) if len(reward_funcs) > 1 else reward_funcs[0]
+    reward_fn = (
+        CombinedReward(reward_funcs) if len(reward_funcs) > 1 else reward_funcs[0]
+    )
 
     # Construct Env
     MAP_LENGTH = 15
     MAP_WIDTH = 20
 
     total_reward = 0
-    adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     num_tiles = len(tile_symbols)
 
     NUMBER_OF_SAMPLES = 10
@@ -481,9 +509,15 @@ def objective(
             env=base_env,
             generations=generations_per_trial,
             population_size=population_size,  # Fixed 48
-            number_of_actions_mutated_mean=hyperparams["number_of_actions_mutated_mean"],
-            number_of_actions_mutated_standard_deviation=hyperparams["number_of_actions_mutated_standard_deviation"],
-            action_noise_standard_deviation=hyperparams["action_noise_standard_deviation"],
+            number_of_actions_mutated_mean=hyperparams[
+                "number_of_actions_mutated_mean"
+            ],
+            number_of_actions_mutated_standard_deviation=hyperparams[
+                "number_of_actions_mutated_standard_deviation"
+            ],
+            action_noise_standard_deviation=hyperparams[
+                "action_noise_standard_deviation"
+            ],
             survival_rate=hyperparams["survival_rate"],
             cross_over_method=CrossOverMethod(hyperparams["cross_over_method"]),
             patience=patience,  # Fixed 50
@@ -724,7 +758,7 @@ if __name__ == "__main__":
         action="append",
         default=[],
         choices=["binary_easy", "binary_hard", "river", "pond", "grass", "hill"],
-        help="Task(s) to use. For combo tasks, specify multiple --task flags"
+        help="Task(s) to use. For combo tasks, specify multiple --task flags",
     )
     parser.add_argument(
         "--override-patience",
@@ -739,7 +773,13 @@ if __name__ == "__main__":
         help="Disable multiprocessing for running members.",
     )
 
-    parser.add_argument("--genotype-dimensions", type=int, choices=[1, 2], default=1, help="The dimensions of the genotype representation. 1d or 2d")
+    parser.add_argument(
+        "--genotype-dimensions",
+        type=int,
+        choices=[1, 2],
+        default=1,
+        help="The dimensions of the genotype representation. 1d or 2d",
+    )
 
     args = parser.parse_args()
     if not args.task:
@@ -752,14 +792,13 @@ if __name__ == "__main__":
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     num_tiles = len(tile_symbols)
 
-    passable_mask = np.zeros(num_tiles, dtype=bool)
-    for tile_name in tile_symbols:
-        if tile_name.startswith("sand") or tile_name.startswith("path"):
-            passable_mask[tile_to_index[tile_name]] = True
+    # Initialize passable_mask in binary_task
+    from tasks.binary_task import init_passable_mask
+    init_passable_mask(tile_symbols, tile_to_index)
 
     task_rewards = {
-        "binary_easy": partial(binary_reward, target_path_length=80, passable_mask=passable_mask),
-        "binary_hard": partial(binary_reward, target_path_length=80, passable_mask=passable_mask, hard=True),
+        "binary_easy": partial(binary_reward, target_path_length=20),
+        "binary_hard": partial(binary_reward, target_path_length=20, hard=True),
         "river": river_reward,
         "pond": pond_reward,
         "grass": grass_reward,
@@ -858,7 +897,10 @@ if __name__ == "__main__":
         start_time = time.time()
         study.optimize(
             lambda trial: objective(
-                trial, args.generations_per_trial, passable_mask=passable_mask, qd=args.qd, tasks_list=args.task, 
+                trial,
+                args.generations_per_trial,
+                qd=args.qd,
+                tasks_list=args.task,
             ),
             n_trials=args.optuna_trials,
         )
@@ -894,16 +936,46 @@ if __name__ == "__main__":
         print("\nInitializing Pygame for rendering the best map...")
         pygame.init()
         task_name = "_".join(args.task)
-        render_best_agent(env, best_agent, tile_images, task_name)
+
+        # Setup environment for rendering
+        env.render_mode = "human"
+        env.tile_images = tile_images
+
+        os.makedirs("evolution_output", exist_ok=True)
+        output_filename = (
+            f"evolution_output/{task_name}_reward_{best_agent.reward:.2f}.png"
+        )
+
+        # Run the best agent's actions
+        observation, _ = env.reset()
+        for action in best_agent.action_sequence:
+            observation, _, terminated, truncated, _ = env.step(action)
+            env.render()
+            pygame.display.flip()
+            if terminated or truncated:
+                break
+
+        # Save the final render
+        env.save_render(output_filename)
+        print(f"Saved final render to {output_filename}")
+
+        # Display for 5 seconds
+        start_time = time.time()
+        while time.time() - start_time < 5:
+            env.render()
+            pygame.event.pump()
+
+        env.close()
     else:
         print("\nNo best agent was found during the process.")
 
-    AGENT_DIR = "agents"
-    os.makedirs(AGENT_DIR, exist_ok=True)
-    # save the best agent in a .pkl file
+    # Save the best agent
+    os.makedirs("agents", exist_ok=True)
     if best_agent:
         task_str = "_".join(args.task)
-        filename = f"{AGENT_DIR}/best_evolved_{task_str}_reward_{best_agent.reward:.2f}_agent.pkl"
+        filename = (
+            f"agents/best_evolved_{task_str}_reward_{best_agent.reward:.2f}_agent.pkl"
+        )
         with open(filename, "wb") as f:
             pickle.dump(best_agent, f)
         print(f"Saved best agent to {filename}")

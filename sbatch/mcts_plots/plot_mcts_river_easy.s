@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=plot_grass_easy_mcts
-#SBATCH --output=plot_grass_easy_mcts_%j.out
-#SBATCH --error=plot_grass_easy_mcts_%j.err
+#SBATCH --job-name=plot_river_easy_mcts
+#SBATCH --output=plot_river_easy_mcts_%j.out
+#SBATCH --error=plot_river_easy_mcts_%j.err
 #SBATCH --mail-type=START,END,FAIL
 #SBATCH --mail-user=fyy2003@nyu.edu
 #SBATCH --time=48:00:00 
@@ -26,7 +26,7 @@ module purge
 cd /scratch/fyy2003/optimizing_WFC
 source venv/bin/activate
 # python plot.py --load-hyperparameters hyperparameters/qd_binary_hyperparameters.yaml --qd
-python plot.py --load-hyperparameters hyperparameters/binary_hyperparameters.yaml --task grass --combo easy --debug --method mcts
+python plot.py --task river --combo easy --method mcts --sample-size 5
 
 
 

@@ -25,7 +25,7 @@ log_and_email "Starting job: $SLURM_JOB_NAME ($SLURM_JOB_ID)"
 module purge
 cd /scratch/fyy2003/optimizing_WFC
 source venv/bin/activate
-python core/fi2pop.py --generations-per-trial 500 --hyperparameter-dir hyperparameters --output-file mcts_binary_hyperparameters.yaml --task binary_hard --optuna-trials 5
+python core/mcts.py --iterations-per-trial 500 --hyperparameter-dir hyperparameters --output-file mcts_binary_hyperparameters.yaml --task binary_hard --optuna-trials 5
 
 
 
