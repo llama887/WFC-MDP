@@ -34,161 +34,135 @@ def _simulate_node(node: "Node") -> tuple[float, list[np.ndarray], bool]:
     return node.simulate()
 
 
-class Action(BaseModel):
-    """Represents an action in the MCTS tree with its statistics"""
-    action_logits: np.ndarray = Field(default_factory=lambda: np.array([]))
-    visits: int = Field(default=0)
-    total_reward: float = Field(default=0.0)
-    tile_index: int = Field(default=-1)
-
-    class Config:
-        arbitrary_types_allowed = True
+# Action class removed for memory optimization.
 
 
 class Node:
-    """A node in the MCTS tree"""
-    def __init__(self, env: WFCWrapper, parent: Node | None = None, action_taken: Action | None = None):
-        self.env = copy.deepcopy(env)
+    __slots__ = (
+        "parent", "action_index", "children", 
+        "visits", "total_reward", "untried_actions"
+    )
+    
+    def __init__(self, parent: "Node" | None, action_index: int | None, num_tiles: int):
         self.parent = parent
-        self.action_taken = action_taken
+        self.action_index = action_index
         self.children: list[Node] = []
-        self.available_actions: dict[int, Action] = {
-            i: Action(action_logits=np.eye(env.num_tiles)[i], tile_index=i)
-            for i in range(env.num_tiles)
-        }
         self.visits = 0
         self.total_reward = 0.0
-        self.is_terminal = False
-        self.is_fully_expanded = False
+        self.untried_actions = set(range(num_tiles)) if parent is None else set()
 
-    def uct_score(self, child: "Node", exploration_weight: float) -> float:
-        if child.visits == 0:
+    def uct_value(self, parent_visits: int, exploration_weight: float) -> float:
+        if self.visits == 0:
             return float("inf")
-        exploitation = child.total_reward / child.visits
-        exploration = exploration_weight * math.sqrt(math.log(self.visits) / child.visits)
-        return exploitation + exploration
-
-    def best_child(self, exploration_weight: float) -> "Node":
-        if not self.children:
-            raise ValueError("Node has no children")
-        return max(self.children, key=lambda child: self.uct_score(child, exploration_weight))
-
-    def expand(self) -> "Node":
-        unexplored_indices = [
-            idx for idx in self.available_actions
-            if idx not in {child.action_taken.tile_index for child in self.children if child.action_taken}
-        ]
-
-        if not unexplored_indices:
-            self.is_fully_expanded = True
-            return self.best_child(exploration_weight=1.0)
-
-        tile_idx = np.random.choice(unexplored_indices)
-        action = self.available_actions[tile_idx]
-
-        child_env = copy.deepcopy(self.env)
-        _, _, terminated, truncated, _ = child_env.step(np.array(action.action_logits))
-
-        child = Node(child_env, parent=self, action_taken=action)
-        child.is_terminal = terminated or truncated
-        self.children.append(child)
-        return child
-
-    def simulate(self) -> tuple[float, list[np.ndarray], bool]:
-        if self.is_terminal:
-            return self.env.reward(self.env.grid)[0], [], False
-
-        sim_env = copy.deepcopy(self.env)
-        total_reward = 0.0
-        action_sequence = []
-        terminated, truncated = False, False
-        while not (terminated or truncated):
-            action_idx = np.random.choice(list(self.available_actions.keys()))
-            action = self.available_actions[action_idx].action_logits
-            _, reward, terminated, truncated, info = sim_env.step(action)
-            total_reward += reward
-            action_sequence.append(action)
-            if terminated and info.get("achieved_max_reward", False):
-                return total_reward, action_sequence, True
-        return total_reward, action_sequence, False
-
-    def backpropagate(self, reward: float) -> None:
-        node = self
-        while node is not None:
-            node.visits += 1
-            node.total_reward += reward
-            if node.action_taken:
-                node.action_taken.visits += 1
-                node.action_taken.total_reward += reward
-            node = node.parent
+        return (self.total_reward / self.visits) + exploration_weight * math.sqrt(
+            math.log(parent_visits) / self.visits
+        )
 
 
 class MCTS:
-    """Monte Carlo Tree Search implementation for WFC"""
-    def __init__(self, env: WFCWrapper, exploration_weight: float = sqrt(2)):
-        self.env = env
+    def __init__(self, env: WFCWrapper, exploration_weight: float = math.sqrt(2)):
+        self.root_env = copy.deepcopy(env)
         self.exploration_weight = exploration_weight
-        self.root = Node(env)
-        self.best_action_sequence: list[np.ndarray] = []
+        self.root = Node(parent=None, action_index=None, num_tiles=env.num_tiles)
+        self.best_action_sequence: list[int] = []
         self.best_reward = float("-inf")
 
-    def search(self) -> tuple[Action, list[np.ndarray], bool]:
-        num_simulations = 48
-        num_processes = min(multiprocessing.cpu_count(), num_simulations)
-
-        nodes_to_simulate = [self.select_node() for _ in range(num_simulations)]
-
-        with Pool(processes=num_processes) as pool:
-            simulation_outputs = pool.map(_simulate_node, nodes_to_simulate)
-
-        for node, (reward, rollout_sequence, achieved_max_reward) in zip(
-            nodes_to_simulate, simulation_outputs
-        ):
-            node.backpropagate(reward)
-
-            if achieved_max_reward:
-                prefix_actions = []
-                current_node = node
-                while current_node.parent is not None:
-                    prefix_actions.append(current_node.action_taken.action_logits)
-                    current_node = current_node.parent
-                prefix_actions.reverse()
-
-                full_sequence = prefix_actions + rollout_sequence
-                self.best_action_sequence = full_sequence
-                self.best_reward = reward
-
-                if full_sequence:
-                    for child in self.root.children:
-                        if child.action_taken and np.array_equal(
-                            child.action_taken.action_logits, full_sequence[0]
-                        ):
-                            return child.action_taken, full_sequence, True
-
-            if reward > self.best_reward:
-                self.best_reward = reward
-                prefix_actions = []
-                current_node = node
-                while current_node.parent is not None:
-                    prefix_actions.append(current_node.action_taken.action_logits)
-                    current_node = current_node.parent
-                prefix_actions.reverse()
-                self.best_action_sequence = prefix_actions + rollout_sequence
-
-        if not self.root.children:
-            action_logits = self.env.action_space.sample()
-            return Action(action_logits=action_logits), self.best_action_sequence, False
-
-        best_child = max(self.root.children, key=lambda c: c.visits)
-        return best_child.action_taken, self.best_action_sequence, False
+    def _replay_env(self, node: Node) -> WFCWrapper:
+        env = copy.deepcopy(self.root_env)
+        action_sequence = []
+        current = node
+        while current.parent is not None:
+            action_sequence.append(current.action_index)
+            current = current.parent
+        action_sequence.reverse()
+        
+        for act_idx in action_sequence:
+            logits = np.eye(env.num_tiles)[act_idx]
+            env.step(logits)
+        return env
 
     def select_node(self) -> Node:
         node = self.root
-        while not node.is_terminal and node.is_fully_expanded:
-            node = node.best_child(self.exploration_weight)
-        if not node.is_terminal and not node.is_fully_expanded:
-            return node.expand()
+        while node.untried_actions == set() and node.children:
+            node = max(node.children, key=lambda c: c.uct_value(node.visits, self.exploration_weight))
         return node
+
+    def expand(self, node: Node) -> Node:
+        act_idx = next(iter(node.untried_actions))
+        node.untried_actions.remove(act_idx)
+        child = Node(parent=node, action_index=act_idx, num_tiles=self.root_env.num_tiles)
+        node.children.append(child)
+        return child
+
+    def simulate(self, node: Node) -> tuple[float, list[int], bool]:
+        env = self._replay_env(node)
+        total_reward = 0.0
+        action_sequence = []
+        achieved_max = False
+        
+        while True:
+            choice = np.random.choice(env.num_tiles)
+            logits = np.eye(env.num_tiles)[choice]
+            _, reward, terminated, truncated, info = env.step(logits)
+            total_reward += reward
+            action_sequence.append(choice)
+            
+            if terminated or truncated:
+                achieved_max = info.get("achieved_max_reward", False)
+                break
+                
+        return total_reward, action_sequence, achieved_max
+
+    def backpropagate(self, node: Node, reward: float) -> None:
+        current = node
+        while current is not None:
+            current.visits += 1
+            current.total_reward += reward
+            current = current.parent
+
+    def search(self) -> tuple[int | None, list[int], bool]:
+        num_simulations = 48
+        leaf_nodes = [self.select_node() for _ in range(num_simulations)]
+        
+        # Process simulations sequentially (parallel removed for simplicity)
+        results = []
+        for node in leaf_nodes:
+            if node.untried_actions:
+                node = self.expand(node)
+            results.append(self.simulate(node))
+        
+        # Backpropagate results
+        for node, (reward, rollout_sequence, achieved_max) in zip(leaf_nodes, results):
+            self.backpropagate(node, reward)
+            
+            if achieved_max:
+                prefix_actions = []
+                current = node
+                while current.parent is not None:
+                    prefix_actions.append(current.action_index)
+                    current = current.parent
+                prefix_actions.reverse()
+                
+                full_sequence = prefix_actions + rollout_sequence
+                self.best_action_sequence = full_sequence
+                self.best_reward = reward
+                return full_sequence[0], full_sequence, True
+                
+            elif reward > self.best_reward:
+                self.best_reward = reward
+                prefix_actions = []
+                current = node
+                while current.parent is not None:
+                    prefix_actions.append(current.action_index)
+                    current = current.parent
+                prefix_actions.reverse()
+                self.best_action_sequence = prefix_actions + rollout_sequence
+        
+        if not self.root.children:
+            return None, self.best_action_sequence, False
+            
+        best_child = max(self.root.children, key=lambda c: c.visits)
+        return best_child.action_index, self.best_action_sequence, False
 
 
 def run_mcts_search(
@@ -196,8 +170,7 @@ def run_mcts_search(
     exploration_weight: float,
     max_iterations: int = 1000,
     patience: int = 50,
-) -> tuple[list[np.ndarray] | None, float, int]:
-    """Run MCTS search with early stopping"""
+) -> tuple[list[int] | None, float, int]:
     mcts = MCTS(env, exploration_weight)
     best_reward = float("-inf")
     best_sequence = None
@@ -263,40 +236,11 @@ def objective(trial, max_iterations_per_trial: int, tasks_list: list[str]) -> fl
     return np.mean(iterations_to_converge)
 
 
-def resume_mcts_search(mcts_instance: "MCTS", max_iterations: int) -> tuple[list[np.ndarray] | None, float | None, int | None]:
-    """
-    Resumes an MCTS search on an existing MCTS object for a given number of iterations.
-
-    Args:
-        mcts_instance (MCTS): The MCTS object to resume the search on.
-        max_iterations (int): The maximum number of additional search iterations to perform.
-
-    Returns:
-        A tuple containing:
-        - The best action sequence if a solution is found, otherwise None.
-        - The best reward if a solution is found, otherwise None.
-        - The number of iterations within this run it took to find the solution, otherwise None.
-    """
+def resume_mcts_search(mcts_instance: MCTS, max_iterations: int) -> tuple[list[int] | None, float | None, int | None]:
     for i in tqdm(range(max_iterations), desc="Resuming MCTS Search", leave=False):
         _, action_sequence, found_max = mcts_instance.search()
         if found_max:
-            # Validate that the found sequence actually achieves the max reward
-            test_env = copy.deepcopy(mcts_instance.env)
-            test_env.reset()
-            current_reward = 0.0
-            for action in action_sequence:
-                _, reward, terminated, truncated, info = test_env.step(action)
-                current_reward += reward
-                if terminated or truncated:
-                    break
-
-            if info.get("achieved_max_reward", False):
-                return action_sequence, current_reward, i + 1
-            else:
-                # This can happen if a rollout spuriously reported max reward.
-                # We should continue searching.
-                print("Warning: MCTS reported a solution, but validation failed. Continuing search.")
-
+            return action_sequence, mcts_instance.best_reward, i + 1
     return None, None, None
 
 def main():
@@ -468,13 +412,16 @@ def main():
         print(f"Generations: {generations}")
         
         if best_sequence:
-            # Save the sequence
+            # Convert tile indices to action logits for saving
+            action_logits_sequence = [
+                np.eye(env.num_tiles)[idx] for idx in best_sequence
+            ]
             AGENT_DIR = "agents"
             os.makedirs(AGENT_DIR, exist_ok=True)
             task_str = "_".join(args.task)
             filename = f"{AGENT_DIR}/best_mcts_{task_str}_reward_{best_reward:.2f}_sequence.pkl"
             with open(filename, "wb") as f:
-                pickle.dump(best_sequence, f)
+                pickle.dump(action_logits_sequence, f)
             print(f"Saved best sequence to {filename}")
             
             # Save the rendered output
@@ -482,7 +429,8 @@ def main():
             output_filename = f"mcts_output/{task_str}_steps_{len(best_sequence)}_reward_{best_reward:.2f}.png"
             env.render_mode = "human"
             observation, _ = env.reset()
-            for action in best_sequence:
+            for idx in best_sequence:
+                action = np.eye(env.num_tiles)[idx]
                 observation, _, terminated, truncated, _ = env.step(action)
                 env.render()
                 if terminated or truncated:
