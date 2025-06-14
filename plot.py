@@ -243,52 +243,35 @@ def _resumable_mcts_collector(
     """
     Collects MCTS data statefully, allowing resumption of incomplete runs.
 
-    This function manages a state file (.pkl) that stores MCTS tree objects
-    and their progress. On each execution, it loads the state, continues
-    searches for unsolved tasks, and saves the updated state.
-
-    Args:
-        loop_keys (list[Any]): List of values to iterate over (e.g., path lengths).
-        make_reward_fn (Callable): Function that returns a reward callable for a given key.
-        task_prefix (str): A prefix for the state and output CSV filenames.
-        is_biome_only (bool): True if the task is biome-only.
-        sample_size (int): The number of sample runs for each key.
-        max_iterations_per_run (int): The number of MCTS iterations to add in this session.
+    This implementation stores each MCTS tree and state in a separate file
+    to avoid memory issues with large numbers of runs.
 
     Returns:
         str: The path to the final summary CSV file.
     """
     fig_dir = get_figure_directory("mcts")
     os.makedirs(fig_dir, exist_ok=True)
-    state_path = os.path.join(fig_dir, f"{task_prefix}_state.pkl")
-
-    # Load existing state or initialize a new one
-    if os.path.exists(state_path):
-        print(f"Resuming MCTS from state file: {state_path}")
-        with open(state_path, "rb") as f:
-            mcts_states = pickle.load(f)
-    else:
-        print("No state file found. Starting new MCTS run.")
-        mcts_states = {}
-
+    
+    # Create tree storage directory
+    tree_dir = os.path.join(fig_dir, "trees", task_prefix)
+    os.makedirs(tree_dir, exist_ok=True)
+    
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     map_length, map_width = 15, 20
     DEFAULT_EXPLORATION_WEIGHT = math.sqrt(2)
 
     for key in loop_keys:
         for run_index in range(1, sample_size + 1):
-            state = mcts_states.get(key, {}).get(run_index)
-
-            # Case 1: Task is already solved, skip.
-            if state and state.get("result") is not None:
-                print(f"Skipping solved task: Key={key}, Run={run_index}")
-                continue
-
-            # Case 2: Task is in progress, resume it.
-            if state:
-                print(f"Resuming task: Key={key}, Run={run_index}, Cumulative Iterations: {state['cumulative_iterations']}")
+            # Create unique filename for this run
+            filename = f"{key}_{run_index}.pkl"
+            state_path = os.path.join(tree_dir, filename)
+            
+            if os.path.exists(state_path):
+                print(f"Resuming task: Key={key}, Run={run_index}")
+                with open(state_path, "rb") as f:
+                    state = pickle.load(f)
                 mcts_instance = state["mcts_instance"]
-            # Case 3: New task, create it.
+                cumulative_iterations = state["cumulative_iterations"]
             else:
                 print(f"Starting new task: Key={key}, Run={run_index}")
                 reward_callable = make_reward_fn(key)
@@ -298,34 +281,41 @@ def _resumable_mcts_collector(
                     tile_to_index=tile_to_index, reward=reward_callable, deterministic=True,
                 )
                 mcts_instance = MCTS(env, exploration_weight=DEFAULT_EXPLORATION_WEIGHT)
-                # Initialize state
-                mcts_states.setdefault(key, {})[run_index] = {
+                cumulative_iterations = 0
+                state = {
                     "mcts_instance": mcts_instance,
-                    "cumulative_iterations": 0,
+                    "cumulative_iterations": cumulative_iterations,
                     "result": None,
                 }
 
             # Run the search for more iterations
             _, _, iterations_in_run = resume_mcts_search(mcts_instance, max_iterations_per_run)
 
-            # Update state based on result
-            current_state = mcts_states[key][run_index]
+            # Update state
             if iterations_in_run is not None:
-                total_iterations = current_state["cumulative_iterations"] + iterations_in_run
-                current_state["result"] = total_iterations
+                total_iterations = cumulative_iterations + iterations_in_run
+                state["result"] = total_iterations
                 print(f"Task SOLVED: Key={key}, Run={run_index} at total iterations: {total_iterations}")
             else:
-                current_state["cumulative_iterations"] += max_iterations_per_run
-                print(f"Task NOT solved: Key={key}, Run={run_index}. Cumulative iterations now: {current_state['cumulative_iterations']}")
+                state["cumulative_iterations"] += max_iterations_per_run
+                print(f"Task NOT solved: Key={key}, Run={run_index}. Cumulative iterations now: {state['cumulative_iterations']}")
 
-            # Save state after each task to prevent data loss
+            # Save updated state
             with open(state_path, "wb") as f:
-                pickle.dump(mcts_states, f)
+                pickle.dump(state, f)
 
-    # --- Generate final CSV report from the state file ---
+    # Generate CSV report by scanning tree directory
     report_rows = []
-    for key, runs in mcts_states.items():
-        for run_index, state in runs.items():
+    for filename in os.listdir(tree_dir):
+        if filename.endswith(".pkl"):
+            with open(os.path.join(tree_dir, filename), "rb") as f:
+                state = pickle.load(f)
+            
+            # Extract key and run_index from filename
+            parts = filename[:-4].split("_")
+            key = "_".join(parts[:-1])  # Handle keys with underscores
+            run_index = int(parts[-1])
+            
             row = {
                 "run_index": run_index,
                 "iterations_to_converge": state["result"],
