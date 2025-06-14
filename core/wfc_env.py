@@ -345,7 +345,11 @@ class WFCWrapper(gym.Env):
         if self.render_mode == "human":
             if self.tile_images is not None:
                 # Graphical rendering with tile images
-                self.screen.fill((0, 0, 0))  # Clear screen
+                surface = pygame.Surface(
+                    (self.map_width * self.tile_size, self.map_length * self.tile_size),
+                    pygame.SRCALPHA,
+                )
+                surface.fill((0, 0, 0))  # Clear screen
                 font = pygame.font.SysFont(None, 20)
 
                 for y in range(self.map_length):
@@ -360,14 +364,14 @@ class WFCWrapper(gym.Env):
                             tile_name = self.all_tiles[tile_idx]
                             # tile_name = next(iter(cell_set))
                             if tile_name in self.tile_images:
-                                self.screen.blit(
+                                surface.blit(
                                     self.tile_images[tile_name],
                                     (x * self.tile_size, y * self.tile_size),
                                 )
                         elif num_options == 0:
                             # Draw contradiction (red)
                             pygame.draw.rect(
-                                self.screen,
+                                surface,
                                 (255, 0, 0),
                                 (
                                     x * self.tile_size,
@@ -378,12 +382,9 @@ class WFCWrapper(gym.Env):
                             )
                         else:
                             # Draw superposition (gray with number of options)
-                            shade = min(
-                                255, 50 + 205 * (1 - num_options / self.num_tiles)
-                            )
                             pygame.draw.rect(
-                                self.screen,
-                                (shade, shade, shade),
+                                surface,
+                                (100, 100, 100, 255),
                                 (
                                     x * self.tile_size,
                                     y * self.tile_size,
@@ -393,7 +394,7 @@ class WFCWrapper(gym.Env):
                             )
                             # Display number of remaining options
                             text = font.render(str(num_options), True, (255, 255, 255))
-                            self.screen.blit(
+                            surface.blit(
                                 text, (x * self.tile_size + 5, y * self.tile_size + 5)
                             )
 
@@ -410,7 +411,7 @@ class WFCWrapper(gym.Env):
                     if len(path_points) >= 2:
                         # Draw the path line
                         pygame.draw.lines(
-                            self.screen, 
+                            surface, 
                             (255, 0, 0, 255),  # Red color with alpha
                             False,  # Not closed
                             path_points, 
@@ -419,16 +420,16 @@ class WFCWrapper(gym.Env):
                         # Draw circles at path points
                         for point in path_points:
                             pygame.draw.circle(
-                                self.screen,
+                                surface,
                                 (255, 0, 0, 255),
                                 point,
                                 4  # Radius
                             )
-                if self.screen is not None:
-                    self.screen.blit(self.screen, (0, 0))
+                if surface is not None:
+                    surface.blit(surface, (0, 0))
                     pygame.display.flip()
                 
-                return self.screen
+                return surface
             else:
                 # Fallback to console rendering
                 print(f"--- Step: {self.current_step} ---")

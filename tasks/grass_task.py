@@ -3,36 +3,38 @@ from .utils import count_tiles, percent_target_tiles_excluding_excluded_tiles
 MAX_GRASS_REWARD = 0
 
 
-def grass_reward(grid: list[list[set[str]]], hard: bool = False) -> tuple[float, dict[str, any]]:
+def grass_reward(grid: list[list[set[str]]]) -> tuple[float, dict[str, Any]]:
     """Calculates the grass biome score based on the grid (now a list of lists of sets)."""
     water_count = count_tiles(
         grid,
-        lambda tile_set: any(isinstance(tile, str) and (tile.startswith("water") or tile.startswith("shore")) for tile in tile_set),
-    )
-    print(f"water: {water_count}")
+        lambda x: isinstance(x, str) and (x.startswith("water") or x.startswith("shore")),
+    ) 
+    # print(f"Water tiles counted: {water_count}")
 
     hill_count = count_tiles(
         grid,
-        lambda tile_set: any(isinstance(tile, str) and ("hill" in tile) for tile in tile_set),
+        lambda x: isinstance(x, str) and ("hill" in x),
     )
+    # print(f"Hill tiles counted: {hill_count}")
 
     TARGET_GRASS_PERCENT = 0.2
     grass_percent = percent_target_tiles_excluding_excluded_tiles(
         grid,
-        lambda tile_set: any(isinstance(tile, str) and ("grass" in tile) for tile in tile_set),
-        lambda tile_set: any(isinstance(tile, str) and (tile.startswith("path") or tile.startswith("sand")) for tile in tile_set),
+        lambda x: isinstance(x, str) and ("grass" in x),
+        lambda x: isinstance(x, str) and (x.startswith("path") or x.startswith("sand")),
+    )
+    # print(f"Grass percentage: {grass_percent}")
+
+    TARGET_FLOWER_PERCENT = 0.2
+    flower_percent = percent_target_tiles_excluding_excluded_tiles(
+        grid,
+        lambda x: isinstance(x, str) and (x == "flower"),
+        lambda x: isinstance(x, str) and (x.startswith("path") or x.startswith("sand")),
     )
     grass_reward = (
         0
         if grass_percent >= TARGET_GRASS_PERCENT
         else grass_percent - TARGET_GRASS_PERCENT
-    )
-    
-    TARGET_FLOWER_PERCENT = 0.2
-    flower_percent = percent_target_tiles_excluding_excluded_tiles(
-        grid,
-        lambda tile_set: any(tile == "flower" for tile in tile_set),
-        lambda tile_set: any(isinstance(tile, str) and (tile.startswith("path") or tile.startswith("sand")) for tile in tile_set),
     )
     flower_reward = (
         0
@@ -65,6 +67,79 @@ def classify_grass_biome(counts: dict, grass_cells: int) -> str:
     elif flower_ratio > 0.15:
         return "meadow"
     return "unknown"
+
+# from typing import Any
+# import numpy as np
+# from .utils import count_tiles, percent_target_tiles_excluding_excluded_tiles
+
+# MAX_GRASS_REWARD = 0
+
+
+# def grass_reward(grid: np.ndarray) -> tuple[float, dict[str, Any]]:
+#     """Calculates the grass biome score based on the grid (now a list of lists of sets).""" 
+    
+#     water_count = count_tiles(
+#         grid,
+#         lambda x: isinstance(x, str) and (x.startswith("water") or x.startswith("shore")),
+#     ) 
+#     print(f"Water tiles counted: {water_count}")
+
+#     hill_count = count_tiles(
+#         grid,
+#         lambda x: isinstance(x, str) and ("hill" in x),
+#     )
+#     print(f"Hill tiles counted: {hill_count}")
+
+#     TARGET_GRASS_PERCENT = 0.2
+#     grass_percent = percent_target_tiles_excluding_excluded_tiles(
+#         grid,
+#         lambda x: isinstance(x, str) and ("grass" in x),
+#         lambda x: isinstance(x, str) and (x.startswith("path") or x.startswith("sand")),
+#     )
+#     print(f"Grass percentage: {grass_percent}")
+
+#     TARGET_FLOWER_PERCENT = 0.2
+#     flower_percent = percent_target_tiles_excluding_excluded_tiles(
+#         grid,
+#         lambda x: isinstance(x, str) and (x == "flower"),
+#         lambda x: isinstance(x, str) and (x.startswith("path") or x.startswith("sand")),
+#     )
+#     grass_reward = (
+#         0
+#         if grass_percent >= TARGET_GRASS_PERCENT
+#         else grass_percent - TARGET_GRASS_PERCENT
+#     )
+#     flower_reward = (
+#         0
+#         if flower_percent >= TARGET_FLOWER_PERCENT
+#         else flower_percent - TARGET_FLOWER_PERCENT
+#     )
+
+#     total_reward = -water_count + -hill_count + grass_reward + flower_reward
+
+#     info = {
+#         "water_count": water_count,
+#         "hill_count": hill_count,
+#         "grass_percent": grass_percent,
+#         "flower_percent": flower_percent,
+#     }
+
+#     return (total_reward, info)
+
+
+# def classify_grass_biome(counts: dict, grass_cells: int) -> str:
+#     """Returns 'grassgrass', 'meadow', or 'unknown' — not used in scoring."""
+#     if grass_cells == 0:
+#         return "unknown"
+
+#     flower_ratio = counts["flower"] / grass_cells
+#     grass_ratio = grass_cells / sum(counts.values())
+
+#     if flower_ratio <= 0.15:
+#         return "grassgrass"
+#     elif flower_ratio > 0.15:
+#         return "meadow"
+#     return "unknown"
 
 
 # def grass_reward(grid: np.ndarray) -> tuple[float, dict[str, any]]:

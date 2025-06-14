@@ -2,22 +2,14 @@ import numpy as np
 from .utils import calc_num_regions, percent_target_tiles_excluding_excluded_tiles, grid_to_binary_map, calc_longest_path
 
 def pond_reward(grid: list[list[set[str]]]) -> tuple[float, dict]:
-    percent_water = percent_target_tiles_excluding_excluded_tiles(
-        grid, 
-        is_target_tiles=lambda tile_name: tile_name.startswith("water"), 
-        is_excluded_tiles=lambda tile_name: tile_name.startswith("sand") or tile_name.startswith("path"),
-    )
+    percent_water = percent_target_tiles_excluding_excluded_tiles(grid, is_target_tiles=lambda tile_name: tile_name.startswith("water"), is_excluded_tiles=lambda tile_name: tile_name.startswith("sand") or tile_name.startswith("path"),)
     percent_water *= 100
     TARGET_PERCENT_WATER = 25
     percent_water_reward = 0
     if percent_water < TARGET_PERCENT_WATER:
         percent_water_reward = percent_water - TARGET_PERCENT_WATER
 
-    percent_water_center = percent_target_tiles_excluding_excluded_tiles(
-        grid, 
-        is_target_tiles=lambda tile_name: tile_name == "water", 
-        is_excluded_tiles=lambda tile_name: tile_name.startswith("sand") or tile_name.startswith("path"),
-    )
+    percent_water_center = percent_target_tiles_excluding_excluded_tiles(grid, is_target_tiles=lambda tile_name: tile_name == "water", is_excluded_tiles=lambda tile_name: tile_name.startswith("sand") or tile_name.startswith("path"),)
     percent_water_center *= 100
     TARGET_PERCENT_WATER_CENTER = 11
     percent_water_center_reward = 0

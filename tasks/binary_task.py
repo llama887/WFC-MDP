@@ -1,7 +1,5 @@
 from typing import Any
-
 import numpy as np
-
 from .utils import (
     calc_longest_path,
     calc_num_regions,
@@ -45,7 +43,6 @@ def binary_percent_water(grid: list[list[set[str]]]) -> float:
     """Calculates the percentage of water tiles in the grid excluding the path tiles."""
     return percent_target_tiles_excluding_excluded_tiles(
         grid,
-        lambda tile_name: tile_name.startswith("water")
-        or tile_name.startswith("shore"),
+        lambda tile_name: tile_name.startswith("water") or tile_name.startswith("shore"),
         lambda tile_name: tile_name.startswith("sand") or tile_name.startswith("path"),
     )
