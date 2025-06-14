@@ -517,7 +517,8 @@ def plot_convergence_from_csv(
         ax1.text(x, y, f"{y:.1f}", ha="center", va="bottom")
 
     # b) Bar: Fraction converged
-    ax1.set_xlim(10, 100)
+    ax1.set_xlim(0, 100)
+    ax1.set_xticks(np.arange(0, 101, 10))
     bar_width = 9  # 90/(number of bins=10)
     ax2.bar(
         stats[xlabel],
