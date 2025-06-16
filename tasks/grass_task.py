@@ -12,57 +12,50 @@ from tasks.utils import count_tiles, percent_target_tiles_excluding_excluded_til
 
 adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
 num_tiles = len(tile_symbols)
-GRASS_MASK: NDArray = np.zeros(num_tiles, dtype=bool)
-for tile_name in tile_symbols:
-    if tile_name.startswith("sand") or tile_name.startswith("path"):
-        GRASS_MASK[tile_to_index[tile_name]] = True
-HILL_MASK: NDArray = np.zeros(num_tiles, dtype=bool)
-for tile_name in tile_symbols:
-    if tile_name.startswith("sand") or tile_name.startswith("path"):
-        GRASS_MASK[tile_to_index[tile_name]] = True
-PATH_MASK: NDArray = np.zeros(num_tiles, dtype=bool)
-for tile_name in tile_symbols:
-    if tile_name.startswith("sand") or tile_name.startswith("path"):
-        PATH_MASK[tile_to_index[tile_name]] = True
 
+SAND_PATH_MASK = np.zeros(num_tiles, dtype=bool)
+GRASS_TARGET_MASK = np.zeros(num_tiles, dtype=bool)
+FLOWER_TARGET_MASK = np.zeros(num_tiles, dtype=bool)
+WATER_MASK = np.zeros(num_tiles, dtype=bool)
+HILL_MASK = np.zeros(num_tiles, dtype=bool)
+
+for idx, tile_name in enumerate(tile_symbols):
+    if tile_name.startswith("sand") or tile_name.startswith("path"):
+        SAND_PATH_MASK[idx] = True
+    if "grass" in tile_name:
+        GRASS_TARGET_MASK[idx] = True
+    if tile_name == "flower":
+        FLOWER_TARGET_MASK[idx] = True
+    if tile_name.startswith("water") or tile_name.startswith("shore"):
+        WATER_MASK[idx] = True
+    if "hill" in tile_name:
+        HILL_MASK[idx] = True
 
 def grass_reward(grid: NDArray) -> tuple[float, dict[str, any]]:
-    """Calculates the grass biome score based on the grid."""
-    water_count = count_tiles(
-        grid,
-        lambda x: x.startswith("water") or x.startswith("shore"),
-    )
-
-    hill_count = count_tiles(
-        grid,
-        lambda x: "hill" in x,
-    )
-: NDArray
-    TARGET_GRASS_PERCENT = 0.2
+    """Improved reward calculation using mask operations"""
+    water_count = np.sum(grid * WATER_MASK[None, None, :])
+    hill_count = np.sum(grid * HILL_MASK[None, None, :])
+    
     grass_percent = percent_target_tiles_excluding_excluded_tiles(
-        grid,
-        lambda x: ("grass" in x),
-        lambda x: x.startswith("path") or x.startswith("sand"),
+        grid, GRASS_TARGET_MASK, SAND_PATH_MASK
     )
-    grass_reward = 0
-    if grass_percent < TARGET_GRASS_PERCENT:
-        grass_reward = grass_percent - TARGET_GRASS_PERCENT
-
-    TARGET_FLOWER_PERCENT = 0.2
+    
     flower_percent = percent_target_tiles_excluding_excluded_tiles(
-        grid,
-        lambda x: x == "flower",
-        lambda x: x.startswith("path") or x.startswith("sand"),
+        grid, FLOWER_TARGET_MASK, SAND_PATH_MASK
     )
-    flower_reward = 0
-    if flower_percent < TARGET_FLOWER_PERCENT:
-        flower_reward = flower_percent - TARGET_FLOWER_PERCENT
-
-    return -water_count - hill_count + grass_reward + flower_reward, {
+    
+    # Calculate rewards based on thresholds
+    grass_reward_val = max(0, grass_percent - 0.2) * 10
+    flower_reward_val = max(0, flower_percent - 0.2) * 10
+    penalty = water_count + hill_count
+    
+    total_reward = grass_reward_val + flower_reward_val - penalty
+    
+    return total_reward, {
         "water_count": water_count,
         "hill_count": hill_count,
         "grass_percent": grass_percent,
-        "flower_percent": flower_percent,
+        "flower_percent": flower_percent
     }
 
 

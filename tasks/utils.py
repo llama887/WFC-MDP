@@ -5,59 +5,34 @@ import numpy as np
 
 
 def grid_to_binary_map(
-    grid: list[list[set[str]]], is_empty: Callable[[str], bool]
+    grid: np.ndarray,  # 3D array [H, W, num_tiles]
+    is_empty: np.ndarray  # 1D mask [num_tiles]
 ) -> np.ndarray:
-    """Converts the WFC grid into a binary map.
-    Empty cells (0) are those whose single tile name starts with 'sand' or 'path',
-    solid cells (1) are everything else.
-    """
-    height = len(grid)
-    width = len(grid[0])
-    binary_map = np.ones((height, width), dtype=np.int32)  # default solid (1)
-    for y in range(height):
-        for x in range(width):
-            cell = grid[y][x]
-            if len(cell) == 1:
-                tile_name = next(iter(cell))
-                if is_empty(tile_name):
-                    binary_map[y, x] = 0  # empty
-                else:
-                    binary_map[y, x] = 1  # solid
-            else:
-                binary_map[y, x] = 1
-    return binary_map
+    """Converts WFC grid to binary map using 3D mask operations"""
+    return np.any(grid * is_empty[None, None, :], axis=2).astype(np.int32)
 
 def percent_target_tiles_excluding_excluded_tiles(
-    grid: list[list[set[str]]],
-    is_target_tiles: Callable[[str], bool],
-    is_excluded_tiles: Callable[[str], bool] | None = None,
-    exclude_prefixes: list[str] | None = None,
+    grid: np.ndarray,          # 3D array [H, W, num_tiles]
+    target_mask: np.ndarray,   # 1D mask [num_tiles]
+    exclude_mask: np.ndarray   # 1D mask [num_tiles]
 ) -> float:
-    """Calculates the percentage of target tiles in the grid, excluding excluded tiles.
-    Any tile whose name starts with one of `exclude_prefixes` will also be treated as excluded."""
-    if is_excluded_tiles is None:
-        is_excluded_tiles = lambda _: False
+    """Calculates percentage using 3D mask ops with broadcasting"""
+    excluded_tiles = np.any(grid * exclude_mask[None, None, :], axis=2)
+    target_tiles = np.any(grid * target_mask[None, None, :] * ~exclude_mask[None, None, :], axis=2)
+    
+    total_tiles = grid.shape[0] * grid.shape[1]
+    excluded_count = np.sum(excluded_tiles)
+    target_count = np.sum(target_tiles)
+    
+    valid_tiles = total_tiles - excluded_count
+    return target_count / valid_tiles if valid_tiles > 0 else 0.0
 
-    # if they passed any prefixes, wrap the exclusion test
-    if exclude_prefixes:
-        orig_excl = is_excluded_tiles
-        is_excluded_tiles = lambda tile: orig_excl(tile) or any(tile.startswith(p) for p in exclude_prefixes)
-
-    total_target_tiles = 0
-    total_excluded_tiles = 0
-
-    for row in grid:
-        for cell in row:
-            for tile in cell:
-                if is_excluded_tiles(tile):
-                    total_excluded_tiles += 1
-                elif is_target_tiles(tile):
-                    total_target_tiles += 1
-
-    total_tiles = sum(len(cell) for row in grid for cell in row) - total_excluded_tiles
-    if total_tiles <= 0:
-        return 0.0
-    return total_target_tiles / total_tiles
+def count_tiles(
+    grid: np.ndarray,    # 3D array [H, W, num_tiles]
+    mask: np.ndarray     # 1D mask [num_tiles]
+) -> int:
+    """Counts tiles using vectorized 3D mask operations"""
+    return np.sum(grid * mask[None, None, :])
 
 def calc_num_regions(binary_map: np.ndarray) -> int:
     """Counts connected regions of empty cells (value 0) using flood-fill."""
