@@ -699,7 +699,7 @@ def plot_comparison(
     ax1.set_xlim(min(x_vals) - bar_width, max(x_vals) + bar_width)
     ax1.grid(True, linestyle='--', alpha=0.6)
     
-    ax1.legend(loc="upper left", fontsize=10)
+    ax1.legend(loc="upper right", fontsize=10)
     ax1.set_title(title, fontsize=14)
     fig.tight_layout()
     
