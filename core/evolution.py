@@ -365,11 +365,8 @@ def evolve(
                 )
             if pairs_args:
                 n_procs = min(cpu_count() * 2, len(pairs_args))
-                if not args.no_multiprocessing:
-                    with Pool(n_procs) as pool:
-                        results = pool.map(reproduce_pair, pairs_args)
-                else:
-                    results = [reproduce_pair(args) for args in pairs_args]
+                with Pool(n_procs) as pool:
+                    results = pool.map(reproduce_pair, pairs_args)
                 crossover_children = [child for pair in results for child in pair][
                     :n_crossover
                 ]
@@ -389,11 +386,8 @@ def evolve(
             ]
             if mutation_args:
                 n_procs = min(cpu_count() * 2, len(mutation_args))
-                if not args.no_multiprocessing:
-                    with Pool(n_procs) as pool:
-                        mutated = pool.map(_mutate_clone, mutation_args)
-                else:
-                    mutated = [_mutate_clone(args) for args in mutation_args]
+                with Pool(n_procs) as pool:
+                    mutated = pool.map(_mutate_clone, mutation_args)
             else:
                 mutated = []
             offspring.extend(mutated)
@@ -757,12 +751,6 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Override the patience setting from YAML.",
-    )
-    parser.add_argument(
-        "--no-multiprocessing",
-        action="store_true",
-        default=False,
-        help="Disable multiprocessing for running members.",
     )
 
     parser.add_argument(
