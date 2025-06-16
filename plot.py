@@ -922,7 +922,6 @@ if __name__ == "__main__":
         "--task",
         type=str,
         choices=["binary_easy", "binary_hard", "river", "pond", "grass", "biomes"],
-        required=True,
     )
     parser.add_argument("--combo", type=str, choices=["easy", "hard"], default="easy")
     parser.add_argument(
