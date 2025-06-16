@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=plot_binary_hard
-#SBATCH --output=plot_binary_hard%j.out
-#SBATCH --error=plot_binary_hard%j.err
+#SBATCH --job-name=plot_binary_hard_0
+#SBATCH --output=plot_binary_hard_0%j.out
+#SBATCH --error=plot_binary_hard_0%j.err
 #SBATCH --mail-type=START,END,FAIL
 #SBATCH --mail-user=fyy2003@nyu.edu
 #SBATCH --time=48:00:00 
@@ -26,7 +26,7 @@ module purge
 cd /scratch/fyy2003/optimizing_WFC
 source venv/bin/activate
 # python plot.py --load-hyperparameters hyperparameters/qd_binary_hyperparameters.yaml --qd
-python plot.py --load-hyperparameters hyperparameters/binary_1d_hyperparameters.yaml --task binary_hard 
+python plot.py --load-hyperparameters hyperparameters/binary_1d_hyperparameters.yaml --task binary_hard --no-random-offspring 
 
 
 

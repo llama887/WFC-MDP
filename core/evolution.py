@@ -246,12 +246,9 @@ def evolve(
 
     for gen in tqdm(range(1, generations + 1), desc="Generations"):
         # --- 2) Evaluate entire population (in parallel) ---
-        if not args.no_multiprocessing:
-            with Pool(min(cpu_count() * 2, len(population))) as pool:
-                population = pool.map(run_member, population)
-        else:
-            for i, member in enumerate(population):
-                population[i] = run_member(member)
+        with Pool(min(cpu_count() * 2, len(population))) as pool:
+            population = pool.map(run_member, population)
+
 
         # --- 3) Gather fitnesses and track best individual ---
         fitnesses = np.array([m.reward for m in population])
