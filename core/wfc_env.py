@@ -206,32 +206,49 @@ class WFCWrapper(gym.Env):
 
     def get_observation(self) -> np.ndarray:
         """Constructs the observation array (needs to be float32)."""
-        # Convert the list-of-sets grid to the flat numpy array format
-        map_flat = grid_to_array(
-            self.grid,
-            self.all_tiles,
-            self.tile_to_index,
-            self.map_length,
-            self.map_width,
+        # 1) Preallocate a flat map of shape (map_length * map_width,)
+        flat_map = np.full(
+            (self.map_length * self.map_width,),
+            fill_value=-1.0,
+            dtype=np.float32
         )
-        # Find the next cell to collapse using the function from biome_wfc
-        pos_tuple = find_lowest_entropy_cell(
-            self.grid, deterministic=self.deterministic
-        )  # Returns (x, y) or None
 
-        # Handle case where grid is fully collapsed (pos_tuple is None)
+        # 2) Count possibilities per cell
+        #    grid_bool[y,x,t] is True if tile t is still possible at (y,x)
+        grid_bool = self.grid  # shape (map_length, map_width, num_tiles)
+        n_options = grid_bool.sum(axis=2)  # shape (map_length, map_width)
+
+        # 3) Handle fully collapsed cells (n_options == 1)
+        collapsed_mask = (n_options == 1)
+        if collapsed_mask.any():
+            # get the tile‐index of each collapsed cell
+            # argmax will give the index of the single True
+            collapsed_indices = grid_bool.argmax(axis=2)  # shape (map_length, map_width)
+            ys, xs = np.nonzero(collapsed_mask)
+            flat_indices = ys * self.map_width + xs
+            if self.num_tiles > 1:
+                flat_map[flat_indices] = (
+                    collapsed_indices[ys, xs] / float(self.num_tiles - 1)
+                )
+            else:
+                flat_map[flat_indices] = 0.0
+
+        # 4) (Optional) you could treat contradiction cells (n_options==0) differently,
+        #    but here we leave them at -1 to match your undecided encoding.
+
+        # 5) Now compute the next‐collapse position, normalized
+        pos_tuple = find_lowest_entropy_cell(grid_bool, deterministic=self.deterministic)
         if pos_tuple is None:
-            # If fully collapsed or contradiction, position is irrelevant for next step
             pos_array = np.array([0.0, 0.0], dtype=np.float32)
         else:
-            # Normalize the collapse position (x, y) to be between 0 and 1
             x, y = pos_tuple
-            norm_x = x / (self.map_width - 1) if self.map_width > 1 else 0.0
-            norm_y = y / (self.map_length - 1) if self.map_length > 1 else 0.0
+            norm_x = x / float(self.map_width - 1) if self.map_width > 1 else 0.0
+            norm_y = y / float(self.map_length - 1) if self.map_length > 1 else 0.0
             pos_array = np.array([norm_x, norm_y], dtype=np.float32)
 
-        # Ensure final observation is float32
-        return np.concatenate([map_flat, pos_array]).astype(np.float32)
+        # 6) Concatenate and return
+        obs = np.concatenate([flat_map, pos_array]).astype(np.float32)
+        return obs
 
     def step(self, action: np.ndarray):
         """Performs one step of the WFC process based on the agent's action."""
@@ -298,8 +315,8 @@ class WFCWrapper(gym.Env):
         # Get the next observation
 
         # Not using observations currently
-        # observation = self.get_observation()
-        observation = None
+        observation = self.get_observation()
+        # observation = None
 
         info["steps"] = self.current_step
         if terminated:
@@ -326,9 +343,8 @@ class WFCWrapper(gym.Env):
         self.grid = initialize_wfc_grid(self.map_width, self.map_length, self.all_tiles)
         self.current_step = 0
 
-        # Not currently using observations
-        # observation = self.get_observation()
-        observation = None
+        observation = self.get_observation()
+        # observation = None
 
         info = {}  # Can provide initial info if needed
         # print("Environment Reset") # Debug print
