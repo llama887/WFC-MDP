@@ -49,15 +49,25 @@ def _generic_evolution_collector(
     genotype_dimensions: Literal[1, 2] = 1,
     is_biome_only: bool = False,
     sample_size: int = 20,
-    debug: bool = False
+    debug: bool = False,
+    no_random_offspring: bool = False  # NEW: Add this parameter
 ) -> str:
+    # NEW: Override random offspring proportion if requested
+    if no_random_offspring:
+        evolution_hyperparameters["random_offspring"] = 0.0
+
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     map_length, map_width = 15, 20
 
-    # Only create dimension subdir for evolution method
+    # NEW: Adjust output directory based on no_random_offspring flag
     base_fig_dir = get_figure_directory(method)
-    fig_dir = os.path.join(base_fig_dir, f"{genotype_dimensions}d") if method == "evolution" else base_fig_dir
-    
+    if method == "evolution":
+        fig_dir = os.path.join(base_fig_dir, f"{genotype_dimensions}d")
+        if no_random_offspring:
+            fig_dir = os.path.join(fig_dir, "0_random_offspring")
+    else:
+        fig_dir = base_fig_dir
+        
     os.makedirs(fig_dir, exist_ok=True)
     os.makedirs(DEBUG_DIRECTORY, exist_ok=True)
     csv_filename = f"{output_csv_prefix}convergence.csv"
@@ -112,6 +122,9 @@ def _generic_evolution_collector(
                 patience=50,  # Fixed patience
                 qd=use_quality_diversity,
                 genotype_representation=f"{genotype_dimensions}d",
+                # NEW: Add these hyperparameters to call
+                random_offspring_proportion=current_hyperparams.get("random_offspring", 0.1),
+                cross_or_mutate_proportion=current_hyperparams.get("cross_or_mutate", 0.7),
             )
 
             if debug:
@@ -917,6 +930,11 @@ if __name__ == "__main__":
         help="Method to use for convergence testing",
     )
     parser.add_argument(
+        "--no-random-offspring",
+        action="store_true",
+        help="Set random_offspring proportion to 0 for evolution method"
+    )
+    parser.add_argument(
         "--load-hyperparameters",
         type=str,
         help="YAML file with evolution hyperparameters (required for evolution, fi2pop, baseline)",
@@ -1051,19 +1069,22 @@ if __name__ == "__main__":
         if args.task == "binary_easy":
             csv_path = _generic_evolution_collector(
                 list(np.arange(10, 101, 10)), lambda p: partial(binary_reward, target_path_length=p, hard=False),
-                hyperparams, "binary_easy_", "evolution", args.quality_diversity, args.genotype_dimensions, False, args.sample_size, args.debug
+                hyperparams, "binary_easy_", "evolution", args.quality_diversity, args.genotype_dimensions, False, args.sample_size, args.debug,
+                no_random_offspring=args.no_random_offspring
             )
             plot_convergence_from_csv(csv_path, title="Evolution Binary Convergence (Easy)")
         elif args.task == "binary_hard":
             csv_path = _generic_evolution_collector(
                 list(np.arange(10, 101, 10)), lambda p: partial(binary_reward, target_path_length=p, hard=True),
-                hyperparams, "binary_hard_", "evolution", args.quality_diversity, args.genotype_dimensions, False, args.sample_size, args.debug
+                hyperparams, "binary_hard_", "evolution", args.quality_diversity, args.genotype_dimensions, False, args.sample_size, args.debug,
+                no_random_offspring=args.no_random_offspring
             )
             plot_convergence_from_csv(csv_path, title="Evolution Binary Convergence (HARD)")
         elif args.task == "biomes":
             csv_path = _generic_evolution_collector(
                 ["Pond", "River", "Grass"], lambda b: {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[b],
-                hyperparams, f"{args.genotype_dimensions}d_biome_average_", "evolution", args.quality_diversity, args.genotype_dimensions, True, args.sample_size, args.debug
+                hyperparams, f"{args.genotype_dimensions}d_biome_average_", "evolution", args.quality_diversity, args.genotype_dimensions, True, args.sample_size, args.debug,
+                no_random_offspring=args.no_random_offspring
             )
             plot_average_biome_convergence_from_csv(csv_path)
         else: # Combo tasks
@@ -1073,7 +1094,8 @@ if __name__ == "__main__":
             def make_reward(p): return CombinedReward([partial(binary_reward, target_path_length=p, hard=use_hard), second_reward])
             csv_path = _generic_evolution_collector(
                 list(np.arange(10, 101, 10)), make_reward,
-                hyperparams, f"combo_{args.task}{'_hard' if use_hard else ''}_", "evolution", args.quality_diversity, args.genotype_dimensions, False, args.sample_size, args.debug
+                hyperparams, f"combo_{args.task}{'_hard' if use_hard else ''}_", "evolution", args.quality_diversity, args.genotype_dimensions, False, args.sample_size, args.debug,
+                no_random_offspring=args.no_random_offspring
             )
             title = f"Evolution Combo: {args.task.capitalize()}" + (" HARD" if use_hard else "")
             plot_convergence_from_csv(csv_path, title=title)
