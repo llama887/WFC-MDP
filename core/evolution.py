@@ -266,9 +266,9 @@ def evolve(
             best_agent = copy.deepcopy(population[best_idx])
         # best_agent.env.render_mode = 'human'
         # print(best_agent.env.render())
-        render_best_agent(
-            best_agent.env, best_agent, tile_images, task_name="Best Agent"
-        )
+        # render_best_agent(
+        #     best_agent.env, best_agent, tile_images, task_name="Best Agent"
+        # )
 
         rollout_times = np.array([m.info["wfc_rollout_time"] for m in population])
         mean_rollout_time = np.mean(rollout_times)
