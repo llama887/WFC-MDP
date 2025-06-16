@@ -1,6 +1,6 @@
 import numpy as np
 from typing import Any
-from .utils import calc_num_regions, calc_longest_path, grid_to_binary_map, percent_target_tiles_excluding_excluded_tiles
+from .utils import calc_num_regions, calc_longest_path, grid_to_binary_map
 
 # Get tile definitions from biome rules
 from assets.biome_adjacency_rules import create_adjacency_matrix
