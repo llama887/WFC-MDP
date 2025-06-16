@@ -1,6 +1,7 @@
 #!/bin/bash
 
 mkdir comparison_figures
+echo "Plotting..."
 python plot.py --compare --csv-files figures_baseline/binary_convergence.csv \
                                     figures_evolution/1d/binary_easy_convergence.csv \
                                     figures_evolution/2d/binary_easy_convergence.csv \

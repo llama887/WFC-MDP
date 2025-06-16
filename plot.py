@@ -621,86 +621,89 @@ def plot_comparison(
     then plot all methods on a single dual-axis chart with a legend
     showing method name + sample size.
     """
-    all_stats = []
+    all_stats: list[pd.DataFrame] = []
     sample_sizes: dict[str, int] = {}
     
     # 1) Load each CSV and compute per-x stats
-    for csv_path, label in zip(csv_paths, labels):
+    for csv_path, method_name in zip(csv_paths, labels):
         raw = pd.read_csv(csv_path)
         
-        # FIX: Count samples per x-value and check for uniformity
         counts = raw.groupby(xlabel).size()
         if counts.nunique() != 1:
-            print(f"Warning: uneven sample counts for {label}: {counts.to_dict()}")
-        sample_sizes[label] = int(counts.iloc[0])
+            print(f"Warning: uneven sample counts for {method_name}: {counts.to_dict()}")
+        sample_sizes[method_name] = int(counts.iloc[0])
         
-        # Filter converged runs
         df_valid = raw.dropna(subset=["generations_to_converge"])
         stats = (
             df_valid
             .groupby(xlabel)["generations_to_converge"]
             .agg(mean="mean", std="std", successes="count")
         )
-        total = raw.groupby(xlabel)["run_index"].count().rename("total_runs")
-        stats = stats.join(total)
+        total_runs = raw.groupby(xlabel)["run_index"].count().rename("total_runs")
+        stats = stats.join(total_runs)
         stats["stderr"] = stats["std"] / np.sqrt(stats["successes"])
         stats["fraction_converged"] = stats["successes"] / stats["total_runs"]
         stats = stats.reset_index()
-        stats["method"] = label
+        stats["method"] = method_name
         all_stats.append(stats)
     
     combined = pd.concat(all_stats, ignore_index=True)
-    x_vals = sorted(combined[xlabel].unique())
-    n_methods = len(labels)
-    base_bar = 9.0
-    bar_width = base_bar / n_methods
+    x_values = sorted(combined[xlabel].unique())
+    number_of_methods = len(labels)
+    total_bar_space = 9.0
+    bar_width = total_bar_space / number_of_methods
     
-    # 2) Setup plot with consistent colors
-    fig, ax1 = plt.subplots(figsize=(10, 6))
-    ax2 = ax1.twinx()
+    # 2) Setup plot
+    fig, left_axis = plt.subplots(figsize=(10, 6))
+    right_axis = left_axis.twinx()
     
-    # Get color cycle and assign one per method
-    prop_cycle = plt.rcParams['axes.prop_cycle']
+    prop_cycle = plt.rcParams["axes.prop_cycle"]
     color_cycle = itertools.cycle(prop_cycle)
-    colors = [next(color_cycle)['color'] for _ in range(len(labels))]
+    colors = [next(color_cycle)["color"] for _ in labels]
     
     # 3) Plot each method
-    for (method, grp), color in zip(combined.groupby("method"), colors):
-        # a) Mean line with error bars
-        ax1.errorbar(
-            grp[xlabel],
-            grp["mean"],
-            yerr=grp["stderr"],
+    for (method_name, group), color in zip(combined.groupby("method"), colors):
+        # a) mean + stderr
+        left_axis.errorbar(
+            group[xlabel],
+            group["mean"],
+            yerr=group["stderr"],
             marker="o",
             linestyle="-",
-            label=f"{method} (n={sample_sizes[method]})",
+            label=f"{method_name} (n={sample_sizes[method_name]})",
             color=color,
             markersize=6,
             linewidth=2
         )
-        
-        # b) Fraction converged bars
-        idx = labels.index(method)
-        offset = (idx - (n_methods - 1) / 2) * bar_width
-        positions = grp[xlabel] + offset
-        ax2.bar(
-            positions,
-            grp["fraction_converged"],
+        # b) fraction converged
+        idx = labels.index(method_name)
+        offset = (idx - (number_of_methods - 1) / 2) * bar_width
+        bar_positions = group[xlabel] + offset
+        right_axis.bar(
+            bar_positions,
+            group["fraction_converged"],
             width=bar_width,
             alpha=0.3,
             color=color
         )
     
     # 4) Configure axes and legend
-    ax1.set_xlabel(xlabel, fontsize=12)
-    ax1.set_ylabel(y_label, fontsize=12)
-    ax2.set_ylabel("Fraction Converged", fontsize=12)
-    ax1.set_xticks(x_vals)
-    ax1.set_xlim(min(x_vals) - bar_width, max(x_vals) + bar_width)
-    ax1.grid(True, linestyle='--', alpha=0.6)
+    left_axis.set_xlabel(xlabel, fontsize=12)
+    left_axis.set_ylabel(y_label, fontsize=12)
+    right_axis.set_ylabel("Fraction Converged", fontsize=12)
     
-    ax1.legend(loc="upper right", fontsize=10)
-    ax1.set_title(title, fontsize=14)
+    # FORCE x-axis from 0 to 100
+    left_axis.set_xlim(0, 100)
+    # (optional) you can still control xticks if you like:
+    # left_axis.set_xticks(list(range(0, 101, 10)))
+    
+    # FORCE right y-axis from 0 to 1
+    right_axis.set_ylim(0, 1)
+    
+    left_axis.grid(True, linestyle="--", alpha=0.6)
+    left_axis.legend(loc="upper right", fontsize=10)
+    left_axis.set_title(title, fontsize=14)
+    
     fig.tight_layout()
     
     # 5) Save output
