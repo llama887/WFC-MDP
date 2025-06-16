@@ -1,9 +1,11 @@
 import math
 import argparse
 import os
+import sys
 from typing import Any, Callable, Literal
 import time
 import pickle
+import itertools
 
 import matplotlib
 import numpy as np
@@ -593,6 +595,105 @@ def plot_average_biome_convergence_from_csv(csv_file_path: str, output_png_path:
     plt.close(fig)
     print(f"Saved biome convergence plot to {output_png_path}")
 
+def plot_comparison(
+    csv_paths: list[str],
+    labels: list[str],
+    output_path: str = None,
+    title: str = "Method Comparison",
+    xlabel: str = "desired_path_length",
+    y_label: str = "Mean Generations"
+):
+    """
+    Read each CSV, compute mean+stderr and fraction converged,
+    then plot all methods on a single dual-axis chart with a legend
+    showing method name + sample size.
+    """
+    all_stats = []
+    sample_sizes: dict[str, int] = {}
+    
+    # 1) Load each CSV and compute per-x stats
+    for csv_path, label in zip(csv_paths, labels):
+        raw = pd.read_csv(csv_path)
+        # Total runs (unique run_index) = sample size
+        n_runs = raw["run_index"].nunique()
+        sample_sizes[label] = n_runs
+        
+        # Filter converged runs
+        df_valid = raw.dropna(subset=["generations_to_converge"])
+        stats = (
+            df_valid
+            .groupby(xlabel)["generations_to_converge"]
+            .agg(mean="mean", std="std", successes="count")
+        )
+        total = raw.groupby(xlabel)["run_index"].count().rename("total_runs")
+        stats = stats.join(total)
+        stats["stderr"] = stats["std"] / np.sqrt(stats["successes"])
+        stats["fraction_converged"] = stats["successes"] / stats["total_runs"]
+        stats = stats.reset_index()
+        stats["method"] = label
+        all_stats.append(stats)
+    
+    combined = pd.concat(all_stats, ignore_index=True)
+    x_vals = sorted(combined[xlabel].unique())
+    n_methods = len(labels)
+    base_bar = 9.0
+    bar_width = base_bar / n_methods
+    
+    # 2) Setup plot with consistent colors
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+    ax2 = ax1.twinx()
+    
+    # Get color cycle and assign one per method
+    prop_cycle = plt.rcParams['axes.prop_cycle']
+    color_cycle = itertools.cycle(prop_cycle)
+    colors = [next(color_cycle)['color'] for _ in range(len(labels))]
+    
+    # 3) Plot each method
+    for (method, grp), color in zip(combined.groupby("method"), colors):
+        # a) Mean line with error bars
+        ax1.errorbar(
+            grp[xlabel],
+            grp["mean"],
+            yerr=grp["stderr"],
+            marker="o",
+            linestyle="-",
+            label=f"{method} (n={sample_sizes[method]})",
+            color=color,
+            markersize=6,
+            linewidth=2
+        )
+        
+        # b) Fraction converged bars
+        idx = labels.index(method)
+        offset = (idx - (n_methods - 1) / 2) * bar_width
+        positions = grp[xlabel] + offset
+        ax2.bar(
+            positions,
+            grp["fraction_converged"],
+            width=bar_width,
+            alpha=0.3,
+            color=color
+        )
+    
+    # 4) Configure axes and legend
+    ax1.set_xlabel(xlabel, fontsize=12)
+    ax1.set_ylabel(y_label, fontsize=12)
+    ax2.set_ylabel("Fraction Converged", fontsize=12)
+    ax1.set_xticks(x_vals)
+    ax1.set_xlim(min(x_vals) - bar_width, max(x_vals) + bar_width)
+    ax1.grid(True, linestyle='--', alpha=0.6)
+    
+    ax1.legend(loc="upper left", fontsize=10)
+    ax1.set_title(title, fontsize=14)
+    fig.tight_layout()
+    
+    # 5) Save output
+    if output_path is None:
+        output_path = "comparison.png"
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+    print(f"Saved comparison plot to {output_path}")
+
 def collect_constrained_binary_convergence(
     mode: EvolutionMode,
     sample_size: int,
@@ -765,6 +866,46 @@ def collect_constrained_biome_convergence(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Collect and plot WFC convergence data")
+    # --- Comparison mode ---
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="Plot multiple CSVs on one comparison chart"
+    )
+    parser.add_argument(
+        "--csv-files",
+        nargs="+",
+        help="List of convergence CSVs to compare (in same order as --labels)"
+    )
+    parser.add_argument(
+        "--labels",
+        nargs="+",
+        help="Optional custom labels for each CSV (defaults to filename stem)"
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        help="Output path for comparison PNG (default: comparison.png)"
+    )
+    parser.add_argument(
+        "--title",
+        type=str,
+        help="Title for the comparison plot"
+    )
+    parser.add_argument(
+        "--xlabel",
+        type=str,
+        default="desired_path_length",
+        help="X-axis label for comparison plot"
+    )
+    parser.add_argument(
+        "--y_label",
+        dest="y_label",
+        type=str,
+        default="Mean Generations",
+        help="Y-axis label for comparison plot"
+    )
+
     parser.add_argument(
         "--method",
         type=str,
@@ -794,6 +935,28 @@ if __name__ == "__main__":
     parser.add_argument("--sample-size", type=int, default=20, help="Number of runs to collect per data point.")
     parser.add_argument("--mcts-iterations", type=int, default=1000, help="Number of MCTS iterations to run per session.")
     args = parser.parse_args()
+
+    # --- Handle comparison mode first ---
+    if args.compare:
+        if not args.csv_files:
+            parser.error("--csv-files is required when --compare is set")
+        if args.labels and len(args.labels) != len(args.csv_files):
+            parser.error("Number of --labels must match number of --csv-files")
+            
+        labels = args.labels or [
+            os.path.basename(p).rsplit(".", 1)[0] 
+            for p in args.csv_files
+        ]
+        
+        plot_comparison(
+            csv_paths=args.csv_files,
+            labels=labels,
+            output_path=args.output,
+            title=args.title or "Method Comparison",
+            xlabel=args.xlabel,
+            y_label=args.y_label
+        )
+        sys.exit(0)
 
     # --- Argument Validation ---
     hyperparams = {}
