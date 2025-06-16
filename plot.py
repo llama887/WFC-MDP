@@ -615,9 +615,11 @@ def plot_comparison(
     for csv_path, label in zip(csv_paths, labels):
         raw = pd.read_csv(csv_path)
         
-        # FIX: Count unique runs by considering both run_index and x-value
-        n_runs = raw.groupby(xlabel)["run_index"].nunique().sum()
-        sample_sizes[label] = n_runs
+        # FIX: Count samples per x-value and check for uniformity
+        counts = raw.groupby(xlabel).size()
+        if counts.nunique() != 1:
+            print(f"Warning: uneven sample counts for {label}: {counts.to_dict()}")
+        sample_sizes[label] = int(counts.iloc[0])
         
         # Filter converged runs
         df_valid = raw.dropna(subset=["generations_to_converge"])
