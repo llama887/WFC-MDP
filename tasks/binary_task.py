@@ -1,22 +1,38 @@
+import os
+import sys
+
+# Add the project root to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from typing import Any
 
-from .utils import (
+import numpy as np
+from numpy.typing import NDArray
+
+from assets.biome_adjacency_rules import create_adjacency_matrix
+from tasks.utils import (
     calc_longest_path,
     calc_num_regions,
-    grid_to_binary_map,
     percent_target_tiles_excluding_excluded_tiles,
 )
 
 MAX_BINARY_REWARD = 0
 
+adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
+
+num_tiles = len(tile_symbols)
+PASSABLE_MASK: NDArray = np.zeros(num_tiles, dtype=bool)
+for tile_name in tile_symbols:
+    if tile_name.startswith("sand") or tile_name.startswith("path"):
+        PASSABLE_MASK[tile_to_index[tile_name]] = True
+
 
 def binary_reward(
-    grid: list[list[set[str]]], target_path_length: int, hard: bool = False
+    grid: NDArray,
+    target_path_length: int,
+    hard: bool = False,
 ) -> tuple[float, dict[str, Any]]:
-    binary_map = grid_to_binary_map(
-        grid,
-        lambda tile_name: tile_name.startswith("sand") or tile_name.startswith("path"),
-    )
+    binary_map = ~np.any(grid * PASSABLE_MASK[None, None], axis=2)
     number_of_regions = calc_num_regions(binary_map)
     current_path_length, longest_path = calc_longest_path(binary_map)
 

@@ -1,50 +1,69 @@
 import numpy as np
+from typing import Any
 from .utils import calc_num_regions, percent_target_tiles_excluding_excluded_tiles, grid_to_binary_map, calc_longest_path
 
-def pond_reward(grid: list[list[set[str]]]) -> tuple[float, dict]:
-    percent_water = percent_target_tiles_excluding_excluded_tiles(grid, is_target_tiles=lambda tile_name: tile_name.startswith("water"), is_excluded_tiles=lambda tile_name: tile_name.startswith("sand") or tile_name.startswith("path"),)
-    percent_water *= 100
-    TARGET_PERCENT_WATER = 25
-    percent_water_reward = 0
-    if percent_water < TARGET_PERCENT_WATER:
-        percent_water_reward = percent_water - TARGET_PERCENT_WATER
+# Get tile definitions from biome rules
+from assets.biome_adjacency_rules import create_adjacency_matrix
+_, tile_symbols, _ = create_adjacency_matrix()
+num_tiles = len(tile_symbols)
 
-    percent_water_center = percent_target_tiles_excluding_excluded_tiles(grid, is_target_tiles=lambda tile_name: tile_name == "water", is_excluded_tiles=lambda tile_name: tile_name.startswith("sand") or tile_name.startswith("path"),)
-    percent_water_center *= 100
-    TARGET_PERCENT_WATER_CENTER = 11
-    percent_water_center_reward = 0
-    if percent_water_center < TARGET_PERCENT_WATER_CENTER:
-        percent_water_center_reward = percent_water_center - TARGET_PERCENT_WATER_CENTER
-        
-    water_binary_map = grid_to_binary_map(
-        grid,
-        lambda tile_name: tile_name.startswith("water") or tile_name.startswith("shore"),
-    )
-    DESIRED_MAX_WATER_REGIONS = 3
-    number_of_water_regions = calc_num_regions(water_binary_map)
-    water_region_reward = 0
-    if number_of_water_regions > DESIRED_MAX_WATER_REGIONS:
-        water_region_reward = 1 - number_of_water_regions
+# Define masks for pond tasks
+WATER_SHORE_MASK = np.zeros(num_tiles, dtype=bool)
+PURE_WATER_MASK = np.zeros(num_tiles, dtype=bool)
+SAND_PATH_MASK = np.zeros(num_tiles, dtype=bool)
+
+for idx, tile_name in enumerate(tile_symbols):
+    if tile_name.startswith("water") or tile_name.startswith("shore") or tile_name == "pond":
+        WATER_SHORE_MASK[idx] = True
+    if tile_name in ["water", "pond"]:
+        PURE_WATER_MASK[idx] = True
+    if tile_name.startswith("sand") or tile_name.startswith("path"):
+        SAND_PATH_MASK[idx] = True
+
+def pond_reward(grid: np.ndarray) -> tuple[float, dict[str, Any]]:
+    water_percent = percent_target_tiles_excluding_excluded_tiles(
+        grid, WATER_SHORE_MASK, SAND_PATH_MASK
+    ) * 100
+
+    pure_water_percent = percent_target_tiles_excluding_excluded_tiles(
+        grid, PURE_WATER_MASK, SAND_PATH_MASK
+    ) * 100
+
+    # Reward components
+    water_penalty = water_percent - 25 if water_percent < 25 else 0
+    water_center_penalty = pure_water_percent - 11 if pure_water_percent < 11 else 0
+
+    # Create binary maps
+    water_binary_map = grid_to_binary_map(grid, WATER_SHORE_MASK)
+    land_binary_map = grid_to_binary_map(grid, ~WATER_SHORE_MASK)
+
+    # Calculate metrics
+    water_regions = calc_num_regions(water_binary_map)
+    land_regions = calc_num_regions(land_binary_map)
     water_path_length, _ = calc_longest_path(water_binary_map)
-    DESIRED_MAX_WATER_PATH_LENGTH = 25
-    water_path_reward = 0
-    if water_path_length > DESIRED_MAX_WATER_PATH_LENGTH:
-        water_path_reward = DESIRED_MAX_WATER_PATH_LENGTH - water_path_length
 
-    land_binary_map = grid_to_binary_map(
-        grid,
-        lambda tile_name: not (tile_name.startswith("water") or tile_name.startswith("shore")),
+    # Apply penalties
+    region_penalty = 1 - water_regions
+    path_penalty = 25 - water_path_length if water_path_length < 25 else 0
+    land_region_penalty = 5 - land_regions if land_regions > 5 else 0
+
+    total_reward = (
+        water_penalty +
+        3 * water_center_penalty +
+        region_penalty +
+        land_region_penalty +
+        path_penalty
     )
-    number_of_land_regions = calc_num_regions(land_binary_map)
-    land_region_reward = 0
-    DESIRED_MAX_LAND_REGIONS = 5
-    if number_of_land_regions > DESIRED_MAX_LAND_REGIONS:
-        land_region_reward = DESIRED_MAX_LAND_REGIONS - number_of_land_regions
-    # land_region_reward = 0
 
-    return percent_water_reward + 3 * percent_water_center_reward + water_region_reward + land_region_reward + water_path_reward, {"percent_water": percent_water, "percent_water_reward": percent_water_reward, "percent_water_center_reward": percent_water_center_reward,"percent_water_center": percent_water_center, "number_of_water_regions": number_of_water_regions, "water_region_reward": water_region_reward, "number_of_land_regions": number_of_land_regions, "land_region_reward": land_region_reward, "water_path_length": water_path_length, "water_path_reward": water_path_reward,}
-    
-    
+    return total_reward, {
+        "percent_water": water_percent,
+        "percent_water_center": pure_water_percent,
+        "number_of_water_regions": water_regions,
+        "number_of_land_regions": land_regions,
+        "water_path_length": water_path_length
+    }
+
+
 def get_pond_biome(grid: list[list[set[str]]]) -> str:
     water_tiles = {
         "water", "water_tl", "water_tr", "water_t", "water_l", "water_r",

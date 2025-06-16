@@ -5,13 +5,13 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import random
+from copy import deepcopy
 from typing import Any, Callable
 
 import gymnasium as gym  # Use Gymnasium
 import numpy as np
 import pygame
 from gymnasium import spaces
-from copy import deepcopy
 
 # Import functions from biome_wfc instead of fast_wfc
 from core.wfc import (  # We might not need render_wfc_grid if we keep console rendering
@@ -162,8 +162,7 @@ class WFCWrapper(gym.Env):
             try:
                 pygame.init()
                 self.screen = pygame.display.set_mode(
-                    (self.map_width * self.tile_size, 
-                     self.map_length * self.tile_size)
+                    (self.map_width * self.tile_size, self.map_length * self.tile_size)
                 )
                 pygame.display.set_caption("WFC Environment")
                 self._display_initialized = True
@@ -175,25 +174,25 @@ class WFCWrapper(gym.Env):
         cls = self.__class__
         result = cls.__new__(cls)
         memo[id(self)] = result
-        
+
         # Copy all attributes except pygame-related ones
         for k, v in self.__dict__.items():
-            if k not in ['tile_images', 'screen', '_display_initialized']:
+            if k not in ["tile_images", "screen", "_display_initialized"]:
                 setattr(result, k, deepcopy(v, memo))
-        
+
         # Initialize pygame attributes as None
         result.tile_images = None
         result.screen = None
         result._display_initialized = False
-        
+
         return result
 
     def __getstate__(self):
         state = self.__dict__.copy()
         # Remove pygame-specific attributes before pickling
-        state['tile_images'] = None
-        state['screen'] = None
-        state['_display_initialized'] = False
+        state["tile_images"] = None
+        state["screen"] = None
+        state["_display_initialized"] = False
         return state
 
     def __setstate__(self, state):
@@ -289,10 +288,19 @@ class WFCWrapper(gym.Env):
         else:
             reward = 0
 
+        # if terminated or truncated:
+        #     print(
+        #         f"Step {self.current_step}: Terminated={terminated}, Truncated={truncated}"
+        #     )
+
         # if reward != 0:
         #     print(reward)
         # Get the next observation
-        observation = self.get_observation()
+
+        # Not using observations currently
+        # observation = self.get_observation()
+        observation = None
+
         info["steps"] = self.current_step
         if terminated:
             info["terminated_reason"] = "completed"
@@ -304,9 +312,9 @@ class WFCWrapper(gym.Env):
         # Ensure reward is float
         reward = float(reward)
 
-        if 'longest_path' in info:
-            self.current_path = info['longest_path']
-            
+        if "longest_path" in info:
+            self.current_path = info["longest_path"]
+
         return observation, reward, terminated, truncated, info
 
     def reset(self, seed=None, options=None):
@@ -317,8 +325,11 @@ class WFCWrapper(gym.Env):
         # Re-initialize the grid using the function from biome_wfc
         self.grid = initialize_wfc_grid(self.map_width, self.map_length, self.all_tiles)
         self.current_step = 0
-        # Compute and store initial longest path
-        observation = self.get_observation()
+
+        # Not currently using observations
+        # observation = self.get_observation()
+        observation = None
+
         info = {}  # Can provide initial info if needed
         # print("Environment Reset") # Debug print
         return observation, info
@@ -327,28 +338,30 @@ class WFCWrapper(gym.Env):
         """Renders the current grid state to the console."""
         if self.render_mode is None:
             return
-        
+
         self._init_display()  # Ensure display is initialized
 
         if self.render_mode == "human":
             if self.tile_images is not None:
                 # Create a surface to draw on
                 surface = pygame.Surface(
-                    (self.map_width * self.tile_size, 
-                     self.map_length * self.tile_size),
-                    pygame.SRCALPHA
+                    (self.map_width * self.tile_size, self.map_length * self.tile_size),
+                    pygame.SRCALPHA,
                 )
                 surface.fill((0, 0, 0))  # Black background
-                
+
                 # Draw the tiles
                 for y in range(self.map_length):
                     for x in range(self.map_width):
-                        cell_set = self.grid[y][x]
-                        num_options = len(cell_set)
+                        cell_vec = self.grid[y, x]
+                        # num_options = len(cell_set)
+                        num_options = np.sum(cell_vec)
 
                         if num_options == 1:
                             # Draw the collapsed tile
-                            tile_name = next(iter(cell_set))
+                            tile_idx = np.argwhere(cell_vec)[0].item()
+                            tile_name = self.all_tiles[tile_idx]
+                            # tile_name = next(iter(cell_set))
                             if tile_name in self.tile_images:
                                 surface.blit(
                                     self.tile_images[tile_name],
@@ -378,7 +391,7 @@ class WFCWrapper(gym.Env):
                                     self.tile_size,
                                 ),
                             )
-                
+
                 # Draw the path if it exists
                 if self.current_path and len(self.current_path) > 1:
                     path_points = []
@@ -388,15 +401,15 @@ class WFCWrapper(gym.Env):
                             center_x = x * self.tile_size + self.tile_size // 2
                             center_y = y * self.tile_size + self.tile_size // 2
                             path_points.append((center_x, center_y))
-                    
+
                     if len(path_points) >= 2:
                         # Draw the path line
                         pygame.draw.lines(
-                            surface, 
+                            surface,
                             (255, 0, 0, 255),  # Red color with alpha
                             False,  # Not closed
-                            path_points, 
-                            3  # Line width
+                            path_points,
+                            3,  # Line width
                         )
                         # Draw circles at path points
                         for point in path_points:
@@ -404,14 +417,14 @@ class WFCWrapper(gym.Env):
                                 surface,
                                 (255, 0, 0, 255),
                                 point,
-                                4  # Radius
+                                4,  # Radius
                             )
-                
+
                 # Display the surface if in human mode
                 if self.screen is not None:
                     self.screen.blit(surface, (0, 0))
                     pygame.display.flip()
-                
+
                 return surface
             else:
                 # Fallback to console rendering
@@ -419,17 +432,18 @@ class WFCWrapper(gym.Env):
                 for y in range(self.map_length):
                     row_str = ""
                     for x in range(self.map_width):
-                        cell_set = self.grid[y][x]
-                        num_options = len(cell_set)
+                        cell_vec = self.grid[y, x]
+                        num_options = np.sum(cell_vec)
                         if num_options == 1:
-                            tile_name = next(iter(cell_set))
+                            tile_idx = np.argwhere(cell_vec)[0].item()
+                            tile_name = self.all_tiles[tile_idx]
                             row_str += tile_name + " "
                         elif num_options == self.num_tiles:
                             row_str += "? "
                         elif num_options == 0:
                             row_str += "! "
                         else:
-                            row_str += f"{len(cell_set)} "
+                            row_str += f"{num_options} "
                     print(row_str.strip())
                 print("-" * (self.map_width * 2))
                 return None
