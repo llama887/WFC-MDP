@@ -614,8 +614,9 @@ def plot_comparison(
     # 1) Load each CSV and compute per-x stats
     for csv_path, label in zip(csv_paths, labels):
         raw = pd.read_csv(csv_path)
-        # Total runs (unique run_index) = sample size
-        n_runs = raw["run_index"].nunique()
+        
+        # FIX: Count unique runs by considering both run_index and x-value
+        n_runs = raw.groupby(xlabel)["run_index"].nunique().sum()
         sample_sizes[label] = n_runs
         
         # Filter converged runs
