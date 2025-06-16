@@ -1,48 +1,49 @@
 import numpy as np
-from .utils import calc_num_regions, calc_longest_path, count_tiles, grid_to_binary_map
 from typing import Any
+from .utils import calc_num_regions, calc_longest_path, grid_to_binary_map, percent_target_tiles_excluding_excluded_tiles
 
-def river_reward(
-    grid: list[list[set[str]]]
-) -> tuple[float, dict[str, Any]]:
+# Get tile definitions from biome rules
+from assets.biome_adjacency_rules import create_adjacency_matrix
+_, tile_symbols, _ = create_adjacency_matrix()
+num_tiles = len(tile_symbols)
+
+# Define masks for river tasks
+WATER_SHORE_MASK = np.zeros(num_tiles, dtype=bool)
+PURE_WATER_MASK = np.zeros(num_tiles, dtype=bool)
+SAND_PATH_MASK = np.zeros(num_tiles, dtype=bool)
+
+for idx, tile_name in enumerate(tile_symbols):
+    if tile_name.startswith("water") or tile_name.startswith("shore"):
+        WATER_SHORE_MASK[idx] = True
+    if tile_name == "water":
+        PURE_WATER_MASK[idx] = True
+    if tile_name.startswith("sand") or tile_name.startswith("path"):
+        SAND_PATH_MASK[idx] = True
+
+def river_reward(grid: np.ndarray) -> tuple[float, dict[str, Any]]:
+    water_binary_map = grid_to_binary_map(grid, WATER_SHORE_MASK)
+    land_binary_map = grid_to_binary_map(grid, ~WATER_SHORE_MASK)
+
+    water_regions = calc_num_regions(water_binary_map)
+    land_regions = calc_num_regions(land_binary_map)
+    path_length, longest_path = calc_longest_path(water_binary_map)
+    pure_water_count = np.sum(grid * PURE_WATER_MASK[None, None, :])
+
+    # Apply rewards/penalties
     DESIRED_RIVER_LENGTH = 35
-    binary_map = grid_to_binary_map(
-        grid,
-        lambda tile_name: tile_name.startswith("water") or tile_name.startswith("shore"),
-    )
-    number_of_regions = calc_num_regions(binary_map)
-    current_path_length, longest_path = calc_longest_path(binary_map)
+    region_penalty = 1 - water_regions
+    path_penalty = path_length - DESIRED_RIVER_LENGTH if path_length < DESIRED_RIVER_LENGTH else 0
+    land_penalty = 3 - land_regions if land_regions > 3 else 0
 
-    region_reward = 1 - number_of_regions
-    path_reward = (
-        0
-        if current_path_length >= DESIRED_RIVER_LENGTH
-        else current_path_length - DESIRED_RIVER_LENGTH
-    )
+    total_reward = region_penalty + path_penalty + land_penalty - pure_water_count
 
-    number_of_water_centers = count_tiles(
-        grid,
-        lambda x: x == "water"
-    )
-
-    land_binary_map = grid_to_binary_map(
-        grid,
-        lambda tile_name: not (tile_name.startswith("water") or tile_name.startswith("shore")),
-    )
-    number_of_land_regions = calc_num_regions(land_binary_map)
-    land_region_reward = 0
-    DESIRED_MAX_LAND_REGIONS = 3
-    if number_of_land_regions > DESIRED_MAX_LAND_REGIONS:
-        land_region_reward = DESIRED_MAX_LAND_REGIONS - number_of_land_regions
-
-    info = {
-        "number_of_river_regions": number_of_regions,
-        "river_length": current_path_length,
+    return total_reward, {
+        "number_of_river_regions": water_regions,
+        "river_length": path_length,
         "longest_river_path": longest_path,
-        "number_of_water_centers": number_of_water_centers,
-        "number_of_land_regions": number_of_land_regions,
+        "number_of_water_centers": pure_water_count,
+        "number_of_land_regions": land_regions
     }
-    return (region_reward + path_reward - number_of_water_centers + land_region_reward, info)
 
 
 def get_river_biome(grid: list[list[set[str]]]) -> str:
