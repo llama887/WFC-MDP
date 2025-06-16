@@ -1,19 +1,43 @@
+import os
+import sys
+
+# Add the project root to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import numpy as np
-from .utils import count_tiles, percent_target_tiles_excluding_excluded_tiles
+from numpy.typing import NDArray
+
+from assets.biome_adjacency_rules import create_adjacency_matrix
+from tasks.utils import count_tiles, percent_target_tiles_excluding_excluded_tiles
+
+adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
+num_tiles = len(tile_symbols)
+GRASS_MASK: NDArray = np.zeros(num_tiles, dtype=bool)
+for tile_name in tile_symbols:
+    if tile_name.startswith("sand") or tile_name.startswith("path"):
+        GRASS_MASK[tile_to_index[tile_name]] = True
+HILL_MASK: NDArray = np.zeros(num_tiles, dtype=bool)
+for tile_name in tile_symbols:
+    if tile_name.startswith("sand") or tile_name.startswith("path"):
+        GRASS_MASK[tile_to_index[tile_name]] = True
+PATH_MASK: NDArray = np.zeros(num_tiles, dtype=bool)
+for tile_name in tile_symbols:
+    if tile_name.startswith("sand") or tile_name.startswith("path"):
+        PATH_MASK[tile_to_index[tile_name]] = True
 
 
-def grass_reward(grid: np.ndarray) -> tuple[float, dict[str, any]]:
+def grass_reward(grid: NDArray) -> tuple[float, dict[str, any]]:
     """Calculates the grass biome score based on the grid."""
     water_count = count_tiles(
         grid,
         lambda x: x.startswith("water") or x.startswith("shore"),
-    ) 
+    )
 
     hill_count = count_tiles(
         grid,
         lambda x: "hill" in x,
     )
-
+: NDArray
     TARGET_GRASS_PERCENT = 0.2
     grass_percent = percent_target_tiles_excluding_excluded_tiles(
         grid,
@@ -23,7 +47,7 @@ def grass_reward(grid: np.ndarray) -> tuple[float, dict[str, any]]:
     grass_reward = 0
     if grass_percent < TARGET_GRASS_PERCENT:
         grass_reward = grass_percent - TARGET_GRASS_PERCENT
-    
+
     TARGET_FLOWER_PERCENT = 0.2
     flower_percent = percent_target_tiles_excluding_excluded_tiles(
         grid,
@@ -34,11 +58,13 @@ def grass_reward(grid: np.ndarray) -> tuple[float, dict[str, any]]:
     if flower_percent < TARGET_FLOWER_PERCENT:
         flower_reward = flower_percent - TARGET_FLOWER_PERCENT
 
-    return -water_count -hill_count + grass_reward + flower_reward, {"water_count": water_count, "hill_count": hill_count, "grass_percent": grass_percent, "flower_percent": flower_percent}
+    return -water_count - hill_count + grass_reward + flower_reward, {
+        "water_count": water_count,
+        "hill_count": hill_count,
+        "grass_percent": grass_percent,
+        "flower_percent": flower_percent,
+    }
 
-
-
-    
 
 def classify_grass_biome(counts: dict, grass_cells: int) -> str:
     """Returns 'grassgrass', 'meadow', or 'unknown' — not used in scoring."""
@@ -72,35 +98,35 @@ def classify_grass_biome(counts: dict, grass_cells: int) -> str:
 #         "P": 0.1,  # Path
 #     }
 
-    # grass_count = tile_counts.get("G", 0)
-    # grass_coverage = grass_count / total_tiles
+# grass_count = tile_counts.get("G", 0)
+# grass_coverage = grass_count / total_tiles
 
-    # structure_matrix = (grid == "G").astype(np.uint8)
-    # labeled_array, num_regions = label(structure_matrix)
-    # continuity_score = 1.0 if num_regions == 1 else max(0, 1.0 - (num_regions - 1) * 0.2)
+# structure_matrix = (grid == "G").astype(np.uint8)
+# labeled_array, num_regions = label(structure_matrix)
+# continuity_score = 1.0 if num_regions == 1 else max(0, 1.0 - (num_regions - 1) * 0.2)
 
-    # distribution_score = 1.0 - np.mean([
-    #     abs(tile_ratios.get(symbol, 0) - target_ratio)
-    #     for symbol, target_ratio in target_ratios.items()
-    # ])
+# distribution_score = 1.0 - np.mean([
+#     abs(tile_ratios.get(symbol, 0) - target_ratio)
+#     for symbol, target_ratio in target_ratios.items()
+# ])
 
-    # penalty = 0
+# penalty = 0
 
-    # if not 0.7 <= grass_coverage <= 0.9:
-    #     penalty += abs(grass_coverage - 0.8) * 50
+# if not 0.7 <= grass_coverage <= 0.9:
+#     penalty += abs(grass_coverage - 0.8) * 50
 
-    # if num_regions > 2:
-    #     penalty += (num_regions - 2) * 15
-    # penalty += (1.0 - distribution_score) * 10
+# if num_regions > 2:
+#     penalty += (num_regions - 2) * 15
+# penalty += (1.0 - distribution_score) * 10
 
-    # total_score = -penalty
+# total_score = -penalty
 
-    # return min(total_score, 0.0), {
-    #     "biome": biome,
-    #     "coverage": grass_coverage,
-    #     "continuity": continuity_score,
-    #     "distribution": distribution_score,
-    #     "ratios": tile_ratios,
-    #     "num_regions": num_regions,
-    #     "reward": min(total_score, 0.0),
-    # }
+# return min(total_score, 0.0), {
+#     "biome": biome,
+#     "coverage": grass_coverage,
+#     "continuity": continuity_score,
+#     "distribution": distribution_score,
+#     "ratios": tile_ratios,
+#     "num_regions": num_regions,
+#     "reward": min(total_score, 0.0),
+# }
