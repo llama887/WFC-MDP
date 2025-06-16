@@ -8,7 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from assets.biome_adjacency_rules import create_adjacency_matrix
-from tasks.utils import count_tiles, percent_target_tiles_excluding_excluded_tiles
+from tasks.utils import percent_target_tiles_excluding_excluded_tiles
 
 adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
 num_tiles = len(tile_symbols)
@@ -31,31 +31,32 @@ for idx, tile_name in enumerate(tile_symbols):
     if "hill" in tile_name:
         HILL_MASK[idx] = True
 
+
 def grass_reward(grid: NDArray) -> tuple[float, dict[str, any]]:
     """Improved reward calculation using mask operations"""
     water_count = np.sum(grid * WATER_MASK[None, None, :])
     hill_count = np.sum(grid * HILL_MASK[None, None, :])
-    
+
     grass_percent = percent_target_tiles_excluding_excluded_tiles(
         grid, GRASS_TARGET_MASK, SAND_PATH_MASK
     )
-    
+
     flower_percent = percent_target_tiles_excluding_excluded_tiles(
         grid, FLOWER_TARGET_MASK, SAND_PATH_MASK
     )
-    
+
     # Calculate rewards based on thresholds
     grass_reward_val = max(0, grass_percent - 0.2) * 10
     flower_reward_val = max(0, flower_percent - 0.2) * 10
     penalty = water_count + hill_count
-    
+
     total_reward = grass_reward_val + flower_reward_val - penalty
-    
+
     return total_reward, {
         "water_count": water_count,
         "hill_count": hill_count,
         "grass_percent": grass_percent,
-        "flower_percent": flower_percent
+        "flower_percent": flower_percent,
     }
 
 

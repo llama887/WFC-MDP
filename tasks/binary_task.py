@@ -28,7 +28,7 @@ for tile_name in tile_symbols:
 
 
 def binary_reward(
-    grid: list[list[set[str]]],
+    grid: NDArray,
     target_path_length: int,
     hard: bool = False,
 ) -> tuple[float, dict[str, Any]]:
