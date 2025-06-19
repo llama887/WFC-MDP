@@ -1,7 +1,7 @@
-action_noise_standard_deviation: 0.05445148726900627
-cross_or_mutate: 0.47824458167221046
-cross_over_method: 0
-number_of_actions_mutated_mean: 22
-number_of_actions_mutated_standard_deviation: 33.34490815527347
-random_offspring: 0.14669181316905897
-survival_rate: 0.4673137849809057
+action_noise_standard_deviation: 0.12964959063682344
+cross_or_mutate: 0.7453217073143811
+cross_over_method: 1
+number_of_actions_mutated_mean: 97
+number_of_actions_mutated_standard_deviation: 120.08759497491992
+random_offspring: 0.0
+survival_rate: 0.4151487681180645

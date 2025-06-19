@@ -439,7 +439,7 @@ def objective(
         "survival_rate": trial.suggest_float("survival_rate", 0.1, 0.8),
         "cross_over_method": trial.suggest_categorical("cross_over_method", [0, 1]),
         "cross_or_mutate": trial.suggest_float("cross_or_mutate", 0.0, 1.0),
-        "random_offspring": trial.suggest_float("random_offspring", 0.0, 0.3),
+        "random_offspring": trial.suggest_float("random_offspring", 0.0, 0.0),
     }
     # Fixed parameters
     population_size = 48

@@ -614,7 +614,7 @@ def plot_comparison(
     output_path: str = None,
     title: str = "Method Comparison",
     xlabel: str = "desired_path_length",
-    y_label: str = "Mean Generations"
+    y_label: str = "Mean Generations (Bars)"
 ):
     """
     Read each CSV, compute mean+stderr and fraction converged,
@@ -690,7 +690,7 @@ def plot_comparison(
     # 4) Configure axes and legend
     left_axis.set_xlabel(xlabel, fontsize=12)
     left_axis.set_ylabel(y_label, fontsize=12)
-    right_axis.set_ylabel("Fraction Converged", fontsize=12)
+    right_axis.set_ylabel("Fraction Converged (Bars)", fontsize=12)
     
     # FORCE x-axis from 0 to 100
     left_axis.set_xlim(0, 100)
@@ -698,7 +698,7 @@ def plot_comparison(
     # left_axis.set_xticks(list(range(0, 101, 10)))
     
     # FORCE right y-axis from 0 to 1
-    right_axis.set_ylim(0, 1)
+    right_axis.set_ylim(1, 0)
     
     left_axis.grid(True, linestyle="--", alpha=0.6)
     left_axis.legend(loc="upper right", fontsize=10)
@@ -955,7 +955,7 @@ if __name__ == "__main__":
         "--genotype-dimensions", type=int, choices=[1, 2], default=1
     )
     parser.add_argument("--debug", action="store_true", help="Save per-run debug plots")
-    parser.add_argument("--sample-size", type=int, default=40, help="Number of runs to collect per data point.")
+    parser.add_argument("--sample-size", type=int, default=50, help="Number of runs to collect per data point.")
     parser.add_argument("--mcts-iterations", type=int, default=1000, help="Number of MCTS iterations to run per session.")
     args = parser.parse_args()
 
