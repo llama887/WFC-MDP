@@ -953,7 +953,6 @@ if __name__ == "__main__":
             tile_images=tile_images,
             task_info=task_info,
             gen_save_dir=gen_save_dir,
-            task_info=task_info,
         )
         end_time = time.time()
         print(f"Evolution finished in {end_time - start_time:.2f} seconds.")
