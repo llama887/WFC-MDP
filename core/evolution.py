@@ -350,7 +350,7 @@ def evolve(
         assert mean_elite_val <= 0, f"Mean elite reward should be non-positive: {mean_elite_val}"
         mean_elite_rewards.append(mean_elite_val)
 
-        # Image saving per generation (if enabled)
+        # Image saving per generation (if enabled)\
         if (gen_save_dir and 
             tile_images is not None and 
             population[best_idx].reward > -float("inf")):

@@ -48,6 +48,8 @@ def grass_reward(grid: NDArray) -> tuple[float, dict[str, any]]:
     # Calculate rewards based on thresholds
     grass_reward_val = min(0, grass_percent - 0.2) * 10
     flower_reward_val = min(0, flower_percent - 0.2) * 10
+    assert grass_reward_val <= 0
+    assert flower_reward_val <= 0
     penalty = water_count + hill_count
 
     total_reward = grass_reward_val + flower_reward_val - penalty
