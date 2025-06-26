@@ -251,6 +251,7 @@ def evolve(
     cross_or_mutate_proportion: float = 0.7,
     random_offspring_proportion: float = 0.1,
     gen_save_dir: str | None = None,
+    tile_images: dict | None = None,
     task_info: str = "",
 ) -> tuple[
     list[PopulationMember],  # final population
