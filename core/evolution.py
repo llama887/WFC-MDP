@@ -360,6 +360,8 @@ def evolve(
             full_path = os.path.join(gen_save_dir, filename)
             
             try:
+                # Ensure directory exists
+                Path(gen_save_dir).mkdir(parents=True, exist_ok=True)
                 # Initialize pygame safely
                 try:
                     pygame.init()
