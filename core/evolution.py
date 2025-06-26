@@ -43,6 +43,42 @@ class CrossOverMethod(Enum):
     UNIFORM = 0
     ONE_POINT = 1
 
+# REQUIRED RENDERING UTILITIES
+def deepcopy_env_state(env):
+    """Safely clones environment state for rendering"""
+    return {
+        'map_length': env.map_length,
+        'map_width': env.map_width,
+        'grid': copy.deepcopy(env.grid),
+        'all_tiles': copy.copy(env.all_tiles),
+        'tile_symbols': copy.copy(env.tile_symbols)
+    }
+
+def render_boolean_grid(grid_3d, tile_images, tile_symbols, tile_size=32):
+    """Renders grid state to surface without display"""
+    height, width, _ = grid_3d.shape
+    surface = pygame.Surface((width * tile_size, height * tile_size))
+    surface.fill((255, 255, 255))
+    for y in range(height):
+        for x in range(width):
+            cell = grid_3d[y, x]
+            if np.sum(cell) == 0:  # Contradiction
+                pygame.draw.rect(surface, (255, 0, 0), 
+                                (x*tile_size, y*tile_size, tile_size, tile_size))
+            elif np.sum(cell) == 1:  # Collapsed
+                idx = np.argmax(cell)
+                tile_name = tile_symbols[idx]
+                if tile_name in tile_images:
+                    img = tile_images[tile_name]
+                    surface.blit(img, (x*tile_size, y*tile_size))
+                else:  # Missing tile fallback
+                    pygame.draw.rect(surface, (0, 255, 0), 
+                                   (x*tile_size, y*tile_size, tile_size, tile_size))
+            else:  # Superposition
+                pygame.draw.rect(surface, (200, 200, 200), 
+                               (x*tile_size, y*tile_size, tile_size, tile_size))
+    return surface
+
 
 def _mutate_clone(args):
     member, mean, stddev, noise = args
@@ -308,15 +344,50 @@ def evolve(
         mean_elite_val = float(np.mean(elite_rewards))
         mean_elite_rewards.append(mean_elite_val)
 
-        # Save best agent per generation if enabled
-        if gen_save_dir and population[best_idx].reward > -float("inf"):
-            os.makedirs(gen_save_dir, exist_ok=True)
+        # Image saving per generation (if enabled)
+        if (gen_save_dir and 
+            tile_images is not None and 
+            population[best_idx].reward > -float("inf")):
+            
+            pygame_initialized = False
             timestamp = int(time.time())
             filename = f"gen_{gen}_{task_info}_reward_{population[best_idx].reward:.2f}_{timestamp}.png"
+            full_path = os.path.join(gen_save_dir, filename)
+            
             try:
-                population[best_idx].env.save_render(os.path.join(gen_save_dir, filename))
-            except Exception as e:
-                print(f"Error saving generation {gen} image: {e}")
+                # Initialize pygame safely
+                try:
+                    pygame.init()
+                    pygame_initialized = True
+                except Exception:
+                    os.environ['SDL_VIDEODRIVER'] = 'dummy'
+                    pygame.init()
+                    pygame_initialized = True
+                
+                # Get environment state
+                env_state = deepcopy_env_state(population[best_idx].env)
+                
+                # Render using helper function
+                surface = render_boolean_grid(
+                    env_state['grid'],
+                    tile_images,
+                    env_state['all_tiles']
+                )
+                
+                # Save image
+                pygame.image.save(surface, full_path)
+                print(f"Saved generation {gen} image: {full_path}")
+                
+            except Exception as save_error:
+                print(f"Error saving generation {gen} image: {save_error}")
+            finally:
+                if pygame_initialized:
+                    pygame.quit()
+                    # Clean up driver setting
+                    if 'SDL_VIDEODRIVER' in os.environ:
+                        del os.environ['SDL_VIDEODRIVER']
+        else:
+            print(f"Skipping image save for gen {gen} - tile_images not provided")
 
         # --- 6) Early stopping on *mean‐elite* reward ---
         if best_mean_elite is None or mean_elite_val > best_mean_elite:
@@ -878,6 +949,8 @@ if __name__ == "__main__":
             patience=50,  # Fixed patience
             qd=args.qd,
             genotype_representation=str(args.genotype_dimensions) + "d",
+            tile_images=tile_images,
+            task_info=task_info,
             gen_save_dir=gen_save_dir,
             task_info=task_info,
         )
