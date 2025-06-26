@@ -15,6 +15,7 @@ import time
 from enum import Enum
 from functools import partial
 from multiprocessing import Pool, cpu_count
+from pathlib import Path
 from typing import Literal
 
 import matplotlib.pyplot as plt
@@ -213,6 +214,8 @@ def evolve(
     genotype_representation: Literal["1d", "2d"] = "1d",
     cross_or_mutate_proportion: float = 0.7,
     random_offspring_proportion: float = 0.1,
+    gen_save_dir: str | None = None,
+    task_info: str = "",
 ) -> tuple[
     list[PopulationMember],  # final population
     PopulationMember,  # global best agent
@@ -304,6 +307,16 @@ def evolve(
         elite_rewards = [m.reward for m in survivors]
         mean_elite_val = float(np.mean(elite_rewards))
         mean_elite_rewards.append(mean_elite_val)
+
+        # Save best agent per generation if enabled
+        if gen_save_dir and population[best_idx].reward > -float("inf"):
+            os.makedirs(gen_save_dir, exist_ok=True)
+            timestamp = int(time.time())
+            filename = f"gen_{gen}_{task_info}_reward_{population[best_idx].reward:.2f}_{timestamp}.png"
+            try:
+                population[best_idx].env.save_render(os.path.join(gen_save_dir, filename))
+            except Exception as e:
+                print(f"Error saving generation {gen} image: {e}")
 
         # --- 6) Early stopping on *mean‐elite* reward ---
         if best_mean_elite is None or mean_elite_val > best_mean_elite:
@@ -760,6 +773,12 @@ if __name__ == "__main__":
         default=1,
         help="The dimensions of the genotype representation. 1d or 2d",
     )
+    parser.add_argument(
+        "--save-best-per-gen",
+        action="store_true",
+        default=False,
+        help="Save image of best map per generation",
+    )
 
     args = parser.parse_args()
     if not args.task:
@@ -815,6 +834,18 @@ if __name__ == "__main__":
                     hyperparams["patience"] = args.override_patience
             print("Successfully loaded hyperparameters:", hyperparams)
 
+            # Prepare saving best per generation
+            gen_save_dir = None
+            task_info = ""
+            if args.save_best_per_gen:
+                timestamp = time.strftime("%Y%m%d-%H%M%S")
+                task_str = "_".join(args.task)
+                if "binary" in task_str and hasattr(selected_reward, "keywords") and "target_path_length" in selected_reward.keywords:
+                    task_info = f"{task_str}_tl{selected_reward.keywords['target_path_length']}"
+                else:
+                    task_info = task_str
+                gen_save_dir = f"best_gen_maps/{timestamp}_{task_info.replace('/', '-')}"
+            
             print(
                 f"Running evolution for {args.generations} generations with loaded hyperparameters..."
             )
@@ -847,6 +878,8 @@ if __name__ == "__main__":
             patience=50,  # Fixed patience
             qd=args.qd,
             genotype_representation=str(args.genotype_dimensions) + "d",
+            gen_save_dir=gen_save_dir,
+            task_info=task_info,
         )
         end_time = time.time()
         print(f"Evolution finished in {end_time - start_time:.2f} seconds.")
