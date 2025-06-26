@@ -347,12 +347,14 @@ def evolve(
         # Compute mean reward over the elites (survivors)
         elite_rewards = [m.reward for m in survivors]
         mean_elite_val = float(np.mean(elite_rewards))
+        assert mean_elite_val <= 0, f"Mean elite reward should be non-positive: {mean_elite_val}"
         mean_elite_rewards.append(mean_elite_val)
 
         # Image saving per generation (if enabled)
         if (gen_save_dir and 
             tile_images is not None and 
             population[best_idx].reward > -float("inf")):
+            assert population[best_idx].reward <= 0, f"Best agent reward should be non-positive: {population[best_idx].reward}\n{population[best_idx].info}"
             
             pygame_initialized = False
             timestamp = int(time.time())
