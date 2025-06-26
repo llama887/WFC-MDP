@@ -43,19 +43,13 @@ class CrossOverMethod(Enum):
     UNIFORM = 0
     ONE_POINT = 1
 
-# REQUIRED RENDERING UTILITIES
-def deepcopy_env_state(env):
-    """Safely clones environment state for rendering"""
-    return {
-        'map_length': env.map_length,
-        'map_width': env.map_width,
-        'grid': copy.deepcopy(env.grid),
-        'all_tiles': copy.copy(env.all_tiles),
-        'tile_symbols': copy.copy(env.tile_symbols)
-    }
-
-def render_boolean_grid(grid_3d, tile_images, tile_symbols, tile_size=32):
-    """Renders grid state to surface without display"""
+def render_boolean_grid(grid_3d, tile_images, all_tiles, tile_size=32):
+    """Renders grid state to surface without display.
+    grid_3d: 3D numpy array of shape (height, width, num_tiles)
+    tile_images: dict mapping tile names to pygame surfaces
+    all_tiles: list of tile names (indexable by tile index)
+    tile_size: size of each tile in pixels
+    """
     height, width, _ = grid_3d.shape
     surface = pygame.Surface((width * tile_size, height * tile_size))
     surface.fill((255, 255, 255))
@@ -67,7 +61,7 @@ def render_boolean_grid(grid_3d, tile_images, tile_symbols, tile_size=32):
                                 (x*tile_size, y*tile_size, tile_size, tile_size))
             elif np.sum(cell) == 1:  # Collapsed
                 idx = np.argmax(cell)
-                tile_name = tile_symbols[idx]
+                tile_name = all_tiles[idx]
                 if tile_name in tile_images:
                     img = tile_images[tile_name]
                     surface.blit(img, (x*tile_size, y*tile_size))
@@ -78,6 +72,16 @@ def render_boolean_grid(grid_3d, tile_images, tile_symbols, tile_size=32):
                 pygame.draw.rect(surface, (200, 200, 200), 
                                (x*tile_size, y*tile_size, tile_size, tile_size))
     return surface
+
+# REQUIRED RENDERING UTILITIES
+def deepcopy_env_state(env):
+    """Safely clones environment state for rendering"""
+    return {
+        'map_length': env.map_length,
+        'map_width': env.map_width,
+        'grid': copy.deepcopy(env.grid),
+        'all_tiles': copy.copy(env.all_tiles)  # Use all_tiles instead of tile_symbols
+    }
 
 
 def _mutate_clone(args):
@@ -352,7 +356,7 @@ def evolve(
             
             pygame_initialized = False
             timestamp = int(time.time())
-            filename = f"gen_{gen}_{task_info}_reward_{population[best_idx].reward:.2f}_{timestamp}.png"
+            filename = f"gen_{gen:04d}_{task_info}_reward_{population[best_idx].reward:.2f}_{timestamp}.png"
             full_path = os.path.join(gen_save_dir, filename)
             
             try:
