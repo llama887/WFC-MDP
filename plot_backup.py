@@ -563,15 +563,6 @@ def plot_convergence_from_csv(
 def plot_average_biome_convergence_from_csv(csv_file_path: str, output_png_path: str = None, y_label: str = "Mean Generations to Converge"):
     df = pd.read_csv(csv_file_path)
     
-    # Determine convergence metric column
-    if "generations_to_converge" in df.columns:
-        convergence_column = "generations_to_converge"
-    elif "iterations_to_converge" in df.columns:
-        convergence_column = "iterations_to_converge"
-        y_label = "Mean Iterations to Converge"  # Optional: auto-adjust label
-    else:
-        raise KeyError("Missing convergence column in CSV.")
-    
     # Clean invalid runs (non-converged = NaN)
     df_valid = df.dropna(subset=["generations_to_converge"])
     
@@ -622,105 +613,173 @@ def plot_comparison(
     labels: list[str],
     output_path: str = None,
     title: str = "Method Comparison",
-    xlabel: str = "desired_path_length",
-    y_label: str = "Mean Generations (Bars)"
+    xlabel: str = "desired_path_length"
 ):
     """
     Read each CSV, compute mean+stderr and fraction converged,
-    then plot all methods on a single dual-axis chart with a legend
-    showing method name + sample size.
+    then produce two separate plots:
+      1) Mean generations-to-converge with stderr error bars.
+      2) Fraction converged as bar charts.
+
+    For categorical x-axis (like biome), will group bars by method.
     """
+    # --- 1) Load & compute stats for all methods ---
     all_stats: list[pd.DataFrame] = []
     sample_sizes: dict[str, int] = {}
-    
-    # 1) Load each CSV and compute per-x stats
     for csv_path, method_name in zip(csv_paths, labels):
         raw = pd.read_csv(csv_path)
-        
         counts = raw.groupby(xlabel).size()
         if counts.nunique() != 1:
             print(f"Warning: uneven sample counts for {method_name}: {counts.to_dict()}")
         sample_sizes[method_name] = int(counts.iloc[0])
-        
+
         df_valid = raw.dropna(subset=["generations_to_converge"])
         stats = (
             df_valid
             .groupby(xlabel)["generations_to_converge"]
             .agg(mean="mean", std="std", successes="count")
         )
-        total_runs = raw.groupby(xlabel)["run_index"].count().rename("total_runs")
-        stats = stats.join(total_runs)
+        total = raw.groupby(xlabel)["run_index"].count().rename("total_runs")
+        stats = stats.join(total)
         stats["stderr"] = stats["std"] / np.sqrt(stats["successes"])
         stats["fraction_converged"] = stats["successes"] / stats["total_runs"]
         stats = stats.reset_index()
         stats["method"] = method_name
         all_stats.append(stats)
-    
+
     combined = pd.concat(all_stats, ignore_index=True)
-    x_values = sorted(combined[xlabel].unique())
-    number_of_methods = len(labels)
-    total_bar_space = 9.0
-    bar_width = total_bar_space / number_of_methods
-    
-    # 2) Setup plot
-    fig, left_axis = plt.subplots(figsize=(10, 6))
-    right_axis = left_axis.twinx()
-    
+
+    # Decide numeric vs categorical
+    is_numeric = pd.to_numeric(combined[xlabel], errors="coerce").notna().all()
+
+    # Derive output file names
+    if output_path:
+        base, ext = os.path.splitext(output_path)
+    else:
+        base, ext = "comparison", ".png"
+    gen_out = f"{base}_generations{ext}"
+    conv_out = f"{base}_convergence{ext}"
+
+    # Get a consistent color cycle
     prop_cycle = plt.rcParams["axes.prop_cycle"]
     color_cycle = itertools.cycle(prop_cycle)
     colors = [next(color_cycle)["color"] for _ in labels]
-    
-    # 3) Plot each method
-    for (method_name, group), color in zip(combined.groupby("method"), colors):
-        # a) mean + stderr
-        left_axis.errorbar(
-            group[xlabel],
-            group["mean"],
-            yerr=group["stderr"],
-            marker="o",
-            linestyle="-",
-            label=f"{method_name} (n={sample_sizes[method_name]})",
-            color=color,
-            markersize=6,
-            linewidth=2
+
+    if is_numeric:
+        # --- Numeric case (your original logic) ---
+        x_values = sorted(combined[xlabel].unique())
+        num_methods = len(labels)
+        total_bar_space = 9.0
+        bar_width = total_bar_space / num_methods
+
+        # 1) Mean generations-to-converge
+        fig1, ax1 = plt.subplots(figsize=(10, 6))
+        for (method_name, group), color in zip(combined.groupby("method"), colors):
+            ax1.errorbar(
+                group[xlabel],
+                group["mean"],
+                yerr=group["stderr"],
+                marker="o",
+                linestyle="-",
+                label=f"{method_name} (n={sample_sizes[method_name]})",
+                color=color,
+                markersize=6,
+                linewidth=2
+            )
+        ax1.set_xlabel(xlabel, fontsize=12)
+        ax1.set_ylabel("Mean Generations to Converge", fontsize=12)
+        ax1.set_title(f"{title} — Generations", fontsize=14)
+        ax1.set_xlim(0, 100)
+        ax1.grid(True, linestyle="--", alpha=0.6)
+        ax1.legend(loc="upper right", fontsize=10)
+        fig1.tight_layout()
+        fig1.savefig(gen_out, dpi=300)
+        plt.close(fig1)
+        print(f"Saved generations plot to {gen_out}")
+
+        # 2) Fraction converged
+        fig2, ax2 = plt.subplots(figsize=(10, 6))
+        for idx, (method_name, group) in enumerate(combined.groupby("method")):
+            offset = (idx - (num_methods - 1) / 2) * bar_width
+            positions = group[xlabel] + offset
+            ax2.bar(
+                positions,
+                group["fraction_converged"],
+                width=bar_width,
+                alpha=0.7,
+                label=f"{method_name} (n={sample_sizes[method_name]})",
+                color=colors[idx]
+            )
+        ax2.set_xlabel(xlabel, fontsize=12)
+        ax2.set_ylabel("Fraction Converged", fontsize=12)
+        ax2.set_title(f"{title} — Convergence Rate", fontsize=14)
+        ax2.set_xlim(0, 100)
+        ax2.set_ylim(0, 1)
+        ax2.grid(True, linestyle="--", alpha=0.6)
+        ax2.legend(loc="upper right", fontsize=10)
+        fig2.tight_layout()
+        fig2.savefig(conv_out, dpi=300)
+        plt.close(fig2)
+        print(f"Saved convergence plot to {conv_out}")
+
+    else:
+        # --- Categorical case (e.g., biome) ---
+        methods = combined["method"].unique()
+        categories = combined[xlabel].unique().tolist()
+        n_methods = len(methods)
+        x = np.arange(len(categories))
+        bar_width = 0.8 / n_methods
+
+        # Pivot stats for easier plotting
+        pivot = combined.pivot_table(
+            index=xlabel, columns="method",
+            values=["mean", "stderr", "fraction_converged"]
         )
-        # b) fraction converged
-        idx = labels.index(method_name)
-        offset = (idx - (number_of_methods - 1) / 2) * bar_width
-        bar_positions = group[xlabel] + offset
-        right_axis.bar(
-            bar_positions,
-            group["fraction_converged"],
-            width=bar_width,
-            alpha=0.3,
-            color=color
-        )
-    
-    # 4) Configure axes and legend
-    left_axis.set_xlabel(xlabel, fontsize=12)
-    left_axis.set_ylabel(y_label, fontsize=12)
-    right_axis.set_ylabel("Fraction Converged (Bars)", fontsize=12)
-    
-    # FORCE x-axis from 0 to 100
-    left_axis.set_xlim(0, 100)
-    # (optional) you can still control xticks if you like:
-    # left_axis.set_xticks(list(range(0, 101, 10)))
-    
-    # FORCE right y-axis from 0 to 1
-    right_axis.set_ylim(0, 1)
-    
-    left_axis.grid(True, linestyle="--", alpha=0.6)
-    left_axis.legend(loc="upper right", fontsize=10)
-    left_axis.set_title(title, fontsize=14)
-    
-    fig.tight_layout()
-    
-    # 5) Save output
-    if output_path is None:
-        output_path = "comparison.png"
-    fig.savefig(output_path, dpi=300)
-    plt.close(fig)
-    print(f"Saved comparison plot to {output_path}")
+
+        # 1) Mean generations ± stderr
+        fig1, ax1 = plt.subplots(figsize=(8, 5))
+        for i, m in enumerate(methods):
+            means = pivot["mean"][m].reindex(categories)
+            errs  = pivot["stderr"][m].reindex(categories)
+            ax1.bar(
+                x + i*bar_width,
+                means,
+                width=bar_width,
+                yerr=errs,
+                capsize=4,
+                label=f"{m} (n={int(sample_sizes[m])})"
+            )
+        ax1.set_xticks(x + bar_width * (n_methods - 1) / 2)
+        ax1.set_xticklabels(categories)
+        ax1.set_xlabel(xlabel)
+        ax1.set_ylabel("Mean Generations to Converge")
+        ax1.set_title(f"{title} — Mean Generations")
+        ax1.legend(loc="best")
+        fig1.tight_layout()
+        fig1.savefig(gen_out, dpi=300)
+        plt.close(fig1)
+        print(f"Saved biome generations plot to {gen_out}")
+
+        # 2) Fraction converged
+        fig2, ax2 = plt.subplots(figsize=(8, 5))
+        for i, m in enumerate(methods):
+            fracs = pivot["fraction_converged"][m].reindex(categories)
+            ax2.bar(
+                x + i*bar_width,
+                fracs,
+                width=bar_width,
+                label=f"{m} (n={int(sample_sizes[m])})"
+            )
+        ax2.set_xticks(x + bar_width * (n_methods - 1) / 2)
+        ax2.set_xticklabels(categories)
+        ax2.set_xlabel(xlabel)
+        ax2.set_ylabel("Fraction Converged")
+        ax2.set_title(f"{title} — Convergence Rate")
+        ax2.legend(loc="best")
+        fig2.tight_layout()
+        fig2.savefig(conv_out, dpi=300)
+        plt.close(fig2)
+        print(f"Saved biome convergence plot to {conv_out}")
 
 def collect_constrained_binary_convergence(
     mode: EvolutionMode,
@@ -926,13 +985,6 @@ if __name__ == "__main__":
         default="desired_path_length",
         help="X-axis label for comparison plot"
     )
-    parser.add_argument(
-        "--y_label",
-        dest="y_label",
-        type=str,
-        default="Mean Generations",
-        help="Y-axis label for comparison plot"
-    )
 
     parser.add_argument(
         "--method",
@@ -986,7 +1038,6 @@ if __name__ == "__main__":
             output_path=args.output,
             title=args.title or "Method Comparison",
             xlabel=args.xlabel,
-            y_label=args.y_label
         )
         sys.exit(0)
 

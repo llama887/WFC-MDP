@@ -69,6 +69,13 @@ python plot.py --compare --csv-files figures_baseline/combo_pond_hard_convergenc
                                     --labels baseline evolution_1d evolution_2d fi2pop \
                                     --title "Pond Hard Combo Convergence Behavior" \
                                     --output comparison_figures/pond_hard_comparison.png 
+
+python plot.py --compare --csv-files figures_baseline/biome_convergence.csv \
+                                    figures_evolution/1d/biome_convergence.csv \
+                                    figures_evolution/2d/biome_convergence.csv \
+                                    figures_fi2pop/biome_convergence.csv \
+                                    --labels baseline evolution_1d evolution_2d fi2pop \
+                                    --title "Biome Convergence Behavior" --xlabel biome --output biome_comparison.png
 # echo "Plotting ablations..."
 
 # python plot.py --compare --csv-files figures_baseline/binary_convergence.csv \
