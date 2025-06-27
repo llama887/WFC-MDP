@@ -471,7 +471,7 @@ def collect_combo_convergence(sample_size, evolution_hyperparameters, use_qualit
 
 
 def collect_average_biome_convergence_data(evolution_hyperparameters, use_quality_diversity=False, runs=20, genotype_dimensions=1, debug=False):
-    biomes = ["Pond", "River"]
+    biomes = ["Pond", "River"]  # Removed "Grass"
     prefix = f"{'qd_' if use_quality_diversity else ''}biome_average_"
     def make_reward(biome): return {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[biome]
     return _generic_convergence_collector(biomes, make_reward, evolution_hyperparameters, prefix, use_quality_diversity, genotype_dimensions, is_biome_only=True, sample_size=runs, debug=debug)
@@ -562,6 +562,9 @@ def plot_convergence_from_csv(
 
 def plot_average_biome_convergence_from_csv(csv_file_path: str, output_png_path: str = None, y_label: str = "Mean Generations to Converge"):
     df = pd.read_csv(csv_file_path)
+    
+    # Filter out Grass biome data (case-insensitive)
+    df = df[~df["biome"].str.lower().eq("grass")]
     
     # Determine convergence metric column
     if "generations_to_converge" in df.columns:
@@ -906,7 +909,7 @@ def collect_constrained_biome_convergence(
         cross_over = CrossOverMethod(raw_cross_over)
     except (ValueError, TypeError):
         cross_over = CrossOverMethod(int(raw_cross_over))
-    biomes = ["Pond", "River"]
+    biomes = ["Pond", "River"]  # Removed "Grass"
     prefix = "biome_"
     def make_reward(biome):
         return {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[biome]
@@ -1076,7 +1079,7 @@ if __name__ == "__main__":
             plot_convergence_from_csv(csv_path, title=f"{mode.value.upper()} Binary Convergence (HARD)")
         elif args.task == "biomes":
             csv_path = _generic_constrained_ea_collector(
-                mode, ["Pond", "River"], lambda b: {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[b],
+                mode, ["Pond", "River"], lambda b: {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[b],  # Removed "Grass" from list
                 hyperparams, "biome_", True, args.sample_size, args.debug
             )
             plot_average_biome_convergence_from_csv(csv_path)
@@ -1110,7 +1113,7 @@ if __name__ == "__main__":
             plot_convergence_from_csv(csv_path, title="MCTS Binary Convergence (Hard)", xlabel="desired_path_length", y_label="Mean Iterations")
 
         elif args.task == "biomes":
-            biomes = ["river", "pond", "grass"]
+            biomes = ["river", "pond"]  # Removed "grass"
             biome_map = {"river": river_reward, "pond": pond_reward, "grass": grass_reward}
             def make_reward(b): return biome_map[b]
             csv_path = _resumable_mcts_collector(
@@ -1149,7 +1152,7 @@ if __name__ == "__main__":
             plot_convergence_from_csv(csv_path, title="Evolution Binary Convergence (HARD)")
         elif args.task == "biomes":
             csv_path = _generic_evolution_collector(
-                ["Pond", "River", "Grass"], lambda b: {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[b],
+                ["Pond", "River"], lambda b: {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[b],  # Removed "Grass"
                 hyperparams, f"{args.genotype_dimensions}d_biome_average_", "evolution", args.quality_diversity, args.genotype_dimensions, True, args.sample_size, args.debug,
                 no_random_offspring=args.no_random_offspring
             )
