@@ -471,7 +471,7 @@ def collect_combo_convergence(sample_size, evolution_hyperparameters, use_qualit
 
 
 def collect_average_biome_convergence_data(evolution_hyperparameters, use_quality_diversity=False, runs=20, genotype_dimensions=1, debug=False):
-    biomes = ["Pond", "River", "Grass"]
+    biomes = ["Pond", "River"]
     prefix = f"{'qd_' if use_quality_diversity else ''}biome_average_"
     def make_reward(biome): return {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[biome]
     return _generic_convergence_collector(biomes, make_reward, evolution_hyperparameters, prefix, use_quality_diversity, genotype_dimensions, is_biome_only=True, sample_size=runs, debug=debug)
@@ -617,111 +617,168 @@ def plot_average_biome_convergence_from_csv(csv_file_path: str, output_png_path:
     plt.close(fig)
     print(f"Saved biome convergence plot to {output_png_path}")
 
+import itertools
+import matplotlib.pyplot as plt
+import pandas as pd
+
 def plot_comparison(
     csv_paths: list[str],
     labels: list[str],
     output_path: str = None,
-    title: str = "Method Comparison",
-    xlabel: str = "desired_path_length",
-    y_label: str = "Mean Generations (Bars)"
+    title: str = "Method Comparison"
 ):
     """
-    Read each CSV, compute mean+stderr and fraction converged,
-    then plot all methods on a single dual-axis chart with a legend
-    showing method name + sample size.
+    Reads each CSV, computes mean+stderr and fraction converged,
+    then plots fraction converged as lines (left axis)
+    and mean generations as bars (right axis).
+    At the end, prints an ASCII table per method:
+    
+      | 10 | 20 | … | 100
+    --+----+----+---+----
+    Mean Generations (±stderr) | 23.4±1.2 | … |  …
+    Fraction Converged          | 1.00     | … |  …
     """
     all_stats: list[pd.DataFrame] = []
     sample_sizes: dict[str, int] = {}
     
-    # 1) Load each CSV and compute per-x stats
+    # 1) Load and compute stats per CSV
     for csv_path, method_name in zip(csv_paths, labels):
         raw = pd.read_csv(csv_path)
-        
-        counts = raw.groupby(xlabel).size()
-        if counts.nunique() != 1:
-            print(f"Warning: uneven sample counts for {method_name}: {counts.to_dict()}")
+        counts = raw.groupby("desired_path_length").size()
         sample_sizes[method_name] = int(counts.iloc[0])
         
-        df_valid = raw.dropna(subset=["generations_to_converge"])
+        valid = raw.dropna(subset=["generations_to_converge"])
         stats = (
-            df_valid
-            .groupby(xlabel)["generations_to_converge"]
+            valid
+            .groupby("desired_path_length")["generations_to_converge"]
             .agg(mean="mean", std="std", successes="count")
         )
-        total_runs = raw.groupby(xlabel)["run_index"].count().rename("total_runs")
+        total_runs = raw.groupby("desired_path_length")["run_index"].count().rename("total_runs")
         stats = stats.join(total_runs)
-        stats["stderr"] = stats["std"] / np.sqrt(stats["successes"])
+        stats["stderr"] = stats["std"] / stats["successes"].pow(0.5)
         stats["fraction_converged"] = stats["successes"] / stats["total_runs"]
         stats = stats.reset_index()
         stats["method"] = method_name
         all_stats.append(stats)
     
     combined = pd.concat(all_stats, ignore_index=True)
-    x_values = sorted(combined[xlabel].unique())
+    desired_lengths = sorted(combined["desired_path_length"].unique())
     number_of_methods = len(labels)
     total_bar_space = 9.0
     bar_width = total_bar_space / number_of_methods
-    
-    # 2) Setup plot
+
+    # 2) Set up the figure
     fig, left_axis = plt.subplots(figsize=(10, 6))
     right_axis = left_axis.twinx()
-    
-    prop_cycle = plt.rcParams["axes.prop_cycle"]
-    color_cycle = itertools.cycle(prop_cycle)
-    colors = [next(color_cycle)["color"] for _ in labels]
-    
+    color_cycle = itertools.cycle(plt.rcParams["axes.prop_cycle"])
+    method_colors = {method: next(color_cycle)["color"] for method in labels}
+
     # 3) Plot each method
-    for (method_name, group), color in zip(combined.groupby("method"), colors):
-        # a) mean + stderr
-        left_axis.errorbar(
-            group[xlabel],
-            group["mean"],
-            yerr=group["stderr"],
+    for method_name, group in combined.groupby("method"):
+        color = method_colors[method_name]
+        group = group.sort_values("desired_path_length")
+        
+        # a) Lines of fraction converged on left axis
+        left_axis.plot(
+            group["desired_path_length"],
+            group["fraction_converged"],
             marker="o",
             linestyle="-",
             label=f"{method_name} (n={sample_sizes[method_name]})",
             color=color,
             markersize=6,
-            linewidth=2
+            linewidth=2,
         )
-        # b) fraction converged
+        
+        # b) Bars of mean generations ± stderr on right axis
         idx = labels.index(method_name)
         offset = (idx - (number_of_methods - 1) / 2) * bar_width
-        bar_positions = group[xlabel] + offset
+        positions = group["desired_path_length"] + offset
         right_axis.bar(
-            bar_positions,
-            group["fraction_converged"],
+            positions,
+            group["mean"],
+            yerr=group["stderr"],
+            capsize=4,
             width=bar_width,
-            alpha=0.3,
-            color=color
+            alpha=0.6,
+            color=color,
         )
-    
-    # 4) Configure axes and legend
-    left_axis.set_xlabel(xlabel, fontsize=12)
-    left_axis.set_ylabel(y_label, fontsize=12)
-    right_axis.set_ylabel("Fraction Converged (Bars)", fontsize=12)
-    
-    # FORCE x-axis from 0 to 100
+
+    # 4) Labels, limits, legend
+    left_axis.set_xlabel("Desired Binary Path Length", fontsize=12)
+    left_axis.set_ylabel("Fraction Converged (lines)", fontsize=12)
+    right_axis.set_ylabel("Mean Generations (bars)", fontsize=12)
     left_axis.set_xlim(0, 100)
-    # (optional) you can still control xticks if you like:
-    # left_axis.set_xticks(list(range(0, 101, 10)))
-    
-    # FORCE right y-axis from 0 to 1
-    right_axis.set_ylim(0, 1)
-    
     left_axis.grid(True, linestyle="--", alpha=0.6)
-    left_axis.legend(loc="upper right", fontsize=10)
+    left_axis.legend(loc="upper left", fontsize=10)
     left_axis.set_title(title, fontsize=14)
-    
+
     fig.tight_layout()
-    
-    # 5) Save output
     if output_path is None:
         output_path = "comparison.png"
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
     print(f"Saved comparison plot to {output_path}")
+    
+    # 5) Build one big MultiIndex table, then print ASCII + LaTeX
+    # -----------------------------------------------------------
+    # collect all desired lengths (once)
+    desired_lengths = sorted(combined["desired_path_length"].unique())
 
+    rows = []
+    index_tuples = []
+
+    for method_name in labels:
+        # select & pivot group, then reindex on all lengths
+        grp = (
+            combined[combined["method"] == method_name]
+            .set_index("desired_path_length")
+            .reindex(desired_lengths)  # ensure every length is present
+        )
+
+        # Mean ± stderr row
+        mean_row = []
+        for length in desired_lengths:
+            m = grp.at[length, "mean"]
+            s = grp.at[length, "stderr"]
+            if np.isnan(m) or np.isnan(s):
+                mean_row.append("—")
+            else:
+                mean_row.append(f"{m:.1f}±{s:.1f}")
+        rows.append(mean_row)
+        index_tuples.append((method_name, "Mean Generations (±stderr)"))
+
+        # Fraction row
+        frac_row = []
+        for length in desired_lengths:
+            f = grp.at[length, "fraction_converged"]
+            if np.isnan(f):
+                frac_row.append("—")
+            else:
+                frac_row.append(f"{f:.2f}")
+        rows.append(frac_row)
+        index_tuples.append((method_name, "Fraction Converged"))
+
+    # Build the MultiIndex DataFrame
+    multi_index = pd.MultiIndex.from_tuples(index_tuples, names=["Method", "Metric"])
+    table_df = pd.DataFrame(rows, index=multi_index, columns=desired_lengths)
+
+    # --- ASCII output ---
+    print("\nFull convergence table:\n")
+    print(table_df.to_string())
+
+    # --- LaTeX output ---
+    print("\nLaTeX table:\n")
+    print(
+        table_df.to_latex(
+            caption="Convergence across all methods",
+            label="tab:all_convergence",
+            na_rep="—",
+            escape=False
+        )
+    )
+
+    
 def collect_constrained_binary_convergence(
     mode: EvolutionMode,
     sample_size: int,
@@ -849,7 +906,7 @@ def collect_constrained_biome_convergence(
         cross_over = CrossOverMethod(raw_cross_over)
     except (ValueError, TypeError):
         cross_over = CrossOverMethod(int(raw_cross_over))
-    biomes = ["Pond", "River", "Grass"]
+    biomes = ["Pond", "River"]
     prefix = "biome_"
     def make_reward(biome):
         return {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[biome]
@@ -985,8 +1042,6 @@ if __name__ == "__main__":
             labels=labels,
             output_path=args.output,
             title=args.title or "Method Comparison",
-            xlabel=args.xlabel,
-            y_label=args.y_label
         )
         sys.exit(0)
 
@@ -1021,7 +1076,7 @@ if __name__ == "__main__":
             plot_convergence_from_csv(csv_path, title=f"{mode.value.upper()} Binary Convergence (HARD)")
         elif args.task == "biomes":
             csv_path = _generic_constrained_ea_collector(
-                mode, ["Pond", "River", "Grass"], lambda b: {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[b],
+                mode, ["Pond", "River"], lambda b: {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[b],
                 hyperparams, "biome_", True, args.sample_size, args.debug
             )
             plot_average_biome_convergence_from_csv(csv_path)
