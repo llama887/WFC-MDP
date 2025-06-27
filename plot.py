@@ -87,71 +87,78 @@ def _generic_evolution_collector(
             cross_over_method = CrossOverMethod(int(raw_cross_over))
 
         for run_index in range(1, sample_size + 1):
-            reward_callable = make_reward_fn(key)
-            env = WFCWrapper(
-                map_length=map_length,
-                map_width=map_width,
-                tile_symbols=tile_symbols,
-                adjacency_bool=adjacency_bool,
-                num_tiles=len(tile_symbols),
-                tile_to_index=tile_to_index,
-                reward=reward_callable,
-                deterministic=True,
-                qd_function=binary_percent_water if use_quality_diversity else None,
-            )
+            try:  # NEW ERROR HANDLING BLOCK START
+                reward_callable = make_reward_fn(key)
+                env = WFCWrapper(
+                    map_length=map_length,
+                    map_width=map_width,
+                    tile_symbols=tile_symbols,
+                    adjacency_bool=adjacency_bool,
+                    num_tiles=len(tile_symbols),
+                    tile_to_index=tile_to_index,
+                    reward=reward_callable,
+                    deterministic=True,
+                    qd_function=binary_percent_water if use_quality_diversity else None,
+                )
 
-            # Run evolve and record timing
-            if debug:
-                start_time = time.time()
+                # Run evolve and record timing
+                if debug:
+                    start_time = time.time()
 
-            pop, best_agent, generations, best_agent_rewards, mean_agent_rewards = evolve_standard(
-                env=env,
-                generations=current_hyperparams.get("generations", 1000),
-                population_size=48,  # Fixed population size
-                number_of_actions_mutated_mean=current_hyperparams[
-                    "number_of_actions_mutated_mean"
-                ],
-                number_of_actions_mutated_standard_deviation=current_hyperparams[
-                    "number_of_actions_mutated_standard_deviation"
-                ],
-                action_noise_standard_deviation=current_hyperparams[
-                    "action_noise_standard_deviation"
-                ],
-                survival_rate=current_hyperparams["survival_rate"],
-                cross_over_method=cross_over_method,
-                patience=50,  # Fixed patience
-                qd=use_quality_diversity,
-                genotype_representation=f"{genotype_dimensions}d",
-                # NEW: Add these hyperparameters to call
-                random_offspring_proportion=current_hyperparams.get("random_offspring", 0.1),
-                cross_or_mutate_proportion=current_hyperparams.get("cross_or_mutate", 0.7),
-            )
+                pop, best_agent, generations, best_agent_rewards, mean_agent_rewards = evolve_standard(
+                    env=env,
+                    generations=current_hyperparams.get("generations", 1000),
+                    population_size=48,  # Fixed population size
+                    number_of_actions_mutated_mean=current_hyperparams[
+                        "number_of_actions_mutated_mean"
+                    ],
+                    number_of_actions_mutated_standard_deviation=current_hyperparams[
+                        "number_of_actions_mutated_standard_deviation"
+                    ],
+                    action_noise_standard_deviation=current_hyperparams[
+                        "action_noise_standard_deviation"
+                    ],
+                    survival_rate=current_hyperparams["survival_rate"],
+                    cross_over_method=cross_over_method,
+                    patience=50,  # Fixed patience
+                    qd=use_quality_diversity,
+                    genotype_representation=f"{genotype_dimensions}d",
+                    # NEW: Add these hyperparameters to call
+                    random_offspring_proportion=current_hyperparams.get("random_offspring", 0.1),
+                    cross_or_mutate_proportion=current_hyperparams.get("cross_or_mutate", 0.7),
+                )
 
-            if debug:
-                end_time = time.time()
-                print(f"[DEBUG] Key={key}, Run={run_index}: Evolve took {end_time - start_time:.2f} sec, stopped at gen {generations}")
+                if debug:
+                    end_time = time.time()
+                    print(f"[DEBUG] Key={key}, Run={run_index}: Evolve took {end_time - start_time:.2f} sec, stopped at gen {generations}")
 
-            gens = generations if best_agent.info.get("achieved_max_reward", False) else float("nan")
-            row = {"run_index": run_index, "generations_to_converge": gens}
-            row["biome" if is_biome_only else "desired_path_length"] = key
-            data_rows.append(row)
+                gens = generations if best_agent.info.get("achieved_max_reward", False) else float("nan")
+                row = {"run_index": run_index, "generations_to_converge": gens}
+                row["biome" if is_biome_only else "desired_path_length"] = key
+                data_rows.append(row)
 
-            # Produce debug plot if requested and if we have reward history
-            if debug and best_agent_rewards and mean_agent_rewards:
-                x_axis = np.arange(1, len(mean_agent_rewards) + 1)
-                plt.figure(figsize=(6, 4))
-                plt.plot(x_axis, best_agent_rewards, label="Best Agent")
-                plt.plot(x_axis, mean_agent_rewards, label="Mean Elite")
-                plt.legend()
-                plt.xlabel("Generation")
-                plt.ylabel("Reward")
-                what_str = f"Biom_{key}" if is_biome_only else f"Path_{key}"
-                title = f"Gen vs Reward — {what_str} — Run{run_index} — {genotype_dimensions}d"
-                plt.title(title)
-                filename = f"debug_{output_csv_prefix}{what_str}_run{run_index}.png"
-                plt.tight_layout()
-                plt.savefig(os.path.join(DEBUG_DIRECTORY, filename))
-                plt.close()
+                # Produce debug plot if requested and if we have reward history
+                if debug and best_agent_rewards and mean_agent_rewards:
+                    x_axis = np.arange(1, len(mean_agent_rewards) + 1)
+                    plt.figure(figsize=(6, 4))
+                    plt.plot(x_axis, best_agent_rewards, label="Best Agent")
+                    plt.plot(x_axis, mean_agent_rewards, label="Mean Elite")
+                    plt.legend()
+                    plt.xlabel("Generation")
+                    plt.ylabel("Reward")
+                    what_str = f"Biom_{key}" if is_biome_only else f"Path_{key}"
+                    title = f"Gen vs Reward — {what_str} — Run{run_index} — {genotype_dimensions}d"
+                    plt.title(title)
+                    filename = f"debug_{output_csv_prefix}{what_str}_run{run_index}.png"
+                    plt.tight_layout()
+                    plt.savefig(os.path.join(DEBUG_DIRECTORY, filename))
+                    plt.close()
+            except Exception as e:  # CATCH ALL EXCEPTIONS
+                print(f"ERROR during evolution for biome '{key}', run {run_index}: {str(e)}")
+                gens = float("nan")
+                row = {"run_index": run_index, "generations_to_converge": gens}
+                row["biome" if is_biome_only else "desired_path_length"] = key
+                data_rows.append(row)
 
     file_exists = os.path.isfile(csv_path)
     new_df = pd.DataFrame(data_rows)
@@ -195,42 +202,49 @@ def _generic_constrained_ea_collector(
             cross_over_method = CrossOverMethod(int(raw_cross_over))
 
         for run_index in range(1, sample_size + 1):
-            if debug:
-                start_time = time.time()
+            try:  # NEW ERROR HANDLING BLOCK START
+                if debug:
+                    start_time = time.time()
 
-            reward_callable = make_reward_fn(key)
-            best_agent, final_gen, _, _ = evolve_constrained(
-                mode=mode,
-                reward_fn=reward_callable,
-                task_args={},
-                generations=current_hyperparams.get("generations", 1000),
-                population_size=48,
-                number_of_actions_mutated_mean=current_hyperparams[
-                    "number_of_actions_mutated_mean"
-                ],
-                number_of_actions_mutated_standard_deviation=current_hyperparams[
-                    "number_of_actions_mutated_standard_deviation"
-                ],
-                action_noise_standard_deviation=current_hyperparams[
-                    "action_noise_standard_deviation"
-                ],
-                survival_rate=current_hyperparams["survival_rate"],
-                cross_over_method=cross_over_method,
-                cross_or_mutate_proportion=current_hyperparams.get(
-                    "cross_or_mutate_proportion", 0.7
-                ),
-                patience=50,
-            )
+                reward_callable = make_reward_fn(key)
+                best_agent, final_gen, _, _ = evolve_constrained(
+                    mode=mode,
+                    reward_fn=reward_callable,
+                    task_args={},
+                    generations=current_hyperparams.get("generations", 1000),
+                    population_size=48,
+                    number_of_actions_mutated_mean=current_hyperparams[
+                        "number_of_actions_mutated_mean"
+                    ],
+                    number_of_actions_mutated_standard_deviation=current_hyperparams[
+                        "number_of_actions_mutated_standard_deviation"
+                    ],
+                    action_noise_standard_deviation=current_hyperparams[
+                        "action_noise_standard_deviation"
+                    ],
+                    survival_rate=current_hyperparams["survival_rate"],
+                    cross_over_method=cross_over_method,
+                    cross_or_mutate_proportion=current_hyperparams.get(
+                        "cross_or_mutate_proportion", 0.7
+                    ),
+                    patience=50,
+                )
 
-            if debug:
-                elapsed = time.time() - start_time
-                print(f"[{mode.value.upper()}] Key={key}, Run={run_index}: Stopped at gen {final_gen} in {elapsed:.2f}s")
+                if debug:
+                    elapsed = time.time() - start_time
+                    print(f"[{mode.value.upper()}] Key={key}, Run={run_index}: Stopped at gen {final_gen} in {elapsed:.2f}s")
 
-            converged = best_agent and best_agent.reward >= 0.0
-            generations_to_converge = final_gen if converged else float("nan")
-            row = {"run_index": run_index, "generations_to_converge": generations_to_converge}
-            row["biome" if is_biome_only else "desired_path_length"] = key
-            data_rows.append(row)
+                converged = best_agent and best_agent.reward >= 0.0
+                generations_to_converge = final_gen if converged else float("nan")
+                row = {"run_index": run_index, "generations_to_converge": generations_to_converge}
+                row["biome" if is_biome_only else "desired_path_length"] = key
+                data_rows.append(row)
+            except Exception as e:  # CATCH ALL EXCEPTIONS
+                print(f"ERROR during constrained evolution for biome '{key}', run {run_index}: {str(e)}")
+                generations_to_converge = float("nan")
+                row = {"run_index": run_index, "generations_to_converge": generations_to_converge}
+                row["biome" if is_biome_only else "desired_path_length"] = key
+                data_rows.append(row)
 
     file_exists = os.path.isfile(csv_path)
     new_df = pd.DataFrame(data_rows)
@@ -471,7 +485,7 @@ def collect_combo_convergence(sample_size, evolution_hyperparameters, use_qualit
 
 
 def collect_average_biome_convergence_data(evolution_hyperparameters, use_quality_diversity=False, runs=20, genotype_dimensions=1, debug=False):
-    biomes = ["Pond", "River"]  # Removed "Grass"
+    biomes = ["Pond", "River", "Grass"]  # GRASS REINSTATED
     prefix = f"{'qd_' if use_quality_diversity else ''}biome_average_"
     def make_reward(biome): return {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[biome]
     return _generic_convergence_collector(biomes, make_reward, evolution_hyperparameters, prefix, use_quality_diversity, genotype_dimensions, is_biome_only=True, sample_size=runs, debug=debug)
@@ -563,8 +577,8 @@ def plot_convergence_from_csv(
 def plot_average_biome_convergence_from_csv(csv_file_path: str, output_png_path: str = None, y_label: str = "Mean Generations to Converge"):
     df = pd.read_csv(csv_file_path)
     
-    # Filter out Grass biome data (case-insensitive)
-    df = df[~df["biome"].str.lower().eq("grass")]
+    # REMOVED GRASS FILTER: 
+    # (No filtering of Grass biome)
     
     # Determine convergence metric column
     if "generations_to_converge" in df.columns:
@@ -909,7 +923,7 @@ def collect_constrained_biome_convergence(
         cross_over = CrossOverMethod(raw_cross_over)
     except (ValueError, TypeError):
         cross_over = CrossOverMethod(int(raw_cross_over))
-    biomes = ["Pond", "River"]  # Removed "Grass"
+    biomes = ["Pond", "River", "Grass"]  # GRASS REINSTATED
     prefix = "biome_"
     def make_reward(biome):
         return {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[biome]
@@ -1078,8 +1092,9 @@ if __name__ == "__main__":
             )
             plot_convergence_from_csv(csv_path, title=f"{mode.value.upper()} Binary Convergence (HARD)")
         elif args.task == "biomes":
+            # Update to include Grass
             csv_path = _generic_constrained_ea_collector(
-                mode, ["Pond", "River"], lambda b: {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[b],  # Removed "Grass" from list
+                mode, ["Pond", "River", "Grass"], lambda b: {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[b],
                 hyperparams, "biome_", True, args.sample_size, args.debug
             )
             plot_average_biome_convergence_from_csv(csv_path)
