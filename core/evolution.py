@@ -352,7 +352,7 @@ def evolve(
 
         # Image saving per generation (if enabled)\
         if (gen_save_dir and 
-            tile_images is not None and 
+            tile_images is not None and
             population[best_idx].reward > -float("inf")):
             assert population[best_idx].reward <= 0, f"Best agent reward should be non-positive: {population[best_idx].reward}\n{population[best_idx].info}"
             
@@ -365,14 +365,13 @@ def evolve(
                 # Ensure directory exists
                 Path(gen_save_dir).mkdir(parents=True, exist_ok=True)
                 # Initialize pygame safely
-                try:
-                    pygame.init()
-                    pygame_initialized = True
-                except Exception:
-                    os.environ['SDL_VIDEODRIVER'] = 'dummy'
-                    pygame.init()
-                    pygame_initialized = True
-                
+                pygame.init()
+                pygame_initialized = True
+            except Exception:
+                os.environ['SDL_VIDEODRIVER'] = 'dummy'
+                pygame.init()
+                pygame_initialized = True
+
                 # Get environment state
                 env_state = deepcopy_env_state(population[best_idx].env)
                 

@@ -31,9 +31,9 @@ def river_reward(grid: np.ndarray) -> tuple[float, dict[str, Any]]:
 
     # Apply rewards/penalties
     DESIRED_RIVER_LENGTH = 35
-    region_penalty = 1 - water_regions
+    region_penalty = min(1 - water_regions, 0)
     path_penalty = path_length - DESIRED_RIVER_LENGTH if path_length < DESIRED_RIVER_LENGTH else 0
-    land_penalty = 3 - land_regions if land_regions > 3 else 0
+    land_penalty = 2 - land_regions if land_regions > 3 else 0
 
     total_reward = region_penalty + path_penalty + land_penalty - pure_water_count
 

@@ -31,7 +31,7 @@ def pond_reward(grid: np.ndarray) -> tuple[float, dict[str, Any]]:
 
     # Reward components
     water_penalty = water_percent - 25 if water_percent < 25 else 0
-    water_center_penalty = pure_water_percent - 11 if pure_water_percent < 11 else 0
+    water_center_penalty = pure_water_percent - 25 if pure_water_percent < 25 else 0
 
     # Create binary maps
     water_binary_map = grid_to_binary_map(grid, WATER_SHORE_MASK)
@@ -43,9 +43,31 @@ def pond_reward(grid: np.ndarray) -> tuple[float, dict[str, Any]]:
     water_path_length, _ = calc_longest_path(water_binary_map)
 
     # Apply penalties
-    region_penalty = 1 - water_regions
-    path_penalty = 25 - water_path_length if water_path_length < 25 else 0
-    land_region_penalty = 5 - land_regions if land_regions > 5 else 0
+    region_penalty = min(1 - water_regions, 0)
+    path_penalty = 8 - water_path_length if water_path_length > 8 else 0
+    land_region_penalty = 2 - land_regions if land_regions > 2 else 0
+    total_reward = (
+        water_penalty +
+        3 * water_center_penalty +
+        region_penalty +
+        land_region_penalty +
+        path_penalty
+    )
+    assert total_reward <= 0, {
+        "percent_water": water_percent,
+        "water_penalty": water_penalty,
+        "percent_water_center": pure_water_percent,
+        "water_center_penalty": water_center_penalty,
+        "number_of_water_regions": water_regions,
+        "region_penalty": region_penalty,
+        "number_of_land_regions": land_regions,
+        "land_region_penalty": land_region_penalty,
+        "water_path_length": water_path_length,
+        "path_penalty": path_penalty
+    }
+    region_penalty = min(0, region_penalty)
+    path_penalty = min(0, path_penalty)
+    land_region_penalty = min(0, path_penalty)
 
     total_reward = (
         water_penalty +
