@@ -53,7 +53,14 @@ def grass_reward(grid: NDArray) -> tuple[float, dict[str, any]]:
     penalty = water_count + hill_count
 
     total_reward = grass_reward_val + flower_reward_val - penalty
-
+    assert total_reward <= 0, {
+        "water_count": water_count,
+        "hill_count": hill_count,
+        "grass_percent": grass_percent,
+        "flower_percent": flower_percent,
+        "grass_biome_reward": total_reward,
+    }
+    
     return total_reward, {
         "water_count": water_count,
         "hill_count": hill_count,

@@ -52,6 +52,7 @@ def binary_reward(
         "path_length": current_path_length,
         "longest_path": longest_path,
     }
+    assert region_reward + path_reward <= 0, info
     return (region_reward + path_reward, info)
 
 
