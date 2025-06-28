@@ -8,7 +8,7 @@
 #SBATCH --nodes=1                     
 #SBATCH --ntasks-per-node=1           
 #SBATCH --cpus-per-task=48           
-#SBATCH --mem=180G                             
+#SBATCH --mem=64G                             
 #SBATCH --account=pr_100_tandon_priority
 
 ### -------------------- Logging Setup -------------------- ###
