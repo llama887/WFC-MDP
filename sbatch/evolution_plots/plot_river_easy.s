@@ -4,7 +4,7 @@
 #SBATCH --error=plot_river_easy_%j.err
 #SBATCH --mail-type=START,END,FAIL
 #SBATCH --mail-user=fyy2003@nyu.edu
-#SBATCH --time=5:00:00
+#SBATCH --time=48:00:00
 #SBATCH --nodes=1                     
 #SBATCH --ntasks-per-node=1           
 #SBATCH --cpus-per-task=48           

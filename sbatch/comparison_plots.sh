@@ -70,8 +70,8 @@ python plot.py --compare --csv-files figures_evolution/1d/combo_pond_hard_conver
                                     --title "Pond Combo Convergence Behavior" \
                                     --output comparison_figures/pond_hard_comparison.png 
 
-python plot.py --compare --csv-files figures_evolution/1d/biome_convergence.csv \
-                                    figures_evolution/2d/biome_convergence.csv \
+python plot.py --compare --csv-files figures_evolution/1d/1d_biome_average_convergence.csv \
+                                    figures_evolution/2d/2d_biome_average_convergence.csv \
                                     figures_baseline/biome_convergence.csv \
                                     figures_fi2pop/biome_convergence.csv \
                                     --labels evolution_1d evolution_2d baseline fi2pop \

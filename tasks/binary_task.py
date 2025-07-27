@@ -36,7 +36,7 @@ def binary_reward(
     number_of_regions = calc_num_regions(binary_map)
     current_path_length, longest_path = calc_longest_path(binary_map)
 
-    region_reward = 1 - number_of_regions
+    region_reward = min(1 - number_of_regions, 0)
     if not hard:
         path_reward = (
             0
