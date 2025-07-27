@@ -5,7 +5,6 @@ import sys
 from typing import Any, Callable, Literal
 import time
 import pickle
-import itertools
 
 import matplotlib
 import numpy as np
@@ -617,7 +616,6 @@ def plot_average_biome_convergence_from_csv(csv_file_path: str, output_png_path:
     plt.close(fig)
     print(f"Saved biome convergence plot to {output_png_path}")
 
-import itertools
 import matplotlib.pyplot as plt
 import pandas as pd
 
