@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import sys
-from timeit import default_timer as timer
 
 # Add the project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -21,7 +20,6 @@ import numpy as np
 import optuna
 import pygame
 import yaml
-from tqdm import tqdm
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import EvalCallback
