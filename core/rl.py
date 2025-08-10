@@ -14,6 +14,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
+from functools import partial
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -77,9 +78,40 @@ class SavedRLAgent:
 
 class SaveBestRenderCallback(EvalCallback):
     """
-    Extends EvalCallback: keeps eval early-stopping via patience,
-    and (optionally) saves a rendered image whenever we get a new best.
+    Extends EvalCallback:
+      - Keeps eval early-stopping via patience, but counts ONLY actual evaluation events,
+        not training steps.
+      - Optionally skips the initial evaluation at step 0 (common SB3 behavior) to avoid
+        triggering premature patience increments.
+      - (Optionally) saves a rendered image whenever we get a new best.
+
+    Parameters
+    ----------
+    eval_env : gym.Env
+        Evaluation environment (same as EvalCallback).
+    best_model_save_path : str
+        Directory where the best model is saved.
+    log_path : str
+        Directory where evaluation logs are saved.
+    task_info : str
+        Label for filenames (e.g., task combination).
+    tile_images : dict | None
+        Mapping tile_name -> pygame.Surface used for rendering (optional).
+    env_builder : Callable[[], WFCWrapper]
+        Factory that returns a *fresh* environment instance for rendering.
+    save_best_per_gen_dir : str | None
+        If provided, save a PNG whenever a new best evaluation mean reward is found.
+    eval_freq : int
+        Evaluate every N calls (same as EvalCallback).
+    patience_evals : int | None
+        Number of evaluation events with no improvement before early-stopping.
+        If None, never early-stop.
+    deterministic : bool
+        Deterministic evaluation actions (same as EvalCallback).
+    skip_first_eval : bool
+        If True (default), ignore the very first evaluation that happens at/near step 0.
     """
+
     def __init__(
         self,
         eval_env,
@@ -87,11 +119,12 @@ class SaveBestRenderCallback(EvalCallback):
         log_path: str,
         task_info: str,
         tile_images: dict | None,
-        env_builder: Callable[[], WFCWrapper],
+        env_builder: Callable[[], Any],
         save_best_per_gen_dir: str | None,
         eval_freq: int,
         patience_evals: int | None = None,
         deterministic: bool = True,
+        skip_first_eval: bool = True,
     ):
         super().__init__(
             eval_env,
@@ -106,23 +139,54 @@ class SaveBestRenderCallback(EvalCallback):
         self.env_builder = env_builder
         self.save_best_per_gen_dir = save_best_per_gen_dir
         self.patience_evals = patience_evals
-        self.no_improve_counter = 0
+        self.skip_first_eval = skip_first_eval
+
+        self.no_improve_counter: int = 0
         self.best_mean_reward_seen: float | None = None
 
+        # Track how many evaluation events we've *processed* to ensure
+        # we increment patience only when a new evaluation happens.
+        self._seen_eval_count: int = 0
+        self._skipped_initial_eval: bool = False
+
     def _on_step(self) -> bool:
+        # Let EvalCallback handle scheduling + metrics updates first
         result = super()._on_step()
-        if self.last_mean_reward is None:
+
+        # Detect if an evaluation just ran by observing changes in evaluations_results
+        just_evaluated: bool = (
+            hasattr(self, "evaluations_results")
+            and isinstance(self.evaluations_results, list)
+            and len(self.evaluations_results) > self._seen_eval_count
+        )
+
+        # If no evaluation occurred this step, nothing to do here
+        if not just_evaluated or self.last_mean_reward is None:
             return result
 
+        # Update our local counter of seen evaluations
+        self._seen_eval_count = len(self.evaluations_results)
+
+        # Optionally skip the first eval (commonly at step 0)
+        if self.skip_first_eval and not self._skipped_initial_eval:
+            self._skipped_initial_eval = True
+            # Do not touch patience, do not consider best, just ignore this eval
+            return result
+
+        # Evaluate improvement logic ONLY on evaluation events
         if self.best_mean_reward_seen is None or self.last_mean_reward > self.best_mean_reward_seen:
             self.best_mean_reward_seen = self.last_mean_reward
             self.no_improve_counter = 0
 
+            # Save a render of the current best, if requested
             if self.save_best_per_gen_dir and self.tile_images is not None:
                 try:
                     Path(self.save_best_per_gen_dir).mkdir(parents=True, exist_ok=True)
-                    os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+
+                    # Headless pygame
+                    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
                     pygame.init()
+
                     env = self.env_builder()
                     env.tile_images = self.tile_images
                     env.render_mode = "human"
@@ -148,24 +212,27 @@ class SaveBestRenderCallback(EvalCallback):
                     print(f"[WARN] Failed to render best: {e}")
                 finally:
                     pygame.quit()
-                    if 'SDL_VIDEODRIVER' in os.environ:
-                        del os.environ['SDL_VIDEODRIVER']
+                    if "SDL_VIDEODRIVER" in os.environ:
+                        del os.environ["SDL_VIDEODRIVER"]
+
         else:
+            # No improvement in this evaluation
             self.no_improve_counter += 1
             if self.patience_evals is not None and self.no_improve_counter >= self.patience_evals:
                 print(f"[DEBUG] Early stopping: no eval improvement for {self.no_improve_counter} evaluations.")
                 return False
+
         return result
 
 
 TASK_REWARDS: dict[str, Callable[..., tuple[float, dict[str, Any]]]] = {
-    "binary_easy": lambda **kw: binary_reward(target_path_length=20, **kw),
-    "binary_hard": lambda **kw: binary_reward(target_path_length=20, hard=True, **kw),
-    "river": river_reward,
-    "pond": pond_reward,
-    "grass": grass_reward,
-    "hill": hill_reward,
-}
+        "binary_easy": partial(binary_reward, target_path_length=20),
+        "binary_hard": partial(binary_reward, target_path_length=20, hard=True),
+        "river": river_reward,
+        "pond": pond_reward,
+        "grass": grass_reward,
+        "hill": hill_reward,
+    }
 
 def build_selected_reward(tasks: list[str]) -> Callable:
     if len(tasks) == 1:
@@ -328,7 +395,7 @@ def objective(
     n_envs = trial.suggest_categorical("n_envs", [1, 4, 8])
     eval_freq = trial.suggest_categorical("eval_freq", [5000, 10000, 20000])
 
-    out_dir = f"ppo_optuna_trial_{trial.number}"
+    out_dir = f"agents/ppo_optuna_trial_{trial.number}"
     os.makedirs(out_dir, exist_ok=True)
 
     saved, _, _ = train_with_ppo(
@@ -464,6 +531,10 @@ if __name__ == "__main__":
         try:
             with open(args.load_hyperparameters, "r") as f:
                 hyperparams = yaml.safe_load(f) or {}
+                hyperparams.pop("episodes", None)
+                hyperparams.pop("patience_evals", None)
+                hyperparams.pop("n_envs", None)
+                hyperparams.pop("eval_freq", None)
         except FileNotFoundError:
             print(f"Error: Hyperparameter file not found: {args.load_hyperparameters}")
             sys.exit(1)
