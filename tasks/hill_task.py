@@ -1,8 +1,29 @@
 import numpy as np
-from collections import Counter
+from typing import Any
 from scipy.ndimage import label, find_objects
+from .utils import grid_to_binary_map, percent_target_tiles_excluding_excluded_tiles
 
 __all__ = ["hill_reward"]
+
+from assets.biome_adjacency_rules import create_adjacency_matrix
+_, tile_symbols, _ = create_adjacency_matrix()
+num_tiles = len(tile_symbols)
+
+# Define masks for river tasks
+WATER_SHORE_MASK = np.zeros(num_tiles, dtype=bool)
+PURE_WATER_MASK = np.zeros(num_tiles, dtype=bool)
+SAND_PATH_MASK = np.zeros(num_tiles, dtype=bool)
+HILL_MASK = np.zeros(num_tiles, dtype=bool)
+
+for idx, tile_name in enumerate(tile_symbols):
+    if tile_name.startswith("water") or tile_name.startswith("shore"):
+        WATER_SHORE_MASK[idx] = True
+    if tile_name == "water":
+        PURE_WATER_MASK[idx] = True
+    if tile_name.startswith("sand") or tile_name.startswith("path"):
+        SAND_PATH_MASK[idx] = True
+    if "hill" in tile_name:
+        HILL_MASK[idx] = True
 
 def is_rectangle(mask: np.ndarray) -> bool:
     """Check if the True area in the mask forms a clean rectangle."""
@@ -15,76 +36,106 @@ def is_rectangle(mask: np.ndarray) -> bool:
     return np.all(submask)
 
 
-def hill_reward(grid: np.ndarray) -> tuple[float, dict[str, any]]:
-    biome = "hill"
-    grid = np.array(grid)
-    if isinstance(grid.flat[0], set):
-        grid = np.vectorize(lambda cell: next(iter(cell)) if isinstance(cell, set) else cell)(grid)
+def hill_reward(grid: np.ndarray) -> tuple[float, dict[str, Any]]:
+    """
+    Hill biome reward using one-hot channel masks (shape H x W x C).
+    Mirrors the structure of grass_reward:
+      - uses mask ops, no string grids
+      - returns non-positive reward (penalties)
+      - provides diagnostics
+    """
 
-    map_height, map_width = grid.shape
-    total_tiles = map_height * map_width
-    tile_counts = Counter(grid.flatten())
+    # Basic counts from masks
+    water_count: float = float(np.sum(grid * WATER_SHORE_MASK[None, None, :]))
+    hill_count: float = float(np.sum(grid * HILL_MASK[None, None, :]))
 
-    hill_count = tile_counts.get("H", 0)
-    hill_ratio = hill_count / total_tiles
-    ideal_hill_ratio = 0.5
-    hill_ratio_penalty = abs(hill_ratio - ideal_hill_ratio) * 100  # strong bias toward 50%
+    # Binary map of hill tiles (H x W), robust to channels
+    hill_binary: np.ndarray = grid_to_binary_map(grid, HILL_MASK)
+    map_height: int
+    map_width: int
+    map_height, map_width = hill_binary.shape
 
-    # Penalize central concentration
-    structure_matrix = (grid == "H").astype(np.uint8)
-    labeled_array, num_regions = label(structure_matrix)
+    # Percent of tiles that are hills (exclude nothing for the main ratio)
+    hill_percent: float = percent_target_tiles_excluding_excluded_tiles(
+        grid, HILL_MASK, SAND_PATH_MASK
+    )
 
-    # Compute distance from center for each hill tile
-    yy, xx = np.where(structure_matrix)
-    center_y, center_x = map_height / 2, map_width / 2
-    distances = np.sqrt((yy - center_y) ** 2 + (xx - center_x) ** 2)
-    if distances.size > 0:
-        avg_distance_from_center = np.mean(distances)
-        max_distance = np.sqrt(center_y ** 2 + center_x ** 2)
-        spread_ratio = avg_distance_from_center / max_distance
-        center_penalty = (1 - spread_ratio) * 50  # prefer spread-out hills
+
+
+    # --- Objectives/penalties (all become <= 0 total) ---
+
+    # 1) Target ~50% hills overall
+    hill_penalty = max(0.0, 50.0 - hill_percent)
+
+    # 2) Prefer spread-out hills (discourage central clumping)
+    if hill_count > 0:
+        yy, xx = np.nonzero(hill_binary)
+        center_y: float = (map_height - 1) / 2.0
+        center_x: float = (map_width - 1) / 2.0
+        distances: np.ndarray = np.sqrt((yy - center_y) ** 2 + (xx - center_x) ** 2)
+        avg_distance_from_center: float = float(np.mean(distances))
+        max_distance: float = float(np.sqrt(center_y**2 + center_x**2)) if (center_y or center_x) else 1.0
+        spread_ratio: float = (avg_distance_from_center / max_distance) if max_distance > 0 else 1.0
+        center_penalty: float = (1.0 - spread_ratio) * 50.0  # higher penalty if concentrated near center
     else:
-        center_penalty = 50
+        center_penalty = 50.0  # no hills at all → penalize
 
-    # Prefer a moderate number of hill clusters (e.g., 3–10)
-    ideal_clusters = 5
-    continuity_penalty = abs(num_regions - ideal_clusters) * 20
+    # 3) Prefer a moderate number of clusters (connected components)
+    labeled_array, num_regions = label(hill_binary.astype(np.uint8))
+    ideal_clusters: int = 5
+    continuity_penalty: float = abs(int(num_regions) - ideal_clusters) * 20.0
 
-    # Rectangle detection (flat hill clusters are bad)
-    bounding_boxes = find_objects(labeled_array)
-    rectangle_penalty = 0
-    for region_slice in bounding_boxes:
-        if region_slice:
-            height = region_slice[0].stop - region_slice[0].start
-            width = region_slice[1].stop - region_slice[1].start
-            aspect_ratio = max(width / height, height / width) if height and width else 10
-            if aspect_ratio <= 1.5:  # compact cluster (almost square or rectangle)
-                rectangle_penalty += 10  # discourage too rectangular blocks
+    # 4) Discourage too-rectangular clusters (blocky hills)
+    rectangle_penalty: float = 0.0
+    for region_slice in find_objects(labeled_array):
+        if region_slice is None:
+            continue
+        height: int = region_slice[0].stop - region_slice[0].start
+        width: int = region_slice[1].stop - region_slice[1].start
+        if height == 0 or width == 0:
+            continue
+        aspect_ratio: float = max(width / height, height / width)
+        if aspect_ratio <= 1.5:  # compact/boxy
+            rectangle_penalty += 10.0
 
-    # Minor reward for presence of scattered hills (non-rectangular regions)
-    scatter_bonus = (num_regions if num_regions > 2 else 0) * 2
+    # 5) Minor reward for more, smaller clusters (non-rectangular spread)
+    scatter_bonus: float = (float(num_regions) * 2.0) if num_regions > 2 else 0.0
 
-    # Optional secondary tile (flowers, decoration)
-    flower_count = tile_counts.get("F", 0)
-    flower_ratio = flower_count / total_tiles
-    flower_penalty = abs(flower_ratio - 0.1) * 30
 
-    total_penalty = (
-        hill_ratio_penalty
+    # 7) Penalize water presence in a hill biome
+    water_penalty: float = water_count  # 1:1 per tile; tune if needed
+
+    # Sum penalties (negative reward); ensure ≤ 0
+    total_penalty: float = (
+        hill_penalty
         + center_penalty
         + continuity_penalty
         + rectangle_penalty
-        + flower_penalty
+        + water_penalty
         - scatter_bonus
     )
-    total_score = -total_penalty
-    return min(total_score, 0.0), {
-        "biome": biome,
-        "hill_ratio": round(hill_ratio, 3),
-        "num_regions": num_regions,
-        "flower_ratio": round(flower_ratio, 3),
+    total_reward: float = -float(total_penalty)
+
+    assert total_reward <= 0, {
+        "hill_percent": hill_percent,
+        "hill_penalty": hill_penalty,
+        "num_regions": int(num_regions),
+        "water_count": water_count,
+        "hill_count": hill_count,
         "rectangle_penalty": rectangle_penalty,
-        "center_penalty": round(center_penalty, 3),
+        "center_penalty": center_penalty,
         "scatter_bonus": scatter_bonus,
-        "reward": min(total_score, 0.0),
+        "hill_biome_reward": total_reward,
+    }
+
+    return total_reward, {
+        "biome": "hill",
+        "hill_percent": hill_percent,
+        "num_regions": int(num_regions),
+        "water_count": water_count,
+        "hill_count": hill_count,
+        "rectangle_penalty": rectangle_penalty,
+        "center_penalty": center_penalty,
+        "scatter_bonus": scatter_bonus,
+        "hill_biome_reward": total_reward,
     }

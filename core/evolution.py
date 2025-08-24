@@ -805,7 +805,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--generations-per-trial",
         type=int,
-        default=10,  # Fewer generations during tuning for speed
+        default=50,  # Fewer generations during tuning for speed
         help="Number of generations to run for each Optuna trial.",
     )
     parser.add_argument(
