@@ -497,7 +497,7 @@ def evolve(
 
         # --- 8) Form next generation ---
         population = survivors + offspring
-
+    print(best_agent.info)
     # If we exhaust all generations without early stopping:
     return population, best_agent, generations, best_agent_rewards, mean_elite_rewards
 

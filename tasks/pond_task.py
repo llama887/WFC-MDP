@@ -11,6 +11,7 @@ num_tiles = len(tile_symbols)
 WATER_SHORE_MASK = np.zeros(num_tiles, dtype=bool)
 PURE_WATER_MASK = np.zeros(num_tiles, dtype=bool)
 SAND_PATH_MASK = np.zeros(num_tiles, dtype=bool)
+HILL_MASK = np.zeros(num_tiles, dtype=bool)
 
 for idx, tile_name in enumerate(tile_symbols):
     if tile_name.startswith("water") or tile_name.startswith("shore") or tile_name == "pond":
@@ -19,6 +20,8 @@ for idx, tile_name in enumerate(tile_symbols):
         PURE_WATER_MASK[idx] = True
     if tile_name.startswith("sand") or tile_name.startswith("path"):
         SAND_PATH_MASK[idx] = True
+    if "hill" in tile_name:
+        HILL_MASK[idx] = True
 
 def pond_reward(grid: np.ndarray) -> tuple[float, dict[str, Any]]:
     water_percent = percent_target_tiles_excluding_excluded_tiles(
@@ -46,11 +49,13 @@ def pond_reward(grid: np.ndarray) -> tuple[float, dict[str, Any]]:
     region_penalty = min(1 - water_regions, 0)
     path_penalty = min(5 - water_path_length, 0)
     land_region_penalty = min(1 - land_regions, 0)
+    hills_penalty = -int(np.sum(grid*HILL_MASK[None, None, :]))
     total_reward = (
         water_penalty +
         3 * water_center_penalty +
         region_penalty +
         land_region_penalty +
+        hills_penalty + 
         path_penalty
     )
     assert total_reward <= 0, {
@@ -63,7 +68,8 @@ def pond_reward(grid: np.ndarray) -> tuple[float, dict[str, Any]]:
         "number_of_land_regions": land_regions,
         "land_region_penalty": land_region_penalty,
         "water_path_length": water_path_length,
-        "path_penalty": path_penalty
+        "path_penalty": path_penalty,
+        "hills_penalty": hills_penalty
     }
 
     total_reward = (
