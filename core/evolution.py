@@ -823,7 +823,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--best-agent-pickle",
         type=str,
-        help="Filename for the saved hyperparameters YAML.",
+        help="Filename for the best agent pickle.",
     )
     parser.add_argument(
         "--qd",
