@@ -40,32 +40,43 @@ def pond_reward(grid: np.ndarray) -> tuple[float, dict[str, Any]]:
     ) * 100
 
     # Reward components
-    water_penalty = water_percent - 25 if water_percent < 25 else 0
+    water_penalty = water_percent - 25 if water_percent < 25 else 50 - water_percent if water_percent > 50 else 0
     water_center_penalty = pure_water_percent - 10 if pure_water_percent < 10 else 0
     grass_penalty = grass_percent - 15 if grass_percent < 15 else 0
 
     # Create binary maps
-    water_binary_map = grid_to_binary_map(grid, WATER_SHORE_MASK)
-    land_binary_map = grid_to_binary_map(grid, ~WATER_SHORE_MASK)
+    water_binary_map = grid_to_binary_map(grid, WATER_SHORE_MASK).astype(np.int32)
+    land_binary_map = grid_to_binary_map(grid, ~WATER_SHORE_MASK).astype(np.int32)
 
     # Calculate metrics
     water_regions = calc_num_regions(water_binary_map)
     land_regions = calc_num_regions(land_binary_map)
     water_path_length, _ = calc_longest_path(water_binary_map)
 
+    # Edge-contact penalty: count how many water tiles are on the outer border
+    map_height, map_width = water_binary_map.shape
+    edge_mask = np.zeros((map_height, map_width), dtype=bool)
+    if map_height > 0 and map_width > 0:
+        edge_mask[0, :] = True
+        edge_mask[-1, :] = True
+        edge_mask[:, 0] = True
+        edge_mask[:, -1] = True
+    number_of_edge_water_tiles: int = int(np.sum((water_binary_map == 1) & edge_mask))
+    edge_water_penalty: float = -number_of_edge_water_tiles
+
     # Apply penalties
     region_penalty = min(5 - water_regions, 0)
     path_penalty = min(25 - water_path_length, 0)
     land_region_penalty = min(2 - land_regions, 0)
-    # hills_penalty = -int(np.sum(grid*HILL_MASK[None, None, :]))
+
     total_reward = (
-        water_penalty +
-        5 * water_center_penalty +
-        region_penalty +
-        land_region_penalty +
-        # hills_penalty + 
-        grass_penalty +
-        path_penalty
+        water_penalty
+        + 5 * water_center_penalty
+        + region_penalty
+        + land_region_penalty
+        + grass_penalty
+        + path_penalty
+        + edge_water_penalty
     )
     diagnostic = {
         "percent_water": water_percent,
@@ -80,17 +91,9 @@ def pond_reward(grid: np.ndarray) -> tuple[float, dict[str, Any]]:
         "land_region_penalty": land_region_penalty,
         "water_path_length": water_path_length,
         "path_penalty": path_penalty,
-        # "hills_penalty": hills_penalty
+        "number_of_edge_water_tiles": number_of_edge_water_tiles,
+        "edge_water_penalty": edge_water_penalty,
     }
     assert total_reward <= 0, diagnostic
 
-    total_reward = (
-        water_penalty +
-        3 * water_center_penalty +
-        region_penalty +
-        land_region_penalty +
-        path_penalty
-    )
-
     return total_reward, diagnostic
-

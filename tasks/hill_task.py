@@ -99,18 +99,18 @@ def hill_reward(grid: np.ndarray) -> Tuple[float, Dict[str, Any]]:
     # Water/shore tiles directly from one-hot grid
     water_or_shore_count: int = int(np.sum(grid * WATER_SHORE_MASK[None, None, :]))
 
-    MAX_ROCKS_ALLOWED: int = 5          # cap for 2x2 hill blocks
-    MIN_HILLS_REQUIRED: int = 3        # minimum enclosed areas required
+    # MAX_ROCKS_ALLOWED: int = 5          # cap for 2x2 hill blocks
+    MIN_HILLS_REQUIRED: int = 8        # minimum enclosed areas required
 
-    rock_penalty: float = float(max(0, num_rocks_2x2 - MAX_ROCKS_ALLOWED))
-    hill_quota_penalty: float = float(max(0, MIN_HILLS_REQUIRED - num_enclosed_areas))
+    # rock_penalty: float = 3 * float(max(0, num_rocks_2x2 - MAX_ROCKS_ALLOWED))
+    hill_quota_penalty: float = 2 * float(max(0, MIN_HILLS_REQUIRED - num_enclosed_areas))
     water_shore_penalty: float = float(water_or_shore_count)
     # elevation_level: int = int(min(2, max_nesting_depth)) 
     # elevation_penalty: float = float(max(0, 2 - elevation_level))
 
     total_penalty: float = (
-        5 * rock_penalty
-        + 2 * hill_quota_penalty
+        # rock_penalty
+        + hill_quota_penalty
         + water_shore_penalty
         # + elevation_penalty
     )
@@ -118,17 +118,15 @@ def hill_reward(grid: np.ndarray) -> Tuple[float, Dict[str, Any]]:
 
 
     diagnostics: dict[str, Any] = {
-        "biome": "hill",
         "num_rocks_2x2": num_rocks_2x2,
         "num_enclosed_areas": num_enclosed_areas,
         # "max_nesting_depth": max_nesting_depth,
         # "elevation_level": elevation_level,
         "water_or_shore_count": water_or_shore_count,
-        "rock_penalty": rock_penalty,
+        # "rock_penalty": rock_penalty,
         "hill_quota_penalty": hill_quota_penalty,
         "water_shore_penalty": water_shore_penalty,
         # "elevation_penalty": elevation_penalty,
-        "hill_biome_reward": total_reward,
     }
 
     # Enforce invariant
