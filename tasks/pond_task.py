@@ -62,7 +62,7 @@ def pond_reward(grid: np.ndarray) -> tuple[float, dict[str, Any]]:
         edge_mask[:, 0] = True
         edge_mask[:, -1] = True
     number_of_edge_water_tiles: int = int(np.sum((water_binary_map == 1) & edge_mask))
-    edge_water_penalty: float = -number_of_edge_water_tiles
+    edge_water_penalty: float = 10 - number_of_edge_water_tiles if number_of_edge_water_tiles > 10 else 0
 
     # Apply penalties
     region_penalty = min(5 - water_regions, 0)
