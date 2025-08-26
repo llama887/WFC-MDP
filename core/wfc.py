@@ -313,6 +313,7 @@ def biome_wfc_step(
         if contradiction_found:
             return grid, False, True  # Truncated (contradiction post-propagation)
         if all_collapsed:
+            assert not np.any(grid == -1)
             return grid, True, False  # Terminated (all collapsed post-propagation)
         # If neither, unexpected state
         return grid, False, True

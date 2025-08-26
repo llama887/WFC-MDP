@@ -47,42 +47,6 @@ class CombinedReward:
         return total_reward, merged_info
 
 
-def grid_to_array(
-    grid: list[list[set[str]]],
-    tile_symbols: list[str],
-    tile_to_index: dict[str, int],
-    map_length: int,
-    map_width: int,
-) -> np.ndarray:
-    """Converts the list-of-sets grid to a flattened numpy array for the observation."""
-    arr = np.empty((map_length, map_width), dtype=np.float32)
-    num_tiles = len(tile_symbols)
-    for y in range(map_length):
-        for x in range(map_width):
-            cell_set = grid[y][x]
-            num_options = len(cell_set)
-            if num_options == 1:
-                # Collapsed cell
-                tile_name = next(iter(cell_set))
-                idx = tile_to_index.get(tile_name, -1)  # Get index from map
-                if idx != -1 and num_tiles > 1:
-                    arr[y, x] = idx / (num_tiles - 1)
-                elif idx != -1 and num_tiles == 1:
-                    arr[y, x] = 0.0  # Handle single tile case
-                else:
-                    arr[y, x] = -1.0  # Should not happen if tile_to_index is correct
-            elif num_options == 0:
-                # Contradiction cell
-                arr[
-                    y, x
-                ] = -2.0  # Use a different value for contradiction? Or stick to -1? Let's use -1.
-                arr[y, x] = -1.0
-            else:
-                # Undecided cell
-                arr[y, x] = -1.0
-    return arr.flatten()
-
-
 class WFCWrapper(gym.Env):
     """
     Gymnasium Environment for Wave Function Collapse controlled by an RL agent.
@@ -272,7 +236,7 @@ class WFCWrapper(gym.Env):
         # It modifies the grid in-place and returns terminated/truncated status
         # Note: biome_wfc_step expects action_probs, not logits
         self.grid, terminated, truncated = biome_wfc_step(
-            self.grid,  # The list-of-sets grid
+            self.grid,  # The grid
             self.adjacency,  # Adjacency rules (numpy bool array)
             self.all_tiles,  # List of tile symbols
             self.tile_to_index,  # Tile symbol to index map
@@ -288,6 +252,7 @@ class WFCWrapper(gym.Env):
 
         # Calculate reward using the updated grid and initial longest path
         if terminated:
+            assert not np.any(self.grid == -1)
             reward, info = self.reward(self.grid)
             if self.max_reward > 0:
                 assert reward <= self.max_reward, (

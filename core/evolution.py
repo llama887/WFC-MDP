@@ -147,12 +147,15 @@ class PopulationMember:
 
     def run_action_sequence(self):
         start_time = timer()
-        self.reward = 0
+        self.reward = None
         observation, _ = self.env.reset()
         if self.genotype_representation == "1d":
             for idx, action in enumerate(self.action_sequence):
                 _, reward, terminate, truncate, info = self.env.step(action)
-                self.reward += reward
+                if not self.reward:
+                    self.reward = reward
+                else: 
+                    self.reward += reward
                 self.info = info
                 if terminate or truncate:
                     break
@@ -166,7 +169,10 @@ class PopulationMember:
                 observation, reward, terminate, truncate, info = self.env.step(
                     self.action_sequence[flattened_index]
                 )
-                self.reward += reward
+                if not self.reward:
+                    self.reward = reward
+                else: 
+                    self.reward += reward
                 self.info = info
         end_time = timer()
         self.info["wfc_rollout_time"] = end_time - start_time
@@ -633,9 +639,9 @@ def render_best_agent(
     total_reward = 0
     print("Info:", best_agent.info)
     print("Rendering best agent's action sequence...")
-
+    info = None
     for action in tqdm(best_agent.action_sequence, desc="Rendering Steps"):
-        _, reward, terminate, truncate, _ = env.step(action)
+        _, reward, terminate, truncate, info = env.step(action)
         total_reward += reward
 
         # Clear screen
@@ -676,7 +682,8 @@ def render_best_agent(
         # Capture final frame if this is the last step
         if terminate or truncate:
             break
-
+    if info:
+        print("Final Info:", info)
     # --- Draw the path with smooth curves ---
     if hasattr(best_agent.info, "get") and "longest_path" in best_agent.info:
         path_indices = best_agent.info["longest_path"]
@@ -1037,13 +1044,15 @@ if __name__ == "__main__":
 
         # Run the best agent's actions
         observation, _ = env.reset()
+        info = None
         for action in best_agent.action_sequence:
-            observation, _, terminated, truncated, _ = env.step(action)
+            observation, _, terminated, truncated, info = env.step(action)
             env.render()
             pygame.display.flip()
             if terminated or truncated:
                 break
-
+        if info:
+            print("Final Info:", info)
         # Save the final render
         env.save_render(output_filename)
         print(f"Saved final render to {output_filename}")

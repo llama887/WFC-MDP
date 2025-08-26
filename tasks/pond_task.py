@@ -82,10 +82,16 @@ def pond_reward(grid: np.ndarray) -> tuple[float, dict[str, Any]]:
 
     return total_reward, {
         "percent_water": water_percent,
+        "water_penalty": water_penalty,
         "percent_water_center": pure_water_percent,
+        "water_center_penalty": water_center_penalty,
         "number_of_water_regions": water_regions,
+        "region_penalty": region_penalty,
         "number_of_land_regions": land_regions,
-        "water_path_length": water_path_length
+        "land_region_penalty": land_region_penalty,
+        "water_path_length": water_path_length,
+        "path_penalty": path_penalty,
+        "hills_penalty": hills_penalty
     }
 
 
