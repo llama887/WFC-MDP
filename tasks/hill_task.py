@@ -99,8 +99,8 @@ def hill_reward(grid: np.ndarray) -> Tuple[float, Dict[str, Any]]:
     # Water/shore tiles directly from one-hot grid
     water_or_shore_count: int = int(np.sum(grid * WATER_SHORE_MASK[None, None, :]))
 
-    MAX_ROCKS_ALLOWED: int = 3          # cap for 2x2 hill blocks
-    MIN_HILLS_REQUIRED: int = 5        # minimum enclosed areas required
+    MAX_ROCKS_ALLOWED: int = 5          # cap for 2x2 hill blocks
+    MIN_HILLS_REQUIRED: int = 3        # minimum enclosed areas required
 
     rock_penalty: float = float(max(0, num_rocks_2x2 - MAX_ROCKS_ALLOWED))
     hill_quota_penalty: float = float(max(0, MIN_HILLS_REQUIRED - num_enclosed_areas))
