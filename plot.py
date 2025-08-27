@@ -462,7 +462,12 @@ def collect_binary_convergence(sample_size, evolution_hyperparameters, use_quali
 def collect_combo_convergence(sample_size, evolution_hyperparameters, use_quality_diversity, second_task, use_hard_variant=False, genotype_dimensions=1, debug=False):
     path_lengths = list(np.arange(10, 101, 10))
     prefix = f"{'qd_' if use_quality_diversity else ''}{'hard_' if use_hard_variant else ''}{second_task}_combo_"
-    biome_reward_map = {"river": river_reward, "pond": pond_reward, "grass": grass_reward}
+    biome_reward_map = {
+        "river": river_reward,
+        "pond": pond_reward,
+        "grass": grass_reward,
+        "hill": hill_reward,
+    }
     second_reward = biome_reward_map[second_task]
     def make_reward(path_len): return CombinedReward([partial(binary_reward, target_path_length=path_len, hard=use_hard_variant), second_reward])
     return _generic_convergence_collector(path_lengths, make_reward, evolution_hyperparameters, prefix, use_quality_diversity, genotype_dimensions, is_biome_only=False, sample_size=sample_size, debug=debug)
@@ -883,7 +888,12 @@ def collect_constrained_combo_convergence(
         xover = CrossOverMethod(int(raw_xover))
     path_lengths = list(np.arange(10, 101, 10))
     prefix = f"{'hard_' if use_hard_variant else ''}{second_task}_combo_"
-    biome_reward_map = {"river": river_reward, "pond": pond_reward, "grass": grass_reward}
+    biome_reward_map = {
+        "river": river_reward,
+        "pond": pond_reward,
+        "grass": grass_reward,
+        "hill": hill_reward,
+    }
     second_reward = biome_reward_map[second_task]
     def make_reward(path_len):
         return CombinedReward([
@@ -1045,7 +1055,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--task",
         type=str,
-        choices=["binary_easy", "binary_hard", "river", "pond", "grass", "biomes"],
+        choices=["binary_easy", "binary_hard", "river", "pond", "grass", "hill", "biomes"],
     )
     parser.add_argument("--combo", type=str, choices=["easy", "hard"], default="easy")
     parser.add_argument(
@@ -1108,6 +1118,19 @@ if __name__ == "__main__":
                 hyperparams, "binary_hard_", False, args.sample_size, args.debug
             )
             plot_convergence_from_csv(csv_path, title=f"{mode.value.upper()} Binary Convergence (HARD)")
+        elif args.task == "hill":
+            # Single‐biome: Hill average convergence
+            csv_path = _generic_constrained_ea_collector(
+                mode,
+                ["Hill"],
+                lambda b: hill_reward,
+                hyperparams,
+                "hill_",
+                True,               # is_biome_only
+                args.sample_size,
+                args.debug,
+            )
+            plot_average_biome_convergence_from_csv(csv_path)
         elif args.task == "biomes":
             csv_path = _generic_constrained_ea_collector(
                 mode, ["Pond", "River"], lambda b: {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[b],
@@ -1116,7 +1139,12 @@ if __name__ == "__main__":
             plot_average_biome_convergence_from_csv(csv_path)
         else: # Combo tasks
             use_hard = args.combo == "hard"
-            biome_map = {"river": river_reward, "pond": pond_reward, "grass": grass_reward}
+            biome_map = {
+                "river": river_reward,
+                "pond": pond_reward,
+                "grass": grass_reward,
+                "hill": hill_reward,
+            }
             second_reward = biome_map[args.task]
             def make_reward(p): return CombinedReward([partial(binary_reward, target_path_length=p, hard=use_hard), second_reward])
             csv_path = _generic_constrained_ea_collector(
@@ -1145,17 +1173,40 @@ if __name__ == "__main__":
 
         elif args.task == "biomes":
             biomes = ["river", "pond", "grass"]
-            biome_map = {"river": river_reward, "pond": pond_reward, "grass": grass_reward}
+            biome_map = {
+                "river": river_reward,
+                "pond": pond_reward,
+                "grass": grass_reward,
+                "hill": hill_reward,
+            }
             def make_reward(b): return biome_map[b]
             csv_path = _resumable_mcts_collector(
                 biomes, make_reward, "mcts_biomes", True, args.sample_size, args.mcts_iterations
             )
             plot_average_biome_convergence_from_csv(csv_path, y_label="Mean Iterations to Converge")
 
+        elif args.task == "hill":
+            # Single‐biome Hill MCTS
+            def make_reward(_): return hill_reward
+            csv_path = _resumable_mcts_collector(
+                ["hill"],
+                make_reward,
+                "mcts_hill",
+                True,               # is_biome_only
+                args.sample_size,
+                args.mcts_iterations
+            )
+            plot_average_biome_convergence_from_csv(csv_path, y_label="Mean Iterations to Converge")
+
         else:  # Combo tasks
             path_lengths = list(np.arange(10, 101, 10))
             use_hard = args.combo == "hard"
-            biome_map = {"river": river_reward, "pond": pond_reward, "grass": grass_reward}
+            biome_map = {
+                "river": river_reward,
+                "pond": pond_reward,
+                "grass": grass_reward,
+                "hill": hill_reward,
+            }
             second_reward = biome_map[args.task]
             def make_reward(p): return CombinedReward([partial(binary_reward, target_path_length=p, hard=use_hard), second_reward])
             
@@ -1181,6 +1232,22 @@ if __name__ == "__main__":
                 no_random_offspring=args.no_random_offspring
             )
             plot_convergence_from_csv(csv_path, title="Evolution Binary Convergence (HARD)")
+        elif args.task == "hill":
+            # Single‐biome Hill average evolution
+            csv_path = _generic_evolution_collector(
+                ["Hill"],
+                lambda b: hill_reward,
+                hyperparams,
+                f"{args.genotype_dimensions}d_hill_",
+                "evolution",
+                args.quality_diversity,
+                args.genotype_dimensions,
+                True,               # is_biome_only
+                args.sample_size,
+                args.debug,
+                no_random_offspring=args.no_random_offspring
+            )
+            plot_average_biome_convergence_from_csv(csv_path)
         elif args.task == "biomes":
             csv_path = _generic_evolution_collector(
                 ["Pond", "River"], lambda b: {"Pond": pond_reward, "River": river_reward, "Grass": grass_reward}[b],
