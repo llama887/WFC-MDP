@@ -23,6 +23,7 @@ from tasks.binary_task import binary_percent_water, binary_reward
 from tasks.grass_task import grass_reward
 from tasks.pond_task import pond_reward
 from tasks.river_task import river_reward
+from tasks.hill_task import hill_reward
 
 import matplotlib.pyplot as plt
 
@@ -49,16 +50,14 @@ def _generic_evolution_collector(
     is_biome_only: bool = False,
     sample_size: int = 20,
     debug: bool = False,
-    no_random_offspring: bool = False  # NEW: Add this parameter
+    no_random_offspring: bool = False  
 ) -> str:
-    # NEW: Override random offspring proportion if requested
     if no_random_offspring:
         evolution_hyperparameters["random_offspring"] = 0.0
 
     adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
     map_length, map_width = 15, 20
 
-    # NEW: Adjust output directory based on no_random_offspring flag
     base_fig_dir = get_figure_directory(method)
     if method == "evolution":
         fig_dir = os.path.join(base_fig_dir, f"{genotype_dimensions}d")
