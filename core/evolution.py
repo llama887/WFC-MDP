@@ -377,7 +377,8 @@ def evolve(
                 os.environ['SDL_VIDEODRIVER'] = 'dummy'
                 pygame.init()
                 pygame_initialized = True
-
+                
+            try:
                 # Get environment state
                 env_state = deepcopy_env_state(population[best_idx].env)
                 
@@ -883,8 +884,8 @@ if __name__ == "__main__":
     num_tiles = len(tile_symbols)
 
     task_rewards = {
-        "binary_easy": partial(binary_reward, target_path_length=20),
-        "binary_hard": partial(binary_reward, target_path_length=20, hard=True),
+        "binary_easy": partial(binary_reward, target_path_length=70),
+        "binary_hard": partial(binary_reward, target_path_length=70, hard=True),
         "river": river_reward,
         "pond": pond_reward,
         "grass": grass_reward,
@@ -1059,6 +1060,9 @@ if __name__ == "__main__":
                 total_reward += reward
                 env.render()
                 pygame.display.flip()
+                if record_gif and pygame.display.get_surface() is not None:
+                    frame = pygame.surfarray.array3d(pygame.display.get_surface()).swapaxes(0, 1)
+                    gif_frames.append(frame)
                 if terminated or truncated:
                     break
         else:
@@ -1073,12 +1077,18 @@ if __name__ == "__main__":
                     total_reward += reward
                     env.render()
                     pygame.display.flip()
+                    if record_gif and pygame.display.get_surface() is not None:
+                        frame = pygame.surfarray.array3d(pygame.display.get_surface()).swapaxes(0, 1)
+                        gif_frames.append(frame)
             else:
                 for action in best_agent.action_sequence:
                     observation, reward, terminated, truncated, info = env.step(action)
                     total_reward += reward
                     env.render()
                     pygame.display.flip()
+                    if record_gif and pygame.display.get_surface() is not None:
+                        frame = pygame.surfarray.array3d(pygame.display.get_surface()).swapaxes(0, 1)
+                        gif_frames.append(frame)
                     if terminated or truncated:
                         break
  
@@ -1089,6 +1099,15 @@ if __name__ == "__main__":
         env.save_render(output_filename)
         print(f"Saved final render to {output_filename}")
 
+        if record_gif and gif_frames:
+            try:
+                import imageio
+                gif_name = f"evolution_output/{task_name}_run.gif"
+                imageio.mimsave(gif_name, gif_frames, fps=gif_fps)
+                print(f"Saved GIF to {gif_name}")
+            except Exception as e:
+                print(f"Failed to save GIF: {e}")
+        
         # Display for 5 seconds
         start_time = time.time()
         while time.time() - start_time < 5:
