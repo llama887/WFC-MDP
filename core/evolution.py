@@ -512,7 +512,7 @@ def evolve(
 
 
 def objective(
-    trial,
+    trial: optuna.Trial,
     generations_per_trial: int,
     qd: bool = False,
     tasks_list: list[str] = None,
