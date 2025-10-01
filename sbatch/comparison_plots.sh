@@ -33,7 +33,7 @@ python plot.py --compare --csv-files figures_evolution/1d/combo_grass_hard_conve
                                     figures_baseline/combo_grass_hard_convergence.csv \
                                     figures_fi2pop/combo_grass_hard_convergence.csv \
                                     --labels evolution_1d evolution_2d baseline fi2pop \
-                                    --title "Hard Grass Combo Convergence Behavior" \
+                                    --title "Hybrid Field/Binary Convergence Behavior" \
                                     --output comparison_figures/grass_hard_comparison.png 
 echo "Plotting River..."
 
@@ -50,7 +50,7 @@ python plot.py --compare --csv-files figures_evolution/1d/combo_river_hard_conve
                                     figures_baseline/combo_river_hard_convergence.csv \
                                     figures_fi2pop/combo_river_hard_convergence.csv \
                                     --labels evolution_1d evolution_2d baseline fi2pop \
-                                    --title "River Combo Convergence Behavior" \
+                                    --title "Hybrid River/Binary Convergence Behavior" \
                                     --output comparison_figures/river_hard_comparison.png 
 echo "Plotting Pond..."
 

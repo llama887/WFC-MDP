@@ -1,0 +1,45 @@
+seed: 0
+num_seeds: 1
+
+parallel:
+  num_workers: 1
+
+optimization:
+  num_trials: 1
+  # trials: 1  # uncomment if your code expects this key instead of num_trials
+
+qd:
+  population_size: 1
+  num_generations: 1
+  num_offspring: 0
+
+evaluation:
+  evaluations_per_individual: 1
+
+Pond:
+  action_noise_standard_deviation: 0.11822730227050642
+  cross_or_mutate: 0.42734777287084125
+  cross_over_method: 0
+  number_of_actions_mutated_mean: 1
+  number_of_actions_mutated_standard_deviation: 0
+  random_offspring: 0
+  survival_rate: 1.0
+
+River:
+  action_noise_standard_deviation: 0.06506279583360368
+  cross_or_mutate: 0.8120574882833455
+  cross_over_method: 0
+  number_of_actions_mutated_mean: 1
+  number_of_actions_mutated_standard_deviation: 0
+  random_offspring: 0
+  survival_rate: 1.0
+
+Grass:
+  action_noise_standard_deviation: 0.04455984117444022
+  cross_or_mutate: 0.996790451939592
+  cross_over_method: 1
+  number_of_actions_mutated_mean: 1
+  number_of_actions_mutated_standard_deviation: 0
+  random_offspring: 0
+  survival_rate: 1.0
+

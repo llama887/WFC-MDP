@@ -635,14 +635,12 @@ def plot_comparison(
     import matplotlib.pyplot as plt
 
     def detect_columns(df: pd.DataFrame) -> tuple[str, str]:
-        # X axis
         if "biome" in df.columns:
             xcol = "biome"
         elif "desired_path_length" in df.columns:
             xcol = "desired_path_length"
         else:
             raise KeyError("Expected 'biome' or 'desired_path_length' in CSV.")
-        # Metric
         if "generations_to_converge" in df.columns:
             metric = "generations_to_converge"
         elif "iterations_to_converge" in df.columns:
@@ -697,11 +695,11 @@ def plot_comparison(
     is_numeric_x = np.issubdtype(
         combined[global_xcol].dropna().infer_objects(copy=False).dtype, np.number
     )
+
     if is_numeric_x:
-        x_values = np.array(sorted(combined[global_xcol].unique()))
+        x_values = list(range(0, 101, 10))
         pos_map = {v: float(v) for v in x_values}
-        step = float(np.min(np.diff(np.sort(x_values)))) if len(x_values) > 1 else 1.0
-        total_bar_space = 0.8 * step
+        total_bar_space = 8.0
     else:
         x_values = list(pd.unique(combined[global_xcol]))
         pos_map = {v: i for i, v in enumerate(x_values)}
@@ -718,6 +716,7 @@ def plot_comparison(
 
     for method_name, group in combined.groupby("method"):
         color = method_colors[method_name]
+        group = group[group[global_xcol].isin(pos_map.keys())].copy()
         group = group.sort_values(global_xcol, key=lambda s: [pos_map[v] for v in s])
 
         # Fraction converged (lines)
@@ -751,15 +750,15 @@ def plot_comparison(
     else:
         left_axis.set_xlabel("Desired Binary Path Length")
 
-    right_label = "Mean Generations" if global_metric == "generations_to_converge" else "Mean Iterations"
+    right_label = "Mean Generations (bars)" if global_metric == "generations_to_converge" else "Mean Iterations"
     left_axis.set_ylabel("Fraction Converged (lines)")
     right_axis.set_ylabel(right_label)
 
-    # Ticks
+    # Ticks and bounds
     if is_numeric_x:
         left_axis.set_xticks([pos_map[v] for v in x_values])
         left_axis.set_xticklabels([str(v) for v in x_values])
-        left_axis.set_xlim(min(pos_map.values()) - 0.5, max(pos_map.values()) + 0.5)
+        left_axis.set_xlim(0, 100)
     else:
         left_axis.set_xticks(range(len(x_values)))
         left_axis.set_xticklabels(x_values)
@@ -776,7 +775,7 @@ def plot_comparison(
     print(f"Saved comparison plot to {output_path}")
 
     # ----- ASCII + LaTeX tables -----
-    ordered_keys = x_values if not is_numeric_x else sorted(x_values)
+    ordered_keys = x_values
     rows, index_tuples = [], []
     for method_name in labels:
         grp = (
@@ -785,18 +784,30 @@ def plot_comparison(
             .reindex(ordered_keys)
         )
 
-        mean_row = []
+        # Row 1: Mean (±stderr if available). If only one success (or stderr NaN), show just mean.
+        mean_row: list[str] = []
         for k in ordered_keys:
-            m = grp.at[k, "mean"] if k in grp.index else np.nan
-            s = grp.at[k, "stderr"] if k in grp.index else np.nan
-            mean_row.append("—" if (pd.isna(m) or pd.isna(s)) else f"{m:.1f}±{s:.1f}")
+            if k not in grp.index:
+                mean_row.append("—")
+                continue
+            mean_value = grp.at[k, "mean"] if k in grp.index else np.nan
+            stderr_value = grp.at[k, "stderr"] if k in grp.index else np.nan
+            successes_value = grp.at[k, "successes"] if (k in grp.index and "successes" in grp.columns) else np.nan
+
+            if pd.isna(mean_value):
+                mean_row.append("—")
+            elif pd.isna(stderr_value) or successes_value == 1:
+                mean_row.append(f"{mean_value:.1f}")            # <-- change: show mean only
+            else:
+                mean_row.append(f"{mean_value:.1f}±{stderr_value:.1f}")
         rows.append(mean_row)
         index_tuples.append((method_name, f"{right_label} (±stderr)"))
 
-        frac_row = []
+        # Row 2: Fraction Converged
+        frac_row: list[str] = []
         for k in ordered_keys:
-            f = grp.at[k, "fraction_converged"] if k in grp.index else np.nan
-            frac_row.append("—" if pd.isna(f) else f"{f:.2f}")
+            frac_value = grp.at[k, "fraction_converged"] if (k in grp.index) else np.nan
+            frac_row.append("—" if pd.isna(frac_value) else f"{frac_value:.2f}")
         rows.append(frac_row)
         index_tuples.append((method_name, "Fraction Converged"))
 
@@ -815,6 +826,7 @@ def plot_comparison(
             escape=False,
         )
     )
+
 
 
     
