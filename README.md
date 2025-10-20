@@ -8,14 +8,11 @@
 
 ## Abstract
 
-Procedural content generation often requires satisfying both designer-specified objectives and adjacency constraints implicitly imposed by the underlying tile set. We reformulate Wave Function Collapse (WFC) as a Markov Decision Process (MDP), enabling external optimization algorithms to focus exclusively on objective maximization while leveraging WFC's propagation mechanism to enforce constraint satisfaction. Across multiple domains with varying difficulties, joint optimization not only struggles as task complexity increases but consistently underperforms relative to optimization over the WFC-MDP, underscoring the advantages of decoupling local constraint satisfaction from global objective optimization.
+Procedural content generation often requires satisfying both designer-specified objectives and adjacency constraints implicitly imposed by the underlying tile set. To address the challenges of jointly optimizing both constraints and objectives, we reformulate WaveFunctionCollapse (WFC) as a Markov Decision Process (MDP), enabling external optimization algorithms to focus exclusively on objective maximization while leveraging WFC's propagation mechanism to enforce constraint satisfaction. We empirically compare optimizing this MDP to traditional evolutionary approaches that jointly optimize global metrics and local tile placement. Across multiple domains with various difficulties, we find that joint optimization not only struggles as task complexity increases, but consistently underperforms relative to optimization over the WFC-MDP, underscoring the advantages of decoupling local constraint satisfaction from global objective optimization.
 
 **Authors:** Franklin Yiu¹, Mohan Lu¹, Nina Li¹, Kevin Joseph¹, Tianxu Zhang¹, Julian Togelius¹, Timothy Merino¹, Sam Earle¹  
-¹New York University, Brooklyn, NY 11201, USA  
+¹New York University, United States  
 
-**Correspondence:** fyy2003@nyu.edu  
-**Paper:** Link pending  
-**Version:** 1.0.0
 
 ---
 
@@ -28,19 +25,11 @@ Procedural content generation often requires satisfying both designer-specified 
 5. [Repository Structure](#5-repository-structure)
 6. [Installation](#6-installation)
 7. [Quick Start](#7-quick-start)
-8. [Domains and Objectives](#8-domains-and-objectives)
-9. [Controllers](#9-controllers)
-10. [Gymnasium Environment API](#10-gymnasium-environment-api)
-11. [Running Experiments](#11-running-experiments)
-12. [Hyperparameter Configuration](#12-hyperparameter-configuration)
-13. [Reproducibility](#13-reproducibility)
-14. [Extending the Framework](#14-extending-the-framework)
-15. [Computational Requirements](#15-computational-requirements)
-16. [Known Limitations](#16-known-limitations)
-17. [Testing](#17-testing)
-18. [Citation](#18-citation)
-19. [License and Ethics](#19-license-and-ethics)
-20. [Acknowledgments](#20-acknowledgments)
+8. [Problem Domain](#8-problem-domain)
+9. [Domains and Objectives](#9-domains-and-objectives)
+10. [Controllers](#10-controllers)
+11. [Gymnasium Environment API](#11-gymnasium-environment-api)
+12. [Running Experiments](#12-running-experiments)
 
 ---
 
@@ -58,26 +47,31 @@ This joint optimization becomes harder as aesthetic complexity increases. Our co
 
 ### 1.2 Our Solution
 
-By reformulating WFC as an MDP, we:
-- Offload constraint satisfaction to WFC's propagation mechanism
-- Enable optimizers to focus solely on objective maximization
+We offer the following contributions:
+- We demonstrate that forcing learning algorithms to learn local adjacency constraints leads to degraded performance in highly constrained domains.
+- We present a novel formulation of WFC as an MDP, along with a corresponding Gymnasium environment to facilitate the evaluation of alternative optimization algorithms.
 
 ---
 
 ## 2. Related Work
 
-### 2.1 Wave Function Collapse Extensions
-- **Karth & Smith (2017)**: WFC as constraint satisfaction problem
-- **Nie et al. (2023)**: Nested WFC for scalability  
-- **Our contribution**: First MDP formulation enabling RL/search methods
+### 2.1 Wave Function Collapse Algorithm and Modifications
 
-### 2.2 Procedural Content Generation via Learning
-- **Khalifa et al. (2020)**: PCGRL - RL for level generation
-- **Summerville et al. (2018)**: PCGML survey
-- **Our distinction**: Explicit constraint/objective decoupling
+**WaveFunctionCollapse**: WFC is an algorithm for procedural content generation, particularly for tile-based environments. It can create coherent and visually consistent outputs based on simple input examples or constraints. The algorithm's core functionality resembles constraint satisfaction with a quantum mechanics-inspired approach: maintaining a superposition of possible states for each tile that gradually "collapses" to definite states through observation and propagation steps.
 
-### 2.3 Constrained Optimization in PCG
-- **Kimbrough et al. (2008)**: FI-2Pop for constrained optimization
+The algorithm operates in two main modes: the simple tiled model, which uses explicit adjacency rules, and the overlapping model, which automatically extracts patterns from example inputs. In both models, WFC can be seen as a form of self-supervised learning that learns a distribution from minimal examples—often just one—and generates similar content by maintaining the learned adjacency patterns. While WFC excels at maintaining local adjacency constraints, it struggles with global optimization objectives that are critical for gameplay, such as ensuring level solvability or balanced resource distribution.
+
+**Enhancements to WaveFunctionCollapse**: Researchers have developed numerous modifications to improve WFC's capabilities beyond its original formulation. To improve scalability to large environments, Nested Wave Function Collapse (N-WFC) was proposed, which decomposes the generation process into nested subproblems. This approach significantly reduces time complexity from exponential to polynomial while maintaining consistency across the generated content. For non-grid environments, researchers have developed graph-based extensions of WFC that enable content generation for arbitrary topologies, enabling applications to 3D worlds and non-uniform structures.
+
+### 2.2 Evolutionary Approaches to PCG
+
+**Evolutionary Algorithms**: Evolutionary algorithms, widely applied to PCG problems, are a flexible approach to searching the space of possible game content while optimizing for designer-specified objectives. These approaches typically encode content as genomes that evolve through operations such as crossover and mutation, with fitness functions guiding the search toward desired properties.
+
+**FI-2Pop for Constrained Optimization**: The Feasible-Infeasible Two-Population (FI-2Pop) genetic algorithm is a solution to constrained optimization problems that maintains two separate populations: one of feasible solutions that optimize the objective function, and another of infeasible solutions that minimize constraint violations. This approach has proven particularly effective for PCG applications where content must simultaneously satisfy hard constraints (e.g., playability) while optimizing soft objectives (e.g., challenge or balance).
+
+### 2.3 Procedural Content Generation via Reinforcement Learning (PCGRL)
+
+PCGRL was introduced as a novel approach to procedural content generation that frames level design as a sequential decision-making process optimized through reinforcement learning. By formulating level generation as a Markov Decision Process (MDP), PCGRL enables an agent to learn a policy that maximizes expected level quality through incremental modifications. This approach can operate without human-authored examples and generates content extremely quickly once trained.
 
 ---
 
@@ -108,11 +102,42 @@ The environment consumes a length-`num_tiles` vector of preferences and converts
 
 ## 4. Experimental Results
 
-This repo provides tooling to collect and plot convergence data; run the commands in Section 11 to generate your own CSVs and figures. No fixed numbers are claimed here.
+We evaluate each optimization method across desired path lengths 10-100 in intervals of 10 for both binary and hybrid domains. Convergence robustness is defined as the proportion of runs that achieve the maximal reward of 0, while sample efficiency is measured by the number of generations it takes to evolve at least one population member with reward of 0. All methods were run with a fixed sample budget (population size = 48) to enable fair comparisons.
+
+### 4.1 Key Findings
+
+**MDP Encapsulation of Constraints is Crucial**: Across all desired path lengths, methods that offload constraint enforcement to WFC consistently outperform those that must learn it implicitly. This discrepancy is especially pronounced given more difficult objectives (i.e. higher target path lengths, hybrid biome/binary domains), where the feasibility space is severely constrained.
+
+**Feasible Region Shrinkage Limits Optimization**: At high path lengths, even MDP methods fail to converge reliably. This likely stems from the exponentially shrinking volume of the feasible space and limited tendency toward exploration in vanilla μ+λ evolution—as compared to e.g. Quality Diversity. Despite valid intermediate states, the reward landscape remains highly sparse and multi-modal.
+
+These findings highlight a fundamental insight: procedural generation under complex constraints benefits most when constraint satisfaction is externalized and search is guided through structurally aligned representations. The clear failure of joint optimization approaches, particularly in aesthetically constrained domains, emphasizes the importance of architectural modularity in generative design systems.
+
+### 4.2 Performance Data
+
+This repo provides tooling to collect and plot convergence data; run the commands in Section 12 to generate your own CSVs and figures. The paper includes detailed performance tables showing convergence rates and generation counts across different path lengths and domains.
 
 ---
 
-## 5. Repository Structure
+## 5. Methods
+
+All optimization methods have various hyperparameters detailed in Section 13 of this README.
+
+### 5.1 Direct Map Evolution
+These methods operate directly on the final artifact and do not leverage WFC. Instead, the optimization process must learn to satisfy the adjacency rules. For a target map of length ℓ and width w, the genotype is represented as a 2D array of size ℓ × w, where each entry contains an integer corresponding to a tile index in the tileset.
+
+**Baseline Evolution**: The baseline evolutionary algorithm treats each map genotype as an individual and applies standard genetic operators with a penalized fitness that subtracts adjacency violations from raw objective function. Given objective score o and v adjacency violations, the individuals will receive a fitness of o-v.
+
+**FI-2Pop**: FI-2Pop attempts to leverage adjacency violations as an exploration medium by maintaining two equal–sized subpopulations, feasible (F) and infeasible (I), and applies tailored selection criteria to each: objective maximization in F and violation minimization in I.
+
+### 5.2 MDP Representation
+By formalizing WFC as a Markov Decision Process (MDP), we leverage its guarantees to offload the burden of learning adjacency constraints from the optimizer. This reformulation transforms the generation problem into a sequential decision process where every action results in a valid intermediate configuration.
+
+### 5.3 Evolving an Action Sequence
+We use a standard μ + λ evolutionary algorithm to optimize the full sequence of WFC collapse actions. Each individual in the population encodes a fixed-length sequence of collapse decisions, represented as logits over the tile set at each of the ℓ × w positions.
+
+---
+
+## 6. Repository Structure
 
 ```
 WFC-MDP/
@@ -220,28 +245,45 @@ python plot.py \
 
 ---
 
-## 8. Domains and Objectives
+## 8. Problem Domain
 
-### 8.1 Binary Domain
+All maps and thus objective functions were constructed based on a small subset of *Biome Tileset Pack B - Grassland, Savannah, and Scrubland* which offers combinations of different grass, path, and water tiles. We used a subset of the tiles from the tileset. We generate the adjacency rules via manual human labeling, though they could also be extracted from an input image.
+
+## 9. Domains and Objectives
+
+### 9.1 Binary Domain
 **Objective Function:**
 ```
 f(p) = -|p - P|
 ```
 Where p = longest shortest path, P = target path length
 
-### 8.2 River/Binary Hybrid
-**River Objective (qualitative):** Encourages a single connected, winding river of at least length 35, discourages fully surrounded “lake” tiles, and penalizes excessive fragmentation of land regions. This mirrors the implementation in `tasks/river_task.py` (connected water regions close to 1, river length below threshold is penalized, pure water tiles discouraged, land regions capped).
+### 9.2 River/Binary Hybrid
+**River Objective:** Let rᵣ = number of connected river regions, ℓ = length of current river path, nᶜ = number of water "center" tiles, rₗ = number of connected land regions. Then:
+
+oᵣ = (1 - rᵣ) + min(0, ℓ - 35) - nᶜ + min(0, 3 - rₗ)
+
+The objective attains its maximum value of 0 when: rᵣ = 1 (exactly one contiguous river region), ℓ ≥ 35 (river path length of at least 35 tiles), nᶜ = 0 (no fully surrounded water tiles), rₗ ≤ 3 (no more than three separate land regions).
 
 **Combined:** f(p, oᵣ) = -|p - P| + oᵣ
 
-### 8.3 Pond/Grass/Hill Hybrids
-The repo includes `pond`, `grass`, and `hill` reward functions. You can also combine them with the binary path-length reward using `CombinedReward` (see Section 11 for commands).
+### 9.3 Grass/Binary Hybrid
+**Grass Objective:** Let nᵥ = number of water tiles, nₕ = number of hill tiles, g = percent of grass tiles, f = percent of flower tiles. Then:
+
+oᵍ = -nᵥ - nₕ + min(0, g - 20) + min(0, f - 20)
+
+The objective attains its maximum value of 0 when: nᵥ = 0 (no water or shore tiles), nₕ = 0 (no hill tiles), g ≥ 20 (at least 20% of tiles are grass), f ≥ 20 (at least 20% of tiles are flowers).
+
+**Combined:** f(p, oᵍ) = -|p - P| + oᵍ
+
+### 9.4 Other Biomes
+The repo includes `pond` and `hill` reward functions. You can also combine them with the binary path-length reward using `CombinedReward` (see Section 12 for commands).
 
 ---
 
-## 9. Controllers
+## 10. Controllers
 
-### 9.1 Evolution (μ+λ)
+### 10.1 Evolution (μ+λ)
 ```python
 Parameters = {
     'population_size': 48,
@@ -255,19 +297,19 @@ Parameters = {
 }
 ```
 
-### 9.2 FI-2Pop
+### 10.2 FI-2Pop
 Maintains two subpopulations of size N/2 each:
 - Feasible: arg max f(x) subject to c(x) = 0
 - Infeasible: arg min ||c(x)||
 
-### 9.3 MCTS
+### 10.3 MCTS
 UCT formula: Q(s,a) + C√(ln N(s) / N(s,a))
 - Exploration constant C = √2
 - Default iterations in our scripts: 1000 (configurable via `--mcts-iterations`)
 
 ---
 
-## 10. Gymnasium Environment API
+## 11. Gymnasium Environment API
 
 ```python
 import numpy as np
@@ -303,9 +345,9 @@ for _ in range(env.map_length * env.map_width):
 
 ---
 
-## 11. Running Experiments
+## 12. Running Experiments
 
-### 11.1 CLI Recipes (that match `plot.py`)
+### 12.1 CLI Recipes (that match `plot.py`)
 
 ```bash
 # Evolution (easy binary path length across P=10..100)
@@ -337,136 +379,3 @@ python plot.py \
   --load-hyperparameters hyperparameters/combo_river_1d_hyperparameters.yaml \
   --sample-size 20
 ```
-
-### 11.2 Viewing Included Comparison Figures
-
-The repo includes several pre-rendered comparison plots under `comparison_figures/`. To generate your own, run the commands above and then use the comparison mode in `plot.py` to overlay CSVs.
-
----
-
-## 12. Hyperparameter Configuration
-
-### 12.1 Tuning Notes
-- Example YAMLs in `hyperparameters/` were tuned offline.
-- If you tune yourself, we recommend Optuna, but no tuner is bundled.
-
-### 12.2 Example Configuration (Binary 1D Evolution)
-```yaml
-# hyperparameters/binary_1d_hyperparameters.yaml
-method: evolution
-genotype_dimensions: 1
-number_of_actions_mutated_mean: 97
-number_of_actions_mutated_standard_deviation: 120.0876
-action_noise_standard_deviation: 0.1296
-survival_rate: 0.4151
-cross_over_method: ONE_POINT
-cross_or_mutate: 0.7453
-random_offspring_fraction: 0.0
-```
-
----
-
-## 13. Reproducibility
-
-### 13.1 Random Seeds
-- Training seeds: {0, 42, 123, 2025, 7777}
-- NumPy: `np.random.seed(seed)`
-- Gymnasium: `env.reset(seed=seed)`
-- Python random: `random.seed(seed)`
-
-### 13.2 Notes on Reproducibility
-- Set seeds in Python, NumPy, and via `env.reset(seed=...)`.
-- Results may vary by platform and package versions.
-
----
-
-## 14. Extending the Framework
-
-### 14.1 Adding a New Task
-
-```python
-# tasks/custom_task.py
-import numpy as np
-from tasks.utils import calc_num_regions
-
-def reward(grid_3d: np.ndarray) -> float:
-    """
-    Args:
-        grid_3d: Shape (H, W, num_tiles) boolean array
-    Returns:
-        Scalar reward (0 is optimal)
-    """
-    # Implementation
-    return reward_value
-```
-
-### 14.2 Adding a New Controller
-
-Implement the interface:
-```python
-class CustomController:
-    def __init__(self, config: dict):
-        pass
-    
-    def get_action(self, obs: np.ndarray) -> np.ndarray:
-        """Return action logits of shape (num_tiles,)"""
-        pass
-```
-
----
-
-## 15. Computational Requirements
-
-Runtime depends on hardware, problem size, and method. Start with small sample sizes (e.g., 5–10 runs) and scale up as needed.
-
----
-
-## 16. Known Limitations
-
-1. **Population Size:** Fixed at 48 due to hardware constraints
-2. **Observation Utilization:** Evolution doesn't leverage intermediate observations
-3. **Exploration:** Standard μ+λ exhibits inadequate exploration (consider Quality Diversity)
-4. **Scalability:** O(H×W×nₜ) memory complexity limits map size
-5. **Tile Set:** Currently limited to Biome Pack B tiles
-
----
-
-## 17. Testing
-
-This repository does not include a formal test suite yet. If you add tests, place them under a new `tests/` directory and run with `pytest`.
-
----
-
-## 18. Citation
-
-```bibtex
-@inproceedings{yiu2025markovian,
-  title     = {A Markovian Framing of WaveFunctionCollapse for 
-               Procedurally Generating Aesthetically Complex Environments},
-  author    = {Yiu, Franklin and Lu, Mohan and Li, Nina and Joseph, Kevin 
-               and Zhang, Tianxu and Togelius, Julian and Merino, Timothy 
-               and Earle, Sam},
-  booktitle = {Proceedings of the AIIDE Workshop on Experimental AI in Games},
-  pages     = {1--15},
-  year      = {2025},
-  publisher = {AAAI Press}
-}
-```
-
----
-
-## 19. License and Ethics
-
-### License
-MIT License - see [LICENSE](LICENSE)
-
-### Ethical Considerations
-- Computational resources: ~200 GPU-hours total
-- Carbon footprint: Estimated 18kg CO₂ (NYU carbon-neutral by 2040)
-- No human subjects involved
-
----
-
-## 20. Acknowledgments
-
-Thanks to contributors and to the maintainers of Gymnasium and matplotlib. Tile assets are adapted from VectoRaith's Biome Tileset Pack B.
