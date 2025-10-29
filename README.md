@@ -20,31 +20,17 @@ Procedural content generation often requires satisfying both designer-specified 
 
 1. [Introduction](#1-introduction)
 2. [Key Innovation](#2-key-innovation-wfc-as-mdp)
-3. [Experimental Results](#3-experimental-results)
+3. [Results (MDP vs non‑MDP)](#3-results-mdp-vs-non-mdp)
 4. [Methods](#4-methods)
 5. [Setup and Usage](#5-setup-and-usage)
-6. [Domains and Experiments](#6-domains-and-experiments)
+6. [Tasks and flags](#6-tasks-and-flags)
 7. [Controllers and API](#7-controllers-and-api)
 
 ---
 
 ## 1. Introduction
 
-Wave Function Collapse (WFC) excels at maintaining local adjacency constraints but struggles with global functional properties critical for gameplay. This repository presents a novel MDP formulation of WFC that decouples constraint satisfaction from objective optimization, enabling the application of standard optimization algorithms while maintaining structural validity.
-
-### 1.1 Problem Statement
-
-Traditional PCG methods must simultaneously learn:
-- Local adjacency constraints (aesthetics)
-- Global objective optimization (functionality)
-
-This joint optimization becomes harder as aesthetic complexity increases. Our code focuses on decoupling constraints from objectives; specific performance numbers depend on configuration and are not claimed here.
-
-### 1.2 Our Solution
-
-We offer the following contributions:
-- We demonstrate that forcing learning algorithms to learn local adjacency constraints leads to degraded performance in highly constrained domains.
-- We present a novel formulation of WFC as an MDP, along with a corresponding Gymnasium environment to facilitate the evaluation of alternative optimization algorithms.
+Wave Function Collapse (WFC) is powerful at enforcing local adjacency constraints but offers limited leverage for optimizing global, gameplay‑relevant objectives. We reframe WFC as a Markov Decision Process (WFC‑MDP) so that constraint satisfaction is handled by propagation while external optimizers focus solely on objectives. Using a simple μ+λ Evolution controller, we evaluate this MDP formulation against non‑MDP baselines that operate directly on final maps (including FI‑2Pop). Across binary path‑length tasks, biome objectives, and their combinations, optimizing over the WFC‑MDP yields higher convergence rates and fewer generations than methods that must implicitly learn adjacency. This repo provides a lightweight Gymnasium environment, reward functions for several domains, and scripts to collect convergence data and produce comparison plots.
 
 ---
 
@@ -69,31 +55,39 @@ State = {
 ```
 
 ### 2.3 Action Handling
-The environment consumes a length-`num_tiles` vector of preferences and converts logits to probabilities internally. Constraint propagation enforces feasibility; there is no separate action mask.
+The agent supplies a length-`num_tiles` preference vector (logits). We convert logits to probabilities and select only among tiles that are currently feasible at the next-collapse cell (based on the grid’s boolean possibilities); infeasible tiles are ignored. Constraint propagation then updates neighbors. No explicit action-mask argument is required.
 
 ---
 
-## 3. Experimental Results
+## 3. Results (MDP vs non‑MDP)
 
-We evaluate each optimization method across desired path lengths 10-100 in intervals of 10 for both binary and hybrid domains. Convergence robustness is defined as the proportion of runs that achieve the maximal reward of 0, while sample efficiency is measured by the number of generations it takes to evolve at least one population member with reward of 0. All methods were run with a fixed sample budget (population size = 48) to enable fair comparisons.
+Across tasks, optimizing over the WFC‑MDP (Evolution controller) outperforms direct map evolution (baseline) and FI‑2Pop that must learn adjacency implicitly. Below is a compact summary; reproduce the exact tables/plots with Section 7.2.
 
-### 3.1 Key Findings
+| Task | Metric | Evolution (WFC‑MDP) | Baseline (direct) | FI‑2Pop | Winner |
+| --- | --- | --- | --- | --- | --- |
+| Binary (easy) | Fraction converged | Higher | Lower | Lower | Evolution |
+| Binary (hard) | Fraction converged | Higher | Lower | Lower | Evolution |
+| Binary (easy) | Mean generations (±stderr) | Fewer | More | More | Evolution |
+| River combo (easy) | Fraction converged | Higher | Lower | Lower | Evolution |
+| Grass combo (easy) | Fraction converged | Higher | Lower | Lower | Evolution |
+| Pond combo (easy) | Fraction converged | Higher | Lower | Lower | Evolution |
 
-**MDP Encapsulation of Constraints is Crucial**: Across all desired path lengths, methods that offload constraint enforcement to WFC consistently outperform those that must learn it implicitly. This discrepancy is especially pronounced given more difficult objectives (i.e. higher target path lengths, hybrid biome/binary domains), where the feasibility space is severely constrained.
+Artifacts (examples in this repo):
 
-**Feasible Region Shrinkage Limits Optimization**: At high path lengths, even MDP methods fail to converge reliably. This likely stems from the exponentially shrinking volume of the feasible space and limited tendency toward exploration in vanilla μ+λ evolution—as compared to e.g. Quality Diversity. Despite valid intermediate states, the reward landscape remains highly sparse and multi-modal.
+| Task | Comparison figure | Notes |
+| --- | --- | --- |
+| Binary (hard) | `comparison_figures/binary_hard_comparison.png` | Evolution vs FI‑2Pop/baseline |
+| River (hard) | `comparison_figures/river_hard_comparison.png` | Evolution vs FI‑2Pop/baseline |
+| Grass (hard) | `comparison_figures/grass_hard_comparison.png` | Evolution vs FI‑2Pop/baseline |
+| Pond (hard) | `comparison_figures/pond_hard_comparison.png` | Evolution vs FI‑2Pop/baseline |
 
-These findings highlight a fundamental insight: procedural generation under complex constraints benefits most when constraint satisfaction is externalized and search is guided through structurally aligned representations. The clear failure of joint optimization approaches, particularly in aesthetically constrained domains, emphasizes the importance of architectural modularity in generative design systems.
-
-### 3.2 Performance Data
-
-This repo provides tooling to collect and plot convergence data; run the commands in Section 6.5 to generate your own CSVs and figures. The paper includes detailed performance tables showing convergence rates and generation counts across different path lengths and domains.
+To regenerate tables/plots: use `plot.py --compare ...` on the CSVs produced by the data collection commands in Section 7.2.
 
 ---
 
 ## 4. Methods
 
-All optimization methods have various hyperparameters detailed in Section 6.5 of this README.
+All optimization methods have various hyperparameters detailed in Section 7.1 of this README.
 
 ### 4.1 Direct Map Evolution
 These methods operate directly on the final artifact and do not leverage WFC. Instead, the optimization process must learn to satisfy the adjacency rules. For a target map of length ℓ and width w, the genotype is represented as a 2D array of size ℓ × w, where each entry contains an integer corresponding to a tile index in the tileset.
@@ -117,36 +111,35 @@ We use a standard μ + λ evolutionary algorithm to optimize the full sequence o
 ```
 WFC-MDP/
 ├── assets/
-│   ├── biome_adjacency_rules.json
-│   ├── biome_adjacency_rules.py
-│   └── slice_tiles.py
+│   ├── biome_adjacency_rules.json         # Tile set definitions and adjacency graph
+│   ├── biome_adjacency_rules.py           # Loads rules/images; builds boolean adjacency matrix
+│   └── slice_tiles.py                     # Asset slicing/utilities (optional)
 ├── core/
-│   ├── wfc_env.py
-│   ├── wfc.py
-│   ├── evolution.py
-│   ├── fi2pop.py
-│   └── mcts.py
+│   ├── wfc_env.py                         # Gymnasium environment (WFC as MDP wrapper)
+│   ├── wfc.py                             # WFC core: initialize, collapse, propagate, render helpers
+│   ├── evolution.py                       # μ+λ evolution (1D/2D genotypes), QD hooks, Optuna objective
+│   ├── fi2pop.py                          # FI-2Pop and baseline direct-map evolution pipelines
 ├── tasks/
-│   ├── utils.py
-│   ├── binary_task.py
-│   ├── river_task.py
-│   ├── pond_task.py
-│   ├── grass_task.py
-│   └── hill_task.py
+│   ├── utils.py                           # Grid ops: masks, regions, longest path
+│   ├── binary_task.py                     # Binary path-length reward
+│   ├── river_task.py                      # River biome reward
+│   ├── pond_task.py                       # Pond biome reward
+│   ├── grass_task.py                      # Grass biome reward
+│   └── hill_task.py                       # Hill biome reward
 ├── hyperparameters/
-│   ├── binary_1d_hyperparameters.yaml
-│   ├── binary_2d_hyperparameters.yaml
-│   ├── combo_*_hyperparameters.yaml
-│   ├── fi2pop_*_hyperparameters.yaml
-│   └── baseline_*_hyperparameters.yaml
+│   ├── binary_1d_hyperparameters.yaml     # Evolution params for 1D genotype
+│   ├── binary_2d_hyperparameters.yaml     # Evolution params for 2D genotype
+│   ├── combo_*_hyperparameters.yaml       # Binary+Biome combined runs
+│   ├── fi2pop_*_hyperparameters.yaml      # FI-2Pop/baseline params
+│   └── baseline_*_hyperparameters.yaml    # Baseline EA params
 ├── sbatch/
-│   ├── evolution_plots/
-│   ├── mcts_plots/
-│   ├── fi2pop_plots/
-│   └── baseline_plots/
-├── plot.py
-├── requirements.txt
-└── README.md
+│   ├── evolution_plots/                   # SLURM scripts to launch plot sweeps
+│   ├── fi2pop_plots/                      # SLURM scripts for FI-2Pop/baseline plots
+│   ├── mcts_plots/                        # deprecated (MCTS not used)
+│   └── baseline_plots/                    # SLURM scripts for baseline comparisons
+├── plot.py                                # Data collection (CSV) and plotting/comparisons CLI
+├── requirements.txt                       # Python dependencies
+└── README.md                              # You are here
 ```
 
 ### 5.2 Installation
@@ -159,9 +152,7 @@ WFC-MDP/
 #### 5.2.2 Setup
 
 ```bash
-# Clone repository
-git clone https://github.com/your-username/WFC-MDP.git
-cd WFC-MDP
+# From the repository root
 
 # Create virtual environment
 python -m venv .venv
@@ -174,26 +165,12 @@ python -m venv .venv
 pip install -r requirements.txt
 
 # Verify installation
-python -c "import gymnasium; print(gymnasium.__version__)"  # Should print 1.1.1
-```
-
-#### 5.2.3 Dependencies
-See `requirements.txt` for the authoritative list. Current pins:
-```
-gymnasium==1.1.1
-optuna==4.2.1
-scipy==1.15.2
-matplotlib==3.10.1
-pygame==2.6.1
-pillow==11.2.1
-pandas==2.2.3
-pydantic==2.11.7
-jinja2==3.1.6
+python -c "import gymnasium; print(gymnasium.__version__)"  # Expect 1.1.1
 ```
 
 ### 5.3 Quick Start
 
-Minimal example (2-3 minutes on Intel i7-9700K):
+Minimal example (2-3 minutes on a typical laptop):
 
 ```bash
 # Evolution (Binary easy)
@@ -204,82 +181,39 @@ python plot.py \
   --load-hyperparameters hyperparameters/binary_1d_hyperparameters.yaml \
   --sample-size 5
 
-# MCTS (no hyperparameters file required)
-python plot.py \
-  --method mcts \
-  --task binary_easy \
-  --sample-size 5 \
-  --mcts-iterations 1000
-
 # Outputs: CSVs under method-specific figure folders, e.g. `figures_evolution/1d/binary_easy_convergence.csv`.
+# If you run evolution.py with --save-best-per-gen, best-per-generation images will save under `best_gen_maps/...`.
 ```
 
 ---
 
-## 6. Domains and Experiments
+## 6. Tasks and flags
 
-### 6.1 Binary Domain
-**Objective Function:**
-```
-f(p) = -|p - P|
-```
-Where p = longest shortest path, P = target path length
+Use these flags with `plot.py` (see Section 7.2 for end-to-end data collection and plotting). Reward implementations live in `tasks/*.py`.
 
-### 6.2 River/Binary Hybrid
-**River Objective:** Let rᵣ = number of connected river regions, ℓ = length of current river path, nᶜ = number of water "center" tiles, rₗ = number of connected land regions. Then:
+| Task flag / combo | Description | Reward function | Source file | Notes |
+| --- | --- | --- | --- | --- |
+| `--task binary_easy` | Binary path-length (target P, soft) | `binary_reward(target_path_length=P, hard=False)` | `tasks/binary_task.py` | P swept by `plot.py` (10..100) |
+| `--task binary_hard` | Binary path-length (exact match) | `binary_reward(target_path_length=P, hard=True)` | `tasks/binary_task.py` | 0 is max if exact P achieved |
+| `--task river` | River biome objective | `river_reward` | `tasks/river_task.py` | Encourages a single long river, minimal land splits, no centers |
+| `--task pond` | Pond biome objective | `pond_reward` | `tasks/pond_task.py` | Water coverage window, few centers, limited edge contact |
+| `--task grass` | Grassland biome objective | `grass_reward` | `tasks/grass_task.py` | Targets ≥20% grass and flowers, penalizes water/hills |
+| `--task hill` | Hill biome objective | `hill_reward` | `tasks/hill_task.py` | Enclosed “hill” areas, penalizes water/shore |
+| `--task biomes` | Average over biomes | multiple | `plot.py` | Runs Pond/River averages with evolution |
+| `--task <biome> --combo easy` | Binary + biome (soft) | `CombinedReward([binary_reward(P, False), <biome>_reward])` | `plot.py` | Replace `<biome>` with `river|pond|grass|hill` |
+| `--task <biome> --combo hard` | Binary + biome (hard) | `CombinedReward([binary_reward(P, True), <biome>_reward])` | `plot.py` | Exact binary target + biome |
 
-oᵣ = (1 - rᵣ) + min(0, ℓ - 35) - nᶜ + min(0, 3 - rₗ)
-
-The objective attains its maximum value of 0 when: rᵣ = 1 (exactly one contiguous river region), ℓ ≥ 35 (river path length of at least 35 tiles), nᶜ = 0 (no fully surrounded water tiles), rₗ ≤ 3 (no more than three separate land regions).
-
-**Combined:** f(p, oᵣ) = -|p - P| + oᵣ
-
-### 6.3 Grass/Binary Hybrid
-**Grass Objective:** Let nᵥ = number of water tiles, nₕ = number of hill tiles, g = percent of grass tiles, f = percent of flower tiles. Then:
-
-oᵍ = -nᵥ - nₕ + min(0, g - 20) + min(0, f - 20)
-
-The objective attains its maximum value of 0 when: nᵥ = 0 (no water or shore tiles), nₕ = 0 (no hill tiles), g ≥ 20 (at least 20% of tiles are grass), f ≥ 20 (at least 20% of tiles are flowers).
-
-**Combined:** f(p, oᵍ) = -|p - P| + oᵍ
-
-### 6.4 Other Biomes
-The repo includes `pond` and `hill` reward functions. You can also combine them with the binary path-length reward using `CombinedReward`.
-
-### 6.5 Running Domain Experiments
-
-Here are CLI recipes for running experiments across different domains:
-
-```bash
-# Evolution (easy binary path length across P=10..100)
-python plot.py \
-  --method evolution \
-  --task binary_easy \
-  --genotype-dimensions 1 \
-  --load-hyperparameters hyperparameters/binary_1d_hyperparameters.yaml \
-  --sample-size 20
-
-# FI-2Pop baseline (easy binary)
-python plot.py \
-  --method fi2pop \
-  --task binary_easy \
-  --load-hyperparameters hyperparameters/fi2pop_binary_hyperparameters.yaml \
-  --sample-size 20
-
-# MCTS (easy binary)
-python plot.py --method mcts --task binary_easy --sample-size 20 --mcts-iterations 1000
-
-# Biome-only averages
-python plot.py --method evolution --task biomes --load-hyperparameters hyperparameters/biomes_1d_hyperparameters.yaml --sample-size 20
-
-# Combo objectives (binary + river/pond/grass/hill)
-python plot.py \
-  --method evolution \
-  --task river \
-  --combo easy \
-  --load-hyperparameters hyperparameters/combo_river_1d_hyperparameters.yaml \
-  --sample-size 20
-```
+Notes:
+- “Hard” means the binary component requires exact path length match; “Easy” allows meeting-or-exceeding via soft penalty.
+- Genotype selection: `--genotype-dimensions {1|2}` with matching YAML (e.g., `binary_1d_hyperparameters.yaml`).
+- Naming note: `grass` in the code corresponds to `plains` in the paper.
+- Example (Binary+River, easy):
+  ```bash
+  python plot.py --method evolution --task river --combo easy \
+    --genotype-dimensions 1 \
+    --load-hyperparameters hyperparameters/combo_river_1d_hyperparameters.yaml \
+    --sample-size 20
+  ```
 
 ---
 
@@ -301,17 +235,103 @@ Parameters = {
 }
 ```
 
+Genotype modes:
+
+```bash
+# 1D (sequential playback of actions)
+python plot.py --method evolution --task binary_easy \
+  --genotype-dimensions 1 \
+  --load-hyperparameters hyperparameters/binary_1d_hyperparameters.yaml --sample-size 5
+
+# 2D (index by next-collapse cell)
+python plot.py --method evolution --task binary_easy \
+  --genotype-dimensions 2 \
+  --load-hyperparameters hyperparameters/binary_2d_hyperparameters.yaml --sample-size 5
+```
+
 #### 7.1.2 FI-2Pop
 Maintains two subpopulations of size N/2 each:
 - Feasible: arg max f(x) subject to c(x) = 0
 - Infeasible: arg min ||c(x)||
 
 #### 7.1.3 MCTS
-UCT formula: Q(s,a) + C√(ln N(s) / N(s,a))
-- Exploration constant C = √2
-- Default iterations in our scripts: 1000 (configurable via `--mcts-iterations`)
+Removed. This repository no longer uses MCTS in experiments.
 
-### 7.2 Gymnasium Environment API
+### 7.2 Plotting and aggregation with plot.py
+
+Use `plot.py` to collect convergence CSVs and generate figures. All commands are resumable and write outputs to method-specific folders.
+
+Data collection (CSV outputs):
+
+```bash
+# Evolution, Binary easy (P = 10..100), 1D genotype
+python plot.py \
+  --method evolution \
+  --task binary_easy \
+  --genotype-dimensions 1 \
+  --load-hyperparameters hyperparameters/binary_1d_hyperparameters.yaml \
+  --sample-size 20
+# → figures_evolution/1d/binary_easy_convergence.csv
+
+# Evolution, Binary hard (exact match)
+python plot.py \
+  --method evolution \
+  --task binary_hard \
+  --genotype-dimensions 1 \
+  --load-hyperparameters hyperparameters/binary_1d_hyperparameters.yaml \
+  --sample-size 20
+# → figures_evolution/1d/binary_hard_convergence.csv
+
+# FI-2Pop baseline, Binary easy
+python plot.py \
+  --method fi2pop \
+  --task binary_easy \
+  --load-hyperparameters hyperparameters/fi2pop_binary_hyperparameters.yaml \
+  --sample-size 20
+# → figures_fi2pop/binary_convergence.csv
+
+# Biome averages with evolution (Pond, River)
+python plot.py \
+  --method evolution \
+  --task biomes \
+  --genotype-dimensions 1 \
+  --load-hyperparameters hyperparameters/biomes_1d_hyperparameters.yaml \
+  --sample-size 20
+# → figures_evolution/1d/biome_average_convergence.csv
+
+# Combo objective (Binary + River), easy
+python plot.py \
+  --method evolution \
+  --task river \
+  --combo easy \
+  --genotype-dimensions 1 \
+  --load-hyperparameters hyperparameters/combo_river_1d_hyperparameters.yaml \
+  --sample-size 20
+# → figures_evolution/1d/combo_river_convergence.csv
+```
+
+Plot generation from CSVs:
+
+```bash
+# Plot a single CSV (auto-detects axes/metrics and writes a PNG next to the CSV)
+python plot.py --compare --csv-files figures_evolution/1d/binary_easy_convergence.csv --title "Evolution Binary (Easy)"
+
+# Compare multiple CSVs on one chart
+python plot.py --compare \
+  --csv-files \
+    figures_evolution/1d/binary_easy_convergence.csv \
+    figures_fi2pop/binary_convergence.csv \
+  --labels Evolution FI-2Pop \
+  --title "Binary Easy: Evolution vs FI-2Pop" \
+  --output comparison_figures/binary_easy_comparison.png
+```
+
+Tips:
+- For 2D genotypes, set `--genotype-dimensions 2` and load the corresponding `binary_2d_hyperparameters.yaml`.
+- To remove random offspring in evolution sweeps, use `--no-random-offspring`.
+- Debug per-run reward curves can be enabled with `--debug` (PNG saved under `debug_plots/`).
+
+### 7.3 Gymnasium Environment API
 
 ```python
 import numpy as np
@@ -338,9 +358,32 @@ env = WFCWrapper(
 )
 
 obs, info = env.reset(seed=42)
+total_reward = 0.0
 for _ in range(env.map_length * env.map_width):
     action = np.random.rand(env.action_space.shape[0])
     obs, reward, terminated, truncated, info = env.step(action)
+    total_reward += reward
     if terminated or truncated:
         break
+
+print({"terminated": terminated, "truncated": truncated, "reward": float(total_reward), **info})
+
+# Optional: save a render if pygame tiles are available
+env.render_mode = "human"
+env.save_render("wfc_example.png")
+```
+
+### 7.4 Combined objectives (CombinedReward)
+
+```python
+from functools import partial
+from core.wfc_env import CombinedReward
+from tasks.binary_task import binary_reward
+from tasks.river_task import river_reward
+
+# Binary target P=40 (easy) + River objective
+reward = CombinedReward([
+    partial(binary_reward, target_path_length=40, hard=False),
+    river_reward,
+])
 ```
