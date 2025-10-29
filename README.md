@@ -35,53 +35,24 @@ Wave Function Collapse (WFC) is powerful at enforcing local adjacency constraint
 ---
 
 ## 2. Key Innovation: WFC as MDP
+- **State S**: boolean belief grid `G ∈ {0,1}^{H×W×n_t}`; a cell is collapsed iff its channel vector is one‑hot; otherwise it is in superposition. We also expose the next‑collapse index.
+- **Action A**: length‑`n_t` preference logits over tiles for the next‑collapse cell.
+- **Transition T**: collapse the feasible argmax tile and propagate adjacency constraints.
+- **Reward R**: sparse terminal reward from a task‑specific objective; contradictions truncate with a large negative value.
+- **Discount**: γ = 1.0 (episodic).
 
-### 2.1 Formal Definition
-
-- **State S**: Grid of shape HxW with values in [-1, n_t-1]; -1 means uncollapsed. Implementation: `np.ndarray[H,W]` + next-cell position.
-- **Action A**: Length-n_t vector in [0,1] (tile preference logits). Implementation: `Box(low=0, high=1, shape=(num_tiles,))`.
-- **Transition T**: Deterministic propagation from state and action to next state. Implementation: `propagate_constraints()`.
-- **Reward R**: Sparse terminal reward computed from the final grid. Implementation: `tasks/*.reward()`.
-- **Discount**: gamma = 1.0 (episodic task).
-
-### 2.2 State Representation
-```python
-State = {
-    'grid': np.ndarray,      # Shape: (H, W), dtype: int8
-                             # Values: -1 (uncollapsed) or tile_index
-    'next_pos': (int, int),  # Next cell to collapse (lowest entropy)
-    'valid_tiles': np.ndarray # Shape: (H, W, nₜ), dtype: bool
-}
-```
-
-### 2.3 Action Handling
-The agent supplies a length-`num_tiles` preference vector (logits). We convert logits to probabilities and select only among tiles that are currently feasible at the next-collapse cell (based on the grid’s boolean possibilities); infeasible tiles are ignored. Constraint propagation then updates neighbors. No explicit action-mask argument is required.
+Action handling: We softmax logits, zero out infeasible tiles, select among the remaining, then propagate constraints. No explicit action‑mask argument is required.
 
 ---
 
-## 3. Results (MDP vs non‑MDP)
+## 3. Results (hard only)
+Hard‑variant comparison plots from this repo (paper uses `figures/...`; this repo stores under `comparison_figures/...`):
 
-Across tasks, optimizing over the WFC‑MDP (Evolution controller) outperforms direct map evolution (baseline) and FI‑2Pop that must learn adjacency implicitly. Below is a compact summary; reproduce the exact tables/plots with Section 7.2.
+- Binary (hard): `comparison_figures/binary_hard_comparison.png`
+- River combo (hard): `comparison_figures/river_hard_comparison.png`
+- Field/Grass combo (hard): `comparison_figures/grass_hard_comparison.png`
 
-| Task | Metric | Evolution (WFC‑MDP) | Baseline (direct) | FI‑2Pop | Winner |
-| --- | --- | --- | --- | --- | --- |
-| Binary (easy) | Fraction converged | Higher | Lower | Lower | Evolution |
-| Binary (hard) | Fraction converged | Higher | Lower | Lower | Evolution |
-| Binary (easy) | Mean generations (±stderr) | Fewer | More | More | Evolution |
-| River combo (easy) | Fraction converged | Higher | Lower | Lower | Evolution |
-| Grass combo (easy) | Fraction converged | Higher | Lower | Lower | Evolution |
-| Pond combo (easy) | Fraction converged | Higher | Lower | Lower | Evolution |
-
-Artifacts (examples in this repo):
-
-| Task | Comparison figure | Notes |
-| --- | --- | --- |
-| Binary (hard) | `comparison_figures/binary_hard_comparison.png` | Evolution vs FI‑2Pop/baseline |
-| River (hard) | `comparison_figures/river_hard_comparison.png` | Evolution vs FI‑2Pop/baseline |
-| Grass (hard) | `comparison_figures/grass_hard_comparison.png` | Evolution vs FI‑2Pop/baseline |
-| Pond (hard) | `comparison_figures/pond_hard_comparison.png` | Evolution vs FI‑2Pop/baseline |
-
-To regenerate tables/plots: use `plot.py --compare ...` on the CSVs produced by the data collection commands in Section 7.2.
+Across all, Evolution (WFC‑MDP) wins on fraction converged and generations to converge.
 
 ---
 
@@ -153,18 +124,13 @@ WFC-MDP/
 
 ```bash
 # From the repository root
-
-# Create virtual environment
 python -m venv .venv
 # Windows
-.venv\Scripts\activate
+. .venv/Scripts/activate
 # macOS/Linux
 # source .venv/bin/activate
 
-# Install dependencies
 pip install -r requirements.txt
-
-# Verify installation
 python -c "import gymnasium; print(gymnasium.__version__)"  # Expect 1.1.1
 ```
 
@@ -187,33 +153,18 @@ python plot.py \
 
 ---
 
-## 6. Tasks and flags
+## 6. Tasks and flags (used in the paper)
+Use these with `plot.py`. Reward implementations live in `tasks/*.py`.
 
-Use these flags with `plot.py` (see Section 7.2 for end-to-end data collection and plotting). Reward implementations live in `tasks/*.py`.
+| Task flag | Description | Reward function | Source |
+| --- | --- | --- | --- |
+| `--task binary_hard` | Binary path‑length (exact) | `binary_reward(target_path_length=P, hard=True)` | `tasks/binary_task.py` |
+| `--task river` | River biome | `river_reward` | `tasks/river_task.py` |
+| `--task grass` | Field (grass) biome | `grass_reward` | `tasks/grass_task.py` |
+| `--task river --combo hard` | Binary + River (hard) | `CombinedReward([binary_reward(P, True), river_reward])` | `plot.py` |
+| `--task grass --combo hard` | Binary + Field (hard) | `CombinedReward([binary_reward(P, True), grass_reward])` | `plot.py` |
 
-| Task flag / combo | Description | Reward function | Source file | Notes |
-| --- | --- | --- | --- | --- |
-| `--task binary_easy` | Binary path-length (target P, soft) | `binary_reward(target_path_length=P, hard=False)` | `tasks/binary_task.py` | P swept by `plot.py` (10..100) |
-| `--task binary_hard` | Binary path-length (exact match) | `binary_reward(target_path_length=P, hard=True)` | `tasks/binary_task.py` | 0 is max if exact P achieved |
-| `--task river` | River biome objective | `river_reward` | `tasks/river_task.py` | Encourages a single long river, minimal land splits, no centers |
-| `--task pond` | Pond biome objective | `pond_reward` | `tasks/pond_task.py` | Water coverage window, few centers, limited edge contact |
-| `--task grass` | Grassland biome objective | `grass_reward` | `tasks/grass_task.py` | Targets ≥20% grass and flowers, penalizes water/hills |
-| `--task hill` | Hill biome objective | `hill_reward` | `tasks/hill_task.py` | Enclosed “hill” areas, penalizes water/shore |
-| `--task biomes` | Average over biomes | multiple | `plot.py` | Runs Pond/River averages with evolution |
-| `--task <biome> --combo easy` | Binary + biome (soft) | `CombinedReward([binary_reward(P, False), <biome>_reward])` | `plot.py` | Replace `<biome>` with `river|pond|grass|hill` |
-| `--task <biome> --combo hard` | Binary + biome (hard) | `CombinedReward([binary_reward(P, True), <biome>_reward])` | `plot.py` | Exact binary target + biome |
-
-Notes:
-- “Hard” means the binary component requires exact path length match; “Easy” allows meeting-or-exceeding via soft penalty.
-- Genotype selection: `--genotype-dimensions {1|2}` with matching YAML (e.g., `binary_1d_hyperparameters.yaml`).
-- Naming note: `grass` in the code corresponds to `plains` in the paper.
-- Example (Binary+River, easy):
-  ```bash
-  python plot.py --method evolution --task river --combo easy \
-    --genotype-dimensions 1 \
-    --load-hyperparameters hyperparameters/combo_river_1d_hyperparameters.yaml \
-    --sample-size 20
-  ```
+Notes: results/plots are hard‑only; pond and hill are not used in the paper.
 
 ---
 
@@ -258,11 +209,6 @@ Maintains two subpopulations of size N/2 each:
 Removed. This repository no longer uses MCTS in experiments.
 
 ### 7.2 Plotting and aggregation with plot.py
-
-Use `plot.py` to collect convergence CSVs and generate figures. All commands are resumable and write outputs to method-specific folders.
-
-Data collection (CSV outputs):
-
 ```bash
 # Evolution, Binary easy (P = 10..100), 1D genotype
 python plot.py \
@@ -308,15 +254,16 @@ python plot.py \
   --load-hyperparameters hyperparameters/combo_river_1d_hyperparameters.yaml \
   --sample-size 20
 # → figures_evolution/1d/combo_river_convergence.csv
+
+# Field/Grass combo (hard)
+python plot.py --method evolution --task grass --combo hard \
+  --genotype-dimensions 1 \
+  --load-hyperparameters hyperparameters/combo_grass_1d_hyperparameters.yaml \
+  --sample-size 20
 ```
 
-Plot generation from CSVs:
-
+Comparison plots from CSVs:
 ```bash
-# Plot a single CSV (auto-detects axes/metrics and writes a PNG next to the CSV)
-python plot.py --compare --csv-files figures_evolution/1d/binary_easy_convergence.csv --title "Evolution Binary (Easy)"
-
-# Compare multiple CSVs on one chart
 python plot.py --compare \
   --csv-files \
     figures_evolution/1d/binary_easy_convergence.csv \
@@ -332,7 +279,6 @@ Tips:
 - Debug per-run reward curves can be enabled with `--debug` (PNG saved under `debug_plots/`).
 
 ### 7.3 Gymnasium Environment API
-
 ```python
 import numpy as np
 from functools import partial
@@ -340,11 +286,8 @@ from core.wfc_env import WFCWrapper
 from assets.biome_adjacency_rules import create_adjacency_matrix
 from tasks.binary_task import binary_reward
 
-# Build adjacency and tiles
 adjacency_bool, tile_symbols, tile_to_index = create_adjacency_matrix()
-
-# Use a reward callable (e.g., binary path length with target 40)
-reward_fn = partial(binary_reward, target_path_length=40, hard=False)
+reward_fn = partial(binary_reward, target_path_length=40, hard=True)
 
 env = WFCWrapper(
     map_length=15,
@@ -358,32 +301,23 @@ env = WFCWrapper(
 )
 
 obs, info = env.reset(seed=42)
-total_reward = 0.0
 for _ in range(env.map_length * env.map_width):
     action = np.random.rand(env.action_space.shape[0])
     obs, reward, terminated, truncated, info = env.step(action)
-    total_reward += reward
     if terminated or truncated:
         break
-
-print({"terminated": terminated, "truncated": truncated, "reward": float(total_reward), **info})
-
-# Optional: save a render if pygame tiles are available
-env.render_mode = "human"
-env.save_render("wfc_example.png")
+print({"terminated": terminated, "truncated": truncated, **info})
 ```
 
 ### 7.4 Combined objectives (CombinedReward)
-
 ```python
 from functools import partial
 from core.wfc_env import CombinedReward
 from tasks.binary_task import binary_reward
 from tasks.river_task import river_reward
 
-# Binary target P=40 (easy) + River objective
 reward = CombinedReward([
-    partial(binary_reward, target_path_length=40, hard=False),
+    partial(binary_reward, target_path_length=40, hard=True),
     river_reward,
 ])
 ```
