@@ -22,9 +22,8 @@ Procedural content generation often requires satisfying both designer-specified 
 2. [Quick Start](#2-quick-start)
 3. [Supported Environments](#3-supported-environments)
 4. [Supported Methods](#4-supported-methods)
-5. [Methods](#5-methods)
-6. [Usage Examples](#6-usage-examples)
-7. [API Reference](#7-api-reference)
+5. [Usage](#5-usage)
+6. [API Reference](#6-api-reference)
 
 ---
 
@@ -59,7 +58,7 @@ We evaluate optimization methods across binary path‑length tasks, biome object
 
 All maps and objective functions are constructed based on a subset of *Biome Tileset Pack B - Grassland, Savannah, and Scrubland*. Adjacency rules are generated via manual human labeling, though they could also be extracted from an input image.
 
-![Biome Tileset Pack B](Franklin_Markovian_WFC_EXAG_2025%20(1)/figures/tiles.PNG)
+![Biome Tileset Pack B](Franklin_Markovian_WFC_EXAG_2025 (1)/figures/tiles.PNG)
 
 *Path tiles are marked in orange, grass tiles in green, water tiles in blue, hill tiles in brown, and the water center tile in light blue. Unused tiles are darkened.*
 
@@ -164,9 +163,9 @@ Environments define the task objectives and reward functions. All environments u
 The binary domain tasks the generator with creating valid maps that achieve an exact target path length. The red line shows the longest shortest path.
 
 <p align="center">
-  <img src="Franklin_Markovian_WFC_EXAG_2025%20(1)/maps/binary_hard_0.00_40.png" width="30%" alt="Path Length: 40" />
-  <img src="Franklin_Markovian_WFC_EXAG_2025%20(1)/maps/binary_hard_0.00_50.png" width="30%" alt="Path Length: 50" />
-  <img src="Franklin_Markovian_WFC_EXAG_2025%20(1)/maps/binary_hard_0.00_60.png" width="30%" alt="Path Length: 60" />
+  <img src="Franklin_Markovian_WFC_EXAG_2025 (1)/maps/binary_hard_0.00_40.png" width="30%" alt="Path Length: 40" />
+  <img src="Franklin_Markovian_WFC_EXAG_2025 (1)/maps/binary_hard_0.00_50.png" width="30%" alt="Path Length: 50" />
+  <img src="Franklin_Markovian_WFC_EXAG_2025 (1)/maps/binary_hard_0.00_60.png" width="30%" alt="Path Length: 60" />
 </p>
 
 *Optimizing for target path-lengths in the Binary domain: 40, 50, and 60 tiles.*
@@ -174,8 +173,8 @@ The binary domain tasks the generator with creating valid maps that achieve an e
 #### Biome Domains
 
 <p align="center">
-  <img src="Franklin_Markovian_WFC_EXAG_2025%20(1)/maps/river.jpg" width="45%" alt="River Biome" />
-  <img src="Franklin_Markovian_WFC_EXAG_2025%20(1)/maps/grass.png" width="45%" alt="Plains Biome" />
+  <img src="Franklin_Markovian_WFC_EXAG_2025 (1)/maps/river.jpg" width="45%" alt="River Biome" />
+  <img src="Franklin_Markovian_WFC_EXAG_2025 (1)/maps/grass.png" width="45%" alt="Plains Biome" />
 </p>
 
 *Outputs resulting from the optimization of the River and Plains biome objectives.*
@@ -197,36 +196,9 @@ Optimization methods for evolving WFC-MDP action sequences or direct map represe
 
 ---
 
-## 5. Methods
+## 5. Usage
 
-All optimization methods have various hyperparameters detailed in the hyperparameter YAML files in `hyperparameters/*.yaml`.
-
-### 5.1 Direct Map Evolution
-
-These methods operate directly on the final artifact and do not leverage WFC. Instead, the optimization process must learn to satisfy the adjacency rules. For a target map of length ℓ and width w, the genotype is represented as a 2D array of size ℓ × w, where each entry contains an integer corresponding to a tile index in the tileset.
-
-**Baseline Evolution**: The baseline evolutionary algorithm treats each map genotype as an individual and applies standard genetic operators with a penalized fitness that subtracts adjacency violations from raw objective function. Given objective score o and v adjacency violations, the individuals will receive a fitness of o-v.
-
-**FI-2Pop**: FI-2Pop attempts to leverage adjacency violations as an exploration medium by maintaining two equal–sized subpopulations, feasible (F) and infeasible (I), and applies tailored selection criteria to each: objective maximization in F and violation minimization in I.
-
-### 5.2 MDP Representation
-
-By formalizing WFC as a Markov Decision Process (MDP), we leverage its guarantees to offload the burden of learning adjacency constraints from the optimizer. This reformulation transforms the generation problem into a sequential decision process where every action results in a valid intermediate configuration.
-
-### 5.3 Evolving an Action Sequence
-
-We use a standard μ + λ evolutionary algorithm to optimize the full sequence of WFC collapse actions. Each individual in the population encodes a fixed-length sequence of collapse decisions, represented as logits over the tile set at each of the ℓ × w positions.
-
-**Genotype Representations:**
-
-1. **1D Genotype** (sequential): Actions are applied in order, one per step until termination.
-2. **2D Genotype** (spatial): Actions are indexed by the next-collapse cell position.
-
----
-
-## 6. Usage Examples
-
-### 6.1 Running Experiments
+### 5.1 Running Experiments
 
 The main interface is `plot.py`, which can collect convergence data and generate comparison plots.
 
@@ -249,6 +221,7 @@ python plot.py \
   --genotype-dimensions 2 \
   --load-hyperparameters hyperparameters/binary_2d_hyperparameters.yaml \
   --sample-size 20
+# → figures_evolution/2d/binary_easy_convergence.csv
 ```
 
 **FI-2Pop baseline:**
@@ -270,9 +243,10 @@ python plot.py \
   --genotype-dimensions 1 \
   --load-hyperparameters hyperparameters/combo_river_1d_hyperparameters.yaml \
   --sample-size 20
+# → figures_evolution/1d/combo_river_hard_convergence.csv
 ```
 
-### 6.2 Generating Comparison Plots
+### 5.2 Generating Comparison Plots
 
 Compare multiple methods from CSV files:
 
@@ -293,9 +267,9 @@ python plot.py --compare \
 
 ---
 
-## 7. API Reference
+## 6. API Reference
 
-### 7.1 Gymnasium Environment API
+### 6.1 Gymnasium Environment API
 ```python
 import numpy as np
 from functools import partial
@@ -326,7 +300,7 @@ for _ in range(env.map_length * env.map_width):
 print({"terminated": terminated, "truncated": truncated, **info})
 ```
 
-### 7.2 Combined Objectives (CombinedReward)
+### 6.2 Combined Objectives (CombinedReward)
 ```python
 from functools import partial
 from core.wfc_env import CombinedReward
