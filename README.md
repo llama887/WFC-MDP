@@ -19,12 +19,12 @@ Procedural content generation often requires satisfying both designer-specified 
 ## Table of Contents
 
 1. [Introduction](#1-introduction)
-2. [Key Innovation](#2-key-innovation-wfc-as-mdp)
-3. [Results (MDP vs non‑MDP)](#3-results-mdp-vs-non-mdp)
-4. [Methods](#4-methods)
-5. [Setup and Usage](#5-setup-and-usage)
-6. [Tasks and flags](#6-tasks-and-flags)
-7. [Controllers and API](#7-controllers-and-api)
+2. [Quick Start](#2-quick-start)
+3. [Supported Environments](#3-supported-environments)
+4. [Supported Methods](#4-supported-methods)
+5. [Methods](#5-methods)
+6. [Usage Examples](#6-usage-examples)
+7. [API Reference](#7-api-reference)
 
 ---
 
@@ -32,9 +32,8 @@ Procedural content generation often requires satisfying both designer-specified 
 
 Wave Function Collapse (WFC) is powerful at enforcing local adjacency constraints but offers limited leverage for optimizing global, gameplay‑relevant objectives. We reframe WFC as a Markov Decision Process (WFC‑MDP) so that constraint satisfaction is handled by propagation while external optimizers focus solely on objectives. Using a simple μ+λ Evolution controller, we evaluate this MDP formulation against non‑MDP baselines that operate directly on final maps (including FI‑2Pop). Across binary path‑length tasks, biome objectives, and their combinations, optimizing over the WFC‑MDP yields higher convergence rates and fewer generations than methods that must implicitly learn adjacency. This repo provides a lightweight Gymnasium environment, reward functions for several domains, and scripts to collect convergence data and produce comparison plots.
 
----
+### Key Innovation: WFC as MDP
 
-## 2. Key Innovation: WFC as MDP
 - **State S**: boolean belief grid `G ∈ {0,1}^{H×W×n_t}`; a cell is collapsed iff its channel vector is one‑hot; otherwise it is in superposition. We also expose the next‑collapse index.
 - **Action A**: length‑`n_t` preference logits over tiles for the next‑collapse cell.
 - **Transition T**: collapse the feasible argmax tile and propagate adjacency constraints.
@@ -43,41 +42,68 @@ Wave Function Collapse (WFC) is powerful at enforcing local adjacency constraint
 
 Action handling: We softmax logits, zero out infeasible tiles, select among the remaining, then propagate constraints. No explicit action‑mask argument is required.
 
----
+### Results Summary
 
-## 3. Results (hard only)
-Hard‑variant comparison plots from this repo (paper uses `figures/...`; this repo stores under `comparison_figures/...`):
+We evaluate optimization methods across binary path‑length tasks, biome objectives, and their combinations. **Optimizing over the WFC‑MDP consistently outperforms non‑MDP baselines** (FI‑2Pop, Baseline Evolution) on both convergence rates and sample efficiency. The performance gap widens significantly as task complexity increases.
 
-- Binary (hard): `comparison_figures/binary_hard_comparison.png`
-- River combo (hard): `comparison_figures/river_hard_comparison.png`
-- Field/Grass combo (hard): `comparison_figures/grass_hard_comparison.png`
+**Binary Domain:**
+![Binary Domain Convergence](comparison_figures/binary_hard_comparison.png)
 
-Across all, Evolution (WFC‑MDP) wins on fraction converged and generations to converge.
+**Hybrid River/Binary Domain:**
+![River/Binary Hybrid Convergence](comparison_figures/river_hard_comparison.png)
 
----
+**Hybrid Plains Binary Domain:**
+![Plains Binary Hybrid Convergence](comparison_figures/grass_hard_comparison.png)
 
-## 4. Methods
+### Tile Set
 
-All optimization methods have various hyperparameters detailed in Section 7.1 of this README.
+All maps and objective functions are constructed based on a subset of *Biome Tileset Pack B - Grassland, Savannah, and Scrubland*. Adjacency rules are generated via manual human labeling, though they could also be extracted from an input image.
 
-### 4.1 Direct Map Evolution
-These methods operate directly on the final artifact and do not leverage WFC. Instead, the optimization process must learn to satisfy the adjacency rules. For a target map of length ℓ and width w, the genotype is represented as a 2D array of size ℓ × w, where each entry contains an integer corresponding to a tile index in the tileset.
+![Biome Tileset Pack B](Franklin_Markovian_WFC_EXAG_2025%20(1)/figures/tiles.PNG)
 
-**Baseline Evolution**: The baseline evolutionary algorithm treats each map genotype as an individual and applies standard genetic operators with a penalized fitness that subtracts adjacency violations from raw objective function. Given objective score o and v adjacency violations, the individuals will receive a fitness of o-v.
-
-**FI-2Pop**: FI-2Pop attempts to leverage adjacency violations as an exploration medium by maintaining two equal–sized subpopulations, feasible (F) and infeasible (I), and applies tailored selection criteria to each: objective maximization in F and violation minimization in I.
-
-### 4.2 MDP Representation
-By formalizing WFC as a Markov Decision Process (MDP), we leverage its guarantees to offload the burden of learning adjacency constraints from the optimizer. This reformulation transforms the generation problem into a sequential decision process where every action results in a valid intermediate configuration.
-
-### 4.3 Evolving an Action Sequence
-We use a standard μ + λ evolutionary algorithm to optimize the full sequence of WFC collapse actions. Each individual in the population encodes a fixed-length sequence of collapse decisions, represented as logits over the tile set at each of the ℓ × w positions.
+*Path tiles are marked in orange, grass tiles in green, water tiles in blue, hill tiles in brown, and the water center tile in light blue. Unused tiles are darkened.*
 
 ---
 
-## 5. Setup and Usage
+## 2. Quick Start
 
-### 5.1 Repository Structure
+### 2.1 Installation
+
+```bash
+# From the repository root
+python -m venv .venv
+# Windows
+. .venv/Scripts/activate
+# macOS/Linux
+# source .venv/bin/activate
+
+pip install -r requirements.txt
+python -c "import gymnasium; print(gymnasium.__version__)"  # Expect 1.1.1
+```
+
+**Requirements:**
+- Python 3.10+
+- Windows/macOS/Linux
+- 8GB RAM minimum recommended
+
+### 2.2 Basic Usage
+
+Minimal example (2-3 minutes on a typical laptop):
+
+```bash
+# Evolution (Binary easy)
+python plot.py \
+  --method evolution \
+  --task binary_easy \
+  --genotype-dimensions 1 \
+  --load-hyperparameters hyperparameters/binary_1d_hyperparameters.yaml \
+  --sample-size 5
+
+# Outputs: CSVs under method-specific figure folders, e.g. `figures_evolution/1d/binary_easy_convergence.csv`.
+# If you run evolution.py with --save-best-per-gen, best-per-generation images will save under `best_gen_maps/...`.
+```
+
+### 2.3 Repository Structure
 
 ```
 WFC-MDP/
@@ -113,104 +139,99 @@ WFC-MDP/
 └── README.md                              # You are here
 ```
 
-### 5.2 Installation
+---
 
-#### 5.2.1 Requirements
-- Python 3.10+
-- Windows/macOS/Linux
-- 8GB RAM minimum recommended
+## 3. Supported Environments
 
-#### 5.2.2 Setup
+Environments define the task objectives and reward functions. All environments use the WFC-MDP formulation with the Biome Tileset Pack B.
 
-```bash
-# From the repository root
-python -m venv .venv
-# Windows
-. .venv/Scripts/activate
-# macOS/Linux
-# source .venv/bin/activate
+| Name | Goal | Flags |
+|------|------|-------|
+| `binary` | Generate fully connected maps with target path length | `--task binary_hard` |
+| `river` | Generate maps with a single contiguous river biome | `--task river` |
+| `plains`¹ | Generate open grasslands with minimum grass/flower coverage | `--task grass` |
+| `pond` | Generate pond-like water bodies (25-50% water, clustered) | `--task pond` |
+| `hill` | Generate hill-enclosed regions | `--task hill` |
+| `river + binary` | Combines binary path length and river biome objectives | `--task binary_hard --task river --combo hard` |
+| `plains + binary`¹ | Combines binary path length and plains biome objectives | `--task binary_hard --task grass --combo hard` |
 
-pip install -r requirements.txt
-python -c "import gymnasium; print(gymnasium.__version__)"  # Expect 1.1.1
-```
+¹ We renamed `grass` to `plains` for clarity in the paper, but all code uses `grass`.
 
-### 5.3 Quick Start
+### Example Outputs
 
-Minimal example (2-3 minutes on a typical laptop):
+#### Binary Domain
 
-```bash
-# Evolution (Binary easy)
-python plot.py \
-  --method evolution \
-  --task binary_easy \
-  --genotype-dimensions 1 \
-  --load-hyperparameters hyperparameters/binary_1d_hyperparameters.yaml \
-  --sample-size 5
+The binary domain tasks the generator with creating valid maps that achieve an exact target path length. The red line shows the longest shortest path.
 
-# Outputs: CSVs under method-specific figure folders, e.g. `figures_evolution/1d/binary_easy_convergence.csv`.
-# If you run evolution.py with --save-best-per-gen, best-per-generation images will save under `best_gen_maps/...`.
-```
+<p align="center">
+  <img src="Franklin_Markovian_WFC_EXAG_2025%20(1)/maps/binary_hard_0.00_40.png" width="30%" alt="Path Length: 40" />
+  <img src="Franklin_Markovian_WFC_EXAG_2025%20(1)/maps/binary_hard_0.00_50.png" width="30%" alt="Path Length: 50" />
+  <img src="Franklin_Markovian_WFC_EXAG_2025%20(1)/maps/binary_hard_0.00_60.png" width="30%" alt="Path Length: 60" />
+</p>
+
+*Optimizing for target path-lengths in the Binary domain: 40, 50, and 60 tiles.*
+
+#### Biome Domains
+
+<p align="center">
+  <img src="Franklin_Markovian_WFC_EXAG_2025%20(1)/maps/river.jpg" width="45%" alt="River Biome" />
+  <img src="Franklin_Markovian_WFC_EXAG_2025%20(1)/maps/grass.png" width="45%" alt="Plains Biome" />
+</p>
+
+*Outputs resulting from the optimization of the River and Plains biome objectives.*
+
+**Notes:** Results/plots in the paper focus on hard variants; pond and hill biomes are available but not included in main experimental comparisons.
 
 ---
 
-## 6. Tasks and flags (used in the paper)
-Use these with `plot.py`. Reward implementations live in `tasks/*.py`.
+## 4. Supported Methods
 
-| Task flag | Description | Reward function | Source |
-| --- | --- | --- | --- |
-| `--task binary_hard` | Binary path‑length (exact) | `binary_reward(target_path_length=P, hard=True)` | `tasks/binary_task.py` |
-| `--task river` | River biome | `river_reward` | `tasks/river_task.py` |
-| `--task grass` | Field (grass) biome | `grass_reward` | `tasks/grass_task.py` |
-| `--task river --combo hard` | Binary + River (hard) | `CombinedReward([binary_reward(P, True), river_reward])` | `plot.py` |
-| `--task grass --combo hard` | Binary + Field (hard) | `CombinedReward([binary_reward(P, True), grass_reward])` | `plot.py` |
+Optimization methods for evolving WFC-MDP action sequences or direct map representations. All methods use evolutionary algorithms with hyperparameters defined in `hyperparameters/*.yaml`.
 
-Notes: results/plots are hard‑only; pond and hill are not used in the paper.
+| Name | Description | Implementation |
+|------|-------------|----------------|
+| **Evolution (1D)** | Evolves action sequences using μ+λ evolution with sequential genotype (actions applied in order) | `core/evolution.py` |
+| **Evolution (2D)** | Evolves action sequences using μ+λ evolution with spatial genotype (actions indexed by next-collapse cell position) | `core/evolution.py` |
+| **FI-2Pop** | Feasible-Infeasible Two-Population algorithm maintaining two subpopulations (feasible maximizes objective, infeasible minimizes violations) operating on final maps | `core/fi2pop.py` |
+| **Baseline** | Standard evolutionary algorithm with penalized fitness (objective_score - violations) operating on final maps | `core/fi2pop.py` |
 
 ---
 
-## 7. Controllers and API
+## 5. Methods
 
-### 7.1 Optimization Controllers
+All optimization methods have various hyperparameters detailed in the hyperparameter YAML files in `hyperparameters/*.yaml`.
 
-#### 7.1.1 Evolution (μ+λ)
-```python
-Parameters = {
-    'population_size': 48,
-    'survival_rate': 0.4151,  # Binary 1D
-    'number_of_actions_mutated_mean': 97,
-    'number_of_actions_mutated_standard_deviation': 120.1,
-    'action_noise_standard_deviation': 0.1296,
-    'cross_over_method': 'ONE_POINT',
-    'cross_or_mutate': 0.7453,
-    'random_offspring': 0.0,
-}
-```
+### 5.1 Direct Map Evolution
 
-Genotype modes:
+These methods operate directly on the final artifact and do not leverage WFC. Instead, the optimization process must learn to satisfy the adjacency rules. For a target map of length ℓ and width w, the genotype is represented as a 2D array of size ℓ × w, where each entry contains an integer corresponding to a tile index in the tileset.
 
+**Baseline Evolution**: The baseline evolutionary algorithm treats each map genotype as an individual and applies standard genetic operators with a penalized fitness that subtracts adjacency violations from raw objective function. Given objective score o and v adjacency violations, the individuals will receive a fitness of o-v.
+
+**FI-2Pop**: FI-2Pop attempts to leverage adjacency violations as an exploration medium by maintaining two equal–sized subpopulations, feasible (F) and infeasible (I), and applies tailored selection criteria to each: objective maximization in F and violation minimization in I.
+
+### 5.2 MDP Representation
+
+By formalizing WFC as a Markov Decision Process (MDP), we leverage its guarantees to offload the burden of learning adjacency constraints from the optimizer. This reformulation transforms the generation problem into a sequential decision process where every action results in a valid intermediate configuration.
+
+### 5.3 Evolving an Action Sequence
+
+We use a standard μ + λ evolutionary algorithm to optimize the full sequence of WFC collapse actions. Each individual in the population encodes a fixed-length sequence of collapse decisions, represented as logits over the tile set at each of the ℓ × w positions.
+
+**Genotype Representations:**
+
+1. **1D Genotype** (sequential): Actions are applied in order, one per step until termination.
+2. **2D Genotype** (spatial): Actions are indexed by the next-collapse cell position.
+
+---
+
+## 6. Usage Examples
+
+### 6.1 Running Experiments
+
+The main interface is `plot.py`, which can collect convergence data and generate comparison plots.
+
+**Evolution (1D genotype):**
 ```bash
-# 1D (sequential playback of actions)
-python plot.py --method evolution --task binary_easy \
-  --genotype-dimensions 1 \
-  --load-hyperparameters hyperparameters/binary_1d_hyperparameters.yaml --sample-size 5
-
-# 2D (index by next-collapse cell)
-python plot.py --method evolution --task binary_easy \
-  --genotype-dimensions 2 \
-  --load-hyperparameters hyperparameters/binary_2d_hyperparameters.yaml --sample-size 5
-```
-
-#### 7.1.2 FI-2Pop
-Maintains two subpopulations of size N/2 each:
-- Feasible: arg max f(x) subject to c(x) = 0
-- Infeasible: arg min ||c(x)||
-
-#### 7.1.3 MCTS
-Removed. This repository no longer uses MCTS in experiments.
-
-### 7.2 Plotting and aggregation with plot.py
-```bash
-# Evolution, Binary easy (P = 10..100), 1D genotype
 python plot.py \
   --method evolution \
   --task binary_easy \
@@ -218,51 +239,43 @@ python plot.py \
   --load-hyperparameters hyperparameters/binary_1d_hyperparameters.yaml \
   --sample-size 20
 # → figures_evolution/1d/binary_easy_convergence.csv
+```
 
-# Evolution, Binary hard (exact match)
+**Evolution (2D genotype):**
+```bash
 python plot.py \
   --method evolution \
-  --task binary_hard \
-  --genotype-dimensions 1 \
-  --load-hyperparameters hyperparameters/binary_1d_hyperparameters.yaml \
+  --task binary_easy \
+  --genotype-dimensions 2 \
+  --load-hyperparameters hyperparameters/binary_2d_hyperparameters.yaml \
   --sample-size 20
-# → figures_evolution/1d/binary_hard_convergence.csv
+```
 
-# FI-2Pop baseline, Binary easy
+**FI-2Pop baseline:**
+```bash
 python plot.py \
   --method fi2pop \
   --task binary_easy \
   --load-hyperparameters hyperparameters/fi2pop_binary_hyperparameters.yaml \
   --sample-size 20
 # → figures_fi2pop/binary_convergence.csv
+```
 
-# Biome averages with evolution (Pond, River)
-python plot.py \
-  --method evolution \
-  --task biomes \
-  --genotype-dimensions 1 \
-  --load-hyperparameters hyperparameters/biomes_1d_hyperparameters.yaml \
-  --sample-size 20
-# → figures_evolution/1d/biome_average_convergence.csv
-
-# Combo objective (Binary + River), easy
+**Combined objectives (Binary + River):**
+```bash
 python plot.py \
   --method evolution \
   --task river \
-  --combo easy \
+  --combo hard \
   --genotype-dimensions 1 \
   --load-hyperparameters hyperparameters/combo_river_1d_hyperparameters.yaml \
   --sample-size 20
-# → figures_evolution/1d/combo_river_convergence.csv
-
-# Field/Grass combo (hard)
-python plot.py --method evolution --task grass --combo hard \
-  --genotype-dimensions 1 \
-  --load-hyperparameters hyperparameters/combo_grass_1d_hyperparameters.yaml \
-  --sample-size 20
 ```
 
-Comparison plots from CSVs:
+### 6.2 Generating Comparison Plots
+
+Compare multiple methods from CSV files:
+
 ```bash
 python plot.py --compare \
   --csv-files \
@@ -273,12 +286,16 @@ python plot.py --compare \
   --output comparison_figures/binary_easy_comparison.png
 ```
 
-Tips:
-- For 2D genotypes, set `--genotype-dimensions 2` and load the corresponding `binary_2d_hyperparameters.yaml`.
+**Tips:**
+- For 2D genotypes, set `--genotype-dimensions 2` and load the corresponding `*_2d_hyperparameters.yaml`.
 - To remove random offspring in evolution sweeps, use `--no-random-offspring`.
 - Debug per-run reward curves can be enabled with `--debug` (PNG saved under `debug_plots/`).
 
-### 7.3 Gymnasium Environment API
+---
+
+## 7. API Reference
+
+### 7.1 Gymnasium Environment API
 ```python
 import numpy as np
 from functools import partial
@@ -309,7 +326,7 @@ for _ in range(env.map_length * env.map_width):
 print({"terminated": terminated, "truncated": truncated, **info})
 ```
 
-### 7.4 Combined objectives (CombinedReward)
+### 7.2 Combined Objectives (CombinedReward)
 ```python
 from functools import partial
 from core.wfc_env import CombinedReward
