@@ -58,7 +58,7 @@ We evaluate optimization methods across binary path‑length tasks, biome object
 
 All maps and objective functions are constructed based on a subset of *Biome Tileset Pack B - Grassland, Savannah, and Scrubland*. Adjacency rules are generated via manual human labeling, though they could also be extracted from an input image.
 
-![Biome Tileset Pack B](Franklin_Markovian_WFC_EXAG_2025 (1)/figures/tiles.PNG)
+![Biome Tileset Pack B](tiles.PNG)
 
 *Path tiles are marked in orange, grass tiles in green, water tiles in blue, hill tiles in brown, and the water center tile in light blue. Unused tiles are darkened.*
 
@@ -163,9 +163,9 @@ Environments define the task objectives and reward functions. All environments u
 The binary domain tasks the generator with creating valid maps that achieve an exact target path length. The red line shows the longest shortest path.
 
 <p align="center">
-  <img src="Franklin_Markovian_WFC_EXAG_2025 (1)/maps/binary_hard_0.00_40.png" width="30%" alt="Path Length: 40" />
-  <img src="Franklin_Markovian_WFC_EXAG_2025 (1)/maps/binary_hard_0.00_50.png" width="30%" alt="Path Length: 50" />
-  <img src="Franklin_Markovian_WFC_EXAG_2025 (1)/maps/binary_hard_0.00_60.png" width="30%" alt="Path Length: 60" />
+  <img src="binary_hard_0.00_40.png" width="30%" alt="Path Length: 40" />
+  <img src="binary_hard_0.00_50.png" width="30%" alt="Path Length: 50" />
+  <img src="binary_hard_0.00_60.png" width="30%" alt="Path Length: 60" />
 </p>
 
 *Optimizing for target path-lengths in the Binary domain: 40, 50, and 60 tiles.*
@@ -173,8 +173,8 @@ The binary domain tasks the generator with creating valid maps that achieve an e
 #### Biome Domains
 
 <p align="center">
-  <img src="Franklin_Markovian_WFC_EXAG_2025 (1)/maps/river.jpg" width="45%" alt="River Biome" />
-  <img src="Franklin_Markovian_WFC_EXAG_2025 (1)/maps/grass.png" width="45%" alt="Plains Biome" />
+  <img src="river.jpg" width="45%" alt="River Biome" />
+  <img src="grass.png" width="45%" alt="Plains Biome" />
 </p>
 
 *Outputs resulting from the optimization of the River and Plains biome objectives.*
