@@ -19,11 +19,22 @@ Procedural content generation often requires satisfying both designer-specified 
 ## Table of Contents
 
 1. [Introduction](#1-introduction)
+   - [Key Innovation: WFC as MDP](#key-innovation-wfc-as-mdp)
+   - [Results Summary](#results-summary)
+   - [Tile Set](#tile-set)
 2. [Quick Start](#2-quick-start)
+   - [2.1 Installation](#21-installation)
+   - [2.2 Basic Usage](#22-basic-usage)
+   - [2.3 Repository Structure](#23-repository-structure)
 3. [Supported Environments](#3-supported-environments)
+   - [Example Outputs](#example-outputs)
 4. [Supported Methods](#4-supported-methods)
 5. [Usage](#5-usage)
+   - [5.1 Running Experiments](#51-running-experiments)
+   - [5.2 Generating Comparison Plots](#52-generating-comparison-plots)
 6. [API Reference](#6-api-reference)
+   - [6.1 Gymnasium Environment API](#61-gymnasium-environment-api)
+   - [6.2 Combined Objectives (CombinedReward)](#62-combined-objectives-combinedreward)
 
 ---
 
@@ -58,7 +69,7 @@ We evaluate optimization methods across binary path‑length tasks, biome object
 
 All maps and objective functions are constructed based on a subset of *Biome Tileset Pack B - Grassland, Savannah, and Scrubland*. Adjacency rules are generated via manual human labeling, though they could also be extracted from an input image.
 
-![Biome Tileset Pack B](tiles.PNG)
+![Biome Tileset Pack B](slicing%20biome.jpg)
 
 *Path tiles are marked in orange, grass tiles in green, water tiles in blue, hill tiles in brown, and the water center tile in light blue. Unused tiles are darkened.*
 
