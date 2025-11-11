@@ -160,8 +160,6 @@ Environments define the task objectives and reward functions. All environments u
 | `binary` | Generate fully connected maps with target path length | `--task binary_hard` |
 | `river` | Generate maps with a single contiguous river biome | `--task river` |
 | `plains`¹ | Generate open grasslands with minimum grass/flower coverage | `--task grass` |
-| `pond` | Generate pond-like water bodies (25-50% water, clustered) | `--task pond` |
-| `hill` | Generate hill-enclosed regions | `--task hill` |
 | `river + binary` | Combines binary path length and river biome objectives | `--task binary_hard --task river --combo hard` |
 | `plains + binary`¹ | Combines binary path length and plains biome objectives | `--task binary_hard --task grass --combo hard` |
 
@@ -190,7 +188,7 @@ The binary domain tasks the generator with creating valid maps that achieve an e
 
 *Outputs resulting from the optimization of the River and Plains biome objectives.*
 
-**Notes:** Results/plots in the paper focus on hard variants; pond and hill biomes are available but not included in main experimental comparisons.
+**Notes:** Results/plots in the paper focus on hard variants.
 
 ---
 
@@ -264,11 +262,13 @@ Compare multiple methods from CSV files:
 ```bash
 python plot.py --compare \
   --csv-files \
-    figures_evolution/1d/binary_easy_convergence.csv \
-    figures_fi2pop/binary_convergence.csv \
-  --labels Evolution FI-2Pop \
-  --title "Binary Easy: Evolution vs FI-2Pop" \
-  --output comparison_figures/binary_easy_comparison.png
+    figures_evolution/1d/binary_hard_convergence.csv \
+    figures_evolution/2d/binary_hard_convergence.csv \
+    figures_baseline/binary_hard_convergence.csv \
+    figures_fi2pop/binary_hard_convergence.csv \
+  --labels evolution_1d evolution_2d baseline fi2pop \
+  --title "Binary Convergence Behavior" \
+  --output comparison_figures/binary_hard_comparison.png
 ```
 
 **Tips:**
